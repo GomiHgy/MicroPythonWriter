@@ -1,6 +1,6 @@
-# M5NanoC6 MicroPython Web Programmer
+# MicroPython Web Programmer
 
-M5Stack NanoC6 / ESP32-C6 の MicroPython を、PC版 Chrome または Edge からUSB CDCシリアルで操作する完全静的なWebアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
+M5Stack MicroPython を、PC版 Chrome または Edge からUSB CDCシリアルで操作する完全静的なWebアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
 
 ## 対応範囲
 
