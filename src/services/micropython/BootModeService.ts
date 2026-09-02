@@ -8,5 +8,5 @@ export class BootModeService {
     if (capabilities.nvsFallbackSupported) { await this.repl.execute(`import esp32\nn=esp32.NVS('uiflow')\nn.set_u8('boot_option',${mode})\nn.commit()`); return }
     throw new BootModeUnsupportedError()
   }
-  async reset() { await this.repl.execute('import machine\nmachine.reset()') }
+  async reset() { await this.repl.reset() }
 }
