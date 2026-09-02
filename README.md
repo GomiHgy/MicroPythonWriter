@@ -1,10 +1,9 @@
 # MicroPython Web Programmer
 
-M5Stack MicroPython を、PC版 Chrome または Edge からUSB CDCシリアルで操作する完全静的なWebアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
+MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリアルで操作する完全静的なWebアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
 
 ## 対応範囲
 
-- 主対象: M5Stack NanoC6、ESP32-C6、M5Stack UIFlow MicroPython（例: MicroPython v1.27.0-dirty）。
 - ブラウザ: PC版 Google Chrome / Microsoft Edge。Web Serial APIが未対応なら接続操作は無効になる。
 - HTTPSまたは `localhost` が必要。GitHub PagesはHTTPSなので公開後そのまま使える。
 - USB VID/PIDは固定していない。USB接続ボタンのクリックから、ブラウザ標準のポート選択を表示する。
@@ -29,7 +28,7 @@ UIはシリアルポートへ直接触らず、`WebSerialTransport → RawReplCl
 
 ## 使い方
 
-1. NanoC6をUSB接続し、このアプリをPC版Chrome/Edgeで開く。
+1. デバイスをUSB接続し、このアプリをPC版Chrome/Edgeで開く。
 2. `USB接続` を押し、ポート選択ダイアログで対象を選ぶ（初期115200 bps）。
 3. 接続時に自動で準備される通常動作で、検出された機器情報・カレントディレクトリ・ファイル一覧・boot_optionを確認する。
 4. コードを編集し、保存だけなら`プログラム更新`、保存して起動するなら`実行`を使う。Ctrl+Sはプログラム更新、Ctrl+Enterは実行。
@@ -60,13 +59,12 @@ Vitestではバイトキューの分割受信、状態遷移、Raw-paste対応�
 
 - Chrome/EdgeでUSBポートを選び、切断・再接続できる。
 - Raw REPLバナー、Raw-paste対応／フォールバック、長時間コードのCtrl-C停止を確認する。
-- UIFlow版で `boot_option` の取得と 0/1 の切替後、再起動時の挙動を確認する。
 - `main.py` 保存、例外表示、`main.py.bak` の復旧を確認する。
 - 自動起動後、USB CDCの再列挙、起動バナー、Traceback、リセットループを確認する。
 
 ## 復旧と既知の制約
 
-USBシリアルへ接続できない場合、NanoC6の **GPIO9ボタンを押したままUSBケーブルを接続** するとESP32-C6のFirmware書込み用Download Modeへ入れる。この操作は通常の `main.py` 書込みとは別。必要に応じてM5Burner等でMicroPythonファームウェアを書き直す。本アプリはMVPとしてファームウェア書込み機能を含まない。
+USBシリアルへ接続できない場合、NanoC6の **GPIO9ボタンを押したままUSBケーブルを接続** するとESP32-C6のFirmware書込み用Download Modeへ入れる。この操作は通常の `main.py` 書込みとは別。必要に応じてMicroPythonファームウェアを書き直す。本アプリはMVPとしてファームウェア書込み機能を含まない。
 
 - Python例外が出ない論理的な不具合は自動判定できない。
 - Web Serial API非対応ブラウザでは利用できない。
