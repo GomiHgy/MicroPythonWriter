@@ -1,4 +1,4 @@
-export type DeviceState = 'unsupported' | 'disconnected' | 'requesting-port' | 'opening' | 'connected' | 'interrupting' | 'entering-raw-repl' | 'raw-repl-ready' | 'probing' | 'uploading' | 'running' | 'stopping' | 'setting-boot-mode' | 'resetting' | 'error'
+export type DeviceState = 'unsupported' | 'disconnected' | 'connection-lost' | 'reconnecting' | 'requesting-port' | 'opening' | 'connected' | 'interrupting' | 'entering-raw-repl' | 'raw-repl-ready' | 'probing' | 'uploading' | 'running' | 'stopping' | 'setting-boot-mode' | 'resetting' | 'error'
 
 export interface DeviceInfo { deviceName: string; microPythonVersion: string; firmwareInfo: string; bootOption?: number; cwd?: string; files?: string[]; nanoC6Confirmed: boolean; bootOptionSupported: boolean; nvsFallbackSupported: boolean }
 export interface ExecutionResult { stdout: string; stderr: string; durationMs: number; interrupted: boolean; completed: boolean }

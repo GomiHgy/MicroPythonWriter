@@ -23,6 +23,7 @@ describe('状態機械', () => {
 describe('Web Serial API境界', () => {
   it('Web Serial非対応を検出する', () => expect(new WebSerialTransport(undefined).supported).toBe(false))
   it('ポート選択キャンセルを許可エラーとして返す', async () => { const serial = { requestPort: async () => { throw new Error('cancel') }, getPorts: async () => [], addEventListener: () => undefined, removeEventListener: () => undefined }; await expect(new WebSerialTransport(serial).connect()).rejects.toThrow('cancel') })
+  it('切断イベントを購読者へ通知する', () => { let listener: ((event: Event) => void) | undefined; const serial = { requestPort: async () => { throw new Error('unused') }, getPorts: async () => [], addEventListener: (_type: string, callback: (event: Event) => void) => { listener = callback }, removeEventListener: () => undefined }; const transport = new WebSerialTransport(serial); let notified = false; transport.onDisconnectDetected(() => { notified = true }); listener?.(new Event('disconnect')); expect(notified).toBe(true) })
 })
 describe('Raw-paste', () => {
   it('対応機器のリトルエンディアン窓サイズを使う', async () => { const queue = new ByteQueue(); queue.push(new Uint8Array([0x52, 1, 4, 0])); const writes: number[][] = []; const transport = { queue, write: async (d: Uint8Array) => { writes.push([...d]) } }; const raw = new RawPasteProtocol(transport as never); expect(await raw.negotiate(20)).toBe(4); expect(writes[0]).toEqual([5, 65, 1]) })
