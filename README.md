@@ -1,6 +1,7 @@
 # MicroPython Web Programmer
 
-MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリアルで操作する完全静的なWebアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
+MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリアルで操作するサンプル静的Webアプリ。WebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
+デモプログラムとしてM5NanoC6を想定して動作させている。
 
 ## 対応範囲
 
