@@ -4,20 +4,98 @@ import { Terminal } from './components/Terminal'
 import { hasSensitiveAssignments } from './services/prompt/RepairPromptBuilder'
 import { useProgrammer } from './hooks/useProgrammer'
 import './App.css'
-const labels: Record<string, string> = { unsupported: 'Web Serial 非対応', disconnected: '未接続', 'connection-lost': 'USB切断中', reconnecting: '再接続中', 'requesting-port': 'ポート選択中', opening: '接続中', connected: '接続済み', interrupting: '通常動作へ切替中', 'entering-raw-repl': '通常動作を準備中', 'raw-repl-ready': '通常動作', probing: '機器情報取得中', uploading: 'プログラム更新中', verifying: '構文確認中', starting: '起動中', running: '実行中', 'running-no-marker': '実行中（起動マーカーなし）', stopping: '停止中', stopped: '停止済み', 'setting-boot-mode': '起動モード設定中', resetting: 'リセット中', error: '実行エラー' }
+
+const statusCopy: Record<string, { icon: string; eyebrow: string; title: string; description: string; tone: 'ready' | 'running' | 'waiting' | 'warning' | 'error' }> = {
+  unsupported: { icon: '!', eyebrow: '使えない状態', title: 'このブラウザでは使えません', description: 'パソコン版ChromeまたはEdgeで開いてください。', tone: 'error' },
+  disconnected: { icon: '1', eyebrow: 'はじめに', title: 'NanoC6をUSBでつなごう', description: '下の「USBをつなぐ」を押して、NanoC6を選んでください。', tone: 'waiting' },
+  'connection-lost': { icon: '!', eyebrow: '接続が切れました', title: 'NanoC6との通信が止まりました', description: 'ケーブルと電源を確認して、もう一度つなぎましょう。', tone: 'warning' },
+  'raw-repl-ready': { icon: '✓', eyebrow: '準備OK', title: 'プログラムを試せます', description: '編集したら「実行」を押すだけです。', tone: 'ready' },
+  stopped: { icon: '✓', eyebrow: '停止しました', title: '次のプログラムを試せます', description: '編集してから「実行」を押してください。', tone: 'ready' },
+  running: { icon: '▶', eyebrow: '実行中', title: 'プログラムが動いています', description: '止めるときは「停止」。もう一度実行すると、今の動作を止めてから始めます。', tone: 'running' },
+  'running-no-marker': { icon: '▶', eyebrow: '実行中', title: 'プログラムが動いています', description: '起動メッセージは見つかりませんでしたが、実行中として扱っています。', tone: 'running' },
+  error: { icon: '!', eyebrow: '確認が必要', title: 'エラーが見つかりました', description: '画面右の「困ったとき」を見て、表示された行を確認してください。', tone: 'error' },
+}
+
+const defaultStatus = { icon: '…', eyebrow: 'NanoC6を準備中', title: '少し待ってください', description: 'ケーブルはそのままで、処理が終わるまで待ってください。', tone: 'waiting' as const }
+
 export default function App() {
-  const app = useProgrammer(); const [dark, setDark] = useState(() => localStorage.getItem('mpw-theme') !== 'light'); const [wrap, setWrap] = useState(() => localStorage.getItem('mpw-wrap') !== 'false'); const [autoScroll, setAutoScroll] = useState(() => localStorage.getItem('mpw-autoscroll') !== 'false'); const [timestamps, setTimestamps] = useState(false); const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean }>(); const ready = app.state === 'raw-repl-ready' || app.state === 'stopped'; const canModifyProgram = ready || app.state === 'running' || app.state === 'running-no-marker'; const busy = !['raw-repl-ready', 'stopped', 'disconnected', 'connection-lost', 'error', 'unsupported', 'running', 'running-no-marker'].includes(app.state)
-  useEffect(() => { localStorage.setItem('mpw-theme', dark ? 'dark' : 'light'); localStorage.setItem('mpw-wrap', String(wrap)); localStorage.setItem('mpw-autoscroll', String(autoScroll)); document.documentElement.dataset.theme = dark ? 'dark' : 'light' }, [dark, wrap, autoScroll])
-  useEffect(() => { if (!copyNotice) return; const timer = window.setTimeout(() => setCopyNotice(undefined), 4000); return () => window.clearTimeout(timer) }, [copyNotice])
-  const copyPrompt = async () => { if (!app.error) return; if (hasSensitiveAssignments(app.source) && !confirm('ソースにpassword、token、SSID等らしき代入があります。内容を確認してコピーしますか？')) return; try { if (!navigator.clipboard?.writeText) throw new Error('Clipboard APIはHTTPSまたはlocalhostでのみ利用できます。'); await navigator.clipboard.writeText(app.error.repairPrompt); setCopyNotice({ text: '✓ AI修正依頼プロンプトをクリップボードへコピーしました。', failed: false }) } catch (error) { const message = error instanceof Error && error.message ? error.message : 'クリップボードへの書込みが許可されませんでした。'; setCopyNotice({ text: `コピーに失敗しました: ${message}`, failed: true }) } }
+  const app = useProgrammer()
+  const [dark, setDark] = useState(() => localStorage.getItem('mpw-theme') !== 'light')
+  const [wrap, setWrap] = useState(() => localStorage.getItem('mpw-wrap') !== 'false')
+  const [autoScroll, setAutoScroll] = useState(() => localStorage.getItem('mpw-autoscroll') !== 'false')
+  const [timestamps, setTimestamps] = useState(false)
+  const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean }>()
+  const ready = app.state === 'raw-repl-ready' || app.state === 'stopped'
+  const running = app.state === 'running' || app.state === 'running-no-marker' || app.state === 'starting'
+  const canModifyProgram = ready || running
+  const busy = !['raw-repl-ready', 'stopped', 'disconnected', 'connection-lost', 'error', 'unsupported', 'running', 'running-no-marker'].includes(app.state)
+  const connected = !['disconnected', 'connection-lost', 'unsupported'].includes(app.state)
+  const status = statusCopy[app.state] ?? defaultStatus
+  const bootSummary = app.info.bootOption === 0 ? '電源を入れたら自動で実行' : app.info.bootOption === 1 ? '電源を入れても自動では実行しない' : 'まだ確認できていません'
+  const runDescription = running ? '今動いているプログラムを止めて、編集内容を実行します。' : '編集内容をNanoC6へ保存して、すぐに試します。'
+
+  useEffect(() => {
+    localStorage.setItem('mpw-theme', dark ? 'dark' : 'light')
+    localStorage.setItem('mpw-wrap', String(wrap))
+    localStorage.setItem('mpw-autoscroll', String(autoScroll))
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  }, [dark, wrap, autoScroll])
+
+  useEffect(() => {
+    if (!copyNotice) return
+    const timer = window.setTimeout(() => setCopyNotice(undefined), 4000)
+    return () => window.clearTimeout(timer)
+  }, [copyNotice])
+
+  const copyPrompt = async () => {
+    if (!app.error) return
+    if (hasSensitiveAssignments(app.source) && !confirm('プログラムにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してコピーしますか？')) return
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('コピー機能はHTTPSまたはlocalhostでのみ使えます。')
+      await navigator.clipboard.writeText(app.error.repairPrompt)
+      setCopyNotice({ text: '✓ AI修正依頼プロンプトをコピーしました。', failed: false })
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : 'クリップボードへの書込みが許可されませんでした。'
+      setCopyNotice({ text: `コピーに失敗しました: ${message}`, failed: true })
+    }
+  }
+
   const stampLog = () => timestamps ? app.log.split(/(?<=\n)/).map(line => `[${new Date().toLocaleTimeString()}] ${line}`).join('') : app.log
-  return <main className="app"><header><div><h1>MicroPython Web Programmer</h1><p>ブラウザ内だけで動く、Web Serial対応MicroPython動作テスト・プログラム書込ツール</p></div><button onClick={() => setDark(v => !v)}>{dark ? '☀ ライト' : '🌙 ダーク'}</button></header>
-    {!app.supported && <div className="notice danger">このブラウザはWeb Serial APIに対応していません。PC版ChromeまたはEdgeを使用してください。</div>}
-    <section className="status"><span>Web Serial: {app.supported ? '対応' : '非対応'}</span><span>状態: <strong>{labels[app.state]}</strong></span><span>機器: {app.info.deviceName}</span><span>MicroPython: {app.info.microPythonVersion}</span><span>boot_option: {app.info.bootOption ?? '未取得'}</span></section>
-    {app.state === 'connection-lost' && <section className="disconnect-screen" role="alert"><h2>🔌 USB接続が切断されました</h2><p>ケーブルとNanoC6の電源を確認してから再接続してください。許可済みの同じポートなら、再接続を試せます。</p><div><button onClick={app.reconnect}>↻ 許可済みポートへ再接続</button><button onClick={app.connect}>🔌 USB接続を選び直す</button></div><small>再接続できない場合は、OSがポートを再認識するまで少し待ってから「USB接続を選び直す」を押してください。</small></section>}
-    <section className="toolbar"><label>bps <input type="number" value={app.baudRate} min="1200" onChange={event => app.setBaudRate(Number(event.target.value))} /></label><button disabled={!app.supported || busy || (app.state !== 'disconnected' && app.state !== 'connection-lost')} onClick={app.connect}>🔌 USB接続</button><button disabled={app.state === 'disconnected' || app.state === 'connection-lost'} onClick={app.disconnect}>切断</button><button disabled={busy || app.state === 'disconnected' || app.state === 'connection-lost'} onClick={app.normalMode}>通常動作に戻す</button><button disabled={!ready} onClick={app.load}>プログラムを読み込む</button><button title="編集内容をmain.pyへ永続保存するだけで、実行はしません。" disabled={!canModifyProgram} onClick={app.write}>プログラム更新</button><button title="編集内容をmain.pyへ保存してから実行します。" disabled={!canModifyProgram} onClick={app.run}>実行</button><button disabled={!['running', 'running-no-marker', 'starting'].includes(app.state)} onClick={app.stop}>■ 停止</button><button disabled={!ready} onClick={() => app.setBoot(0)}>動作OKとして自動起動に設定</button><button disabled={!ready} onClick={() => app.setBoot(1)}>次回起動もプログラムモードに設定</button><button disabled={!ready} onClick={app.reset}>↻ リセット</button></section>
-    {app.info.deviceName !== '未接続' && !app.info.nanoC6Confirmed && <div className="notice warn">M5Stack NanoC6として確認できませんでした。標準MicroPython互換モードで続行します。</div>}
-    <p className="mode-note">通常動作ではWeb Programmerからプログラムの読込み・更新・実行ができます。プログラムモードでは次回起動時にmain.pyを自動実行しない。接続時に通常動作は自動で準備され、実行後などに戻すときだけ「通常動作に戻す」を押してください。</p>
-    <section className="columns"><div className="panel"><div className="panel-head"><h2>main.py</h2><label><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} /> 自動折返し</label></div><CodeEditor value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.line} onSave={app.write} onRun={app.run} /></div><div className="right"><div className="panel terminal-panel"><div className="panel-head"><h2>シリアルターミナル</h2><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} /> 自動スクロール</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} /> 時刻</label><button onClick={() => app.setLog('')}>消去</button></span></div><Terminal log={stampLog()} dark={dark} autoScroll={autoScroll} /></div>{app.error && <div className="panel error"><h2>⚠ エラー: {app.error.exceptionType}</h2><p>{app.error.message}</p><dl><dt>ステージ</dt><dd>{app.error.stage}</dd><dt>main.py 行</dt><dd>{app.error.line ?? '未特定'} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl><pre>{app.error.traceback}</pre><button onClick={copyPrompt}>AI修正依頼プロンプトをコピー</button>{copyNotice && <p className={`copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.text}</p>}</div>}</div></section>
-    <footer>コード・ログは外部送信しません。自動起動は5秒の例外未検出だけでは有効化されず、実機の動作を確認してからボタンを押してください。復旧が必要ならGPIO9を押したままUSB接続してDownload Modeへ入る。</footer></main>
+
+  return <main className="app">
+    <header className="hero">
+      <div className="brand"><span className="brand-mark" aria-hidden="true">⚡</span><div><p className="eyebrow">M5Stack NanoC6</p><h1>プログラム かんたん操作</h1><p>USBでつないで、書いたプログラムをすぐ試せます。</p></div></div>
+      <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え'}>{dark ? '☀ 明るくする' : '🌙 暗くする'}</button>
+    </header>
+
+    {!app.supported && <div className="notice danger" role="alert">このブラウザではUSB接続機能を使えません。パソコン版ChromeまたはEdgeで開いてください。</div>}
+
+    <section className={`device-card ${status.tone}`} aria-live="polite">
+      <div className="status-badge" aria-hidden="true">{status.icon}</div>
+      <div className="device-copy"><p className="eyebrow">{status.eyebrow}</p><h2>{status.title}</h2><p>{status.description}</p></div>
+      <div className="device-actions">
+        <button className="connect-button" disabled={!app.supported || busy || (app.state !== 'disconnected' && app.state !== 'connection-lost')} onClick={app.connect}>🔌 USBをつなぐ</button>
+        {connected && <button className="quiet-button" onClick={app.disconnect}>接続を切る</button>}
+      </div>
+      <details className="device-details"><summary>機器と通信のくわしい情報</summary><div className="device-details-grid"><dl><dt>つながっている機器</dt><dd>{app.info.deviceName}</dd><dt>電源を入れた時の動き</dt><dd>{bootSummary}</dd><dt>MicroPython</dt><dd>{app.info.microPythonVersion}</dd></dl><label className="baud-rate">通信速度 <input type="number" value={app.baudRate} min="1200" onChange={event => app.setBaudRate(Number(event.target.value))} /> bps</label></div></details>
+    </section>
+
+    {app.state === 'connection-lost' && <section className="disconnect-screen" role="alert"><h2>USB接続が切断されました</h2><p>ケーブルとNanoC6の電源を確認してから、もう一度つないでください。</p><div><button onClick={app.reconnect}>↻ もう一度つなぐ</button><button className="quiet-button" onClick={app.connect}>USBを選び直す</button></div><small>うまくいかないときは、数秒待ってから「USBを選び直す」を押してください。</small></section>}
+
+    <section className="steps" aria-label="使い方">
+      <div className={`step ${app.state === 'disconnected' || app.state === 'connection-lost' ? 'active' : 'done'}`}><span>1</span><div><strong>つなぐ</strong><small>NanoC6をUSBでつなぐ</small></div></div>
+      <div className={`step ${ready || running ? 'active' : ''}`}><span>2</span><div><strong>書く</strong><small>下のプログラムを編集する</small></div></div>
+      <div className={`step ${running ? 'active' : ''}`}><span>3</span><div><strong>試す</strong><small>「実行」で動きを確認する</small></div></div>
+    </section>
+
+    {app.info.deviceName !== '未接続' && !app.info.nanoC6Confirmed && <div className="notice warn">NanoC6としては確認できませんでした。一般的なMicroPython機器として操作します。</div>}
+
+    {connected && <section className="action-card"><div className="section-heading"><div><p className="eyebrow">プログラムを試す</p><h2>まずは「実行」を押そう</h2><p>実行すると、編集内容をNanoC6へ保存してから動かします。</p></div>{running && <button className="stop-button" onClick={app.stop}>■ 停止</button>}</div><div className="main-actions"><button className="run-button" disabled={!canModifyProgram} onClick={app.run}><span>▶ 実行</span><small>{runDescription}</small></button><button className="update-button" disabled={!canModifyProgram} onClick={app.write}><span>プログラム更新</span><small>保存だけ。今は動かしません。</small></button><button className="load-button" disabled={!ready} onClick={app.load}>保存済みのプログラムを読む</button></div><p className="action-tip">迷ったら <strong>実行</strong>。電源を切っても残すだけなら <strong>プログラム更新</strong> を使ってください。</p></section>}
+
+    {connected && <details className="advanced-card"><summary><span>⚙</span><div><strong>電源を入れた時の動きを変える</strong><small>NanoC6本体に保存される設定です</small></div></summary><div className="advanced-body"><p>今の設定: <strong>{bootSummary}</strong></p><div className="boot-actions"><button disabled={!ready} onClick={() => app.setBoot(0)}>電源を入れたら自動で実行する</button><button className="quiet-button" disabled={!ready} onClick={() => app.setBoot(1)}>電源を入れても自動実行しない</button></div><p className="advanced-note">設定を変えるとNanoC6は再起動し、USB接続は一度切れます。再起動後は、もう一度「USBをつなぐ」を押してください。</p><div className="secondary-actions"><button className="quiet-button" disabled={busy || app.state === 'disconnected' || app.state === 'connection-lost'} onClick={app.normalMode}>通常動作に戻す</button><button className="quiet-button" disabled={!ready} onClick={app.reset}>↻ NanoC6を再起動</button></div></div></details>}
+
+    <section className="workspace"><div className="panel program-panel"><div className="panel-head"><div><p className="eyebrow">プログラム</p><h2>LEDやボタンの動きを書く場所</h2><p>ここを書き換えて、上の「実行」で試します。</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} /> 長い行を折り返す</label></div><CodeEditor value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.line} onSave={app.write} onRun={app.run} /><p className="shortcut-note">ショートカット: <kbd>Ctrl</kbd> + <kbd>S</kbd> でプログラム更新、<kbd>Ctrl</kbd> + <kbd>Enter</kbd> で実行</p></div><aside className="right"><div className="panel terminal-panel"><div className="panel-head"><div><p className="eyebrow">見守りログ</p><h2>うまくいかない時に見る記録</h2></div><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} /> 自動スクロール</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} /> 時刻</label><button className="quiet-button" onClick={() => app.setLog('')}>消去</button></span></div><Terminal log={stampLog()} dark={dark} autoScroll={autoScroll} /></div>{app.error && <section className="panel error" aria-live="assertive"><p className="eyebrow">困ったとき</p><h2>⚠ {app.error.exceptionType}</h2><p>{app.error.message}</p><dl><dt>起きた場所</dt><dd>{app.error.stage}</dd><dt>確認する行</dt><dd>{app.error.line ?? '見つけられませんでした'} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl><pre>{app.error.traceback}</pre><button onClick={copyPrompt}>AIに相談する文章をコピー</button>{copyNotice && <p className={`copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.text}</p>}</section>}</aside></section>
+
+    <footer>このページはコードとログを外部へ送信しません。実機の動きを確認できた時だけ、「電源を入れたら自動で実行する」を使ってください。</footer>
+  </main>
 }
