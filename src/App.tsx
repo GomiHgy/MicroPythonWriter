@@ -6,6 +6,7 @@ import { useProgrammer } from './hooks/useProgrammer'
 import './App.css'
 
 const statusCopy: Record<string, { icon: string; eyebrow: string; title: string; description: string; tone: 'ready' | 'running' | 'waiting' | 'warning' | 'error' }> = {
+  stopping: { icon: '…', eyebrow: '停止を確認中', title: '今のプログラムを止めています', description: '実行・更新を押した場合は、停止後に自動で続けます。ケーブルを抜かずに待ってください。', tone: 'waiting' },
   unsupported: { icon: '!', eyebrow: '使えない状態', title: 'このブラウザでは使えません', description: 'パソコン版ChromeまたはEdgeで開いてください。', tone: 'error' },
   disconnected: { icon: '1', eyebrow: 'はじめに', title: 'NanoC6をUSBでつなごう', description: '下の「USBをつなぐ」を押して、NanoC6を選んでください。', tone: 'waiting' },
   'connection-lost': { icon: '!', eyebrow: '接続が切れました', title: 'NanoC6との通信が止まりました', description: 'ケーブルと電源を確認して、もう一度つなぎましょう。', tone: 'warning' },
@@ -26,7 +27,7 @@ export default function App() {
   const [timestamps, setTimestamps] = useState(false)
   const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean }>()
   const ready = app.state === 'raw-repl-ready' || app.state === 'stopped'
-  const running = app.state === 'running' || app.state === 'running-no-marker' || app.state === 'starting'
+  const running = app.state === 'running' || app.state === 'running-no-marker'
   const canModifyProgram = ready || running
   const busy = !['raw-repl-ready', 'stopped', 'disconnected', 'connection-lost', 'error', 'unsupported', 'running', 'running-no-marker'].includes(app.state)
   const connected = !['disconnected', 'connection-lost', 'unsupported'].includes(app.state)
