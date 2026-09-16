@@ -8,6 +8,7 @@ import { WebSerialTransport } from '../services/serial/WebSerialTransport'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { DeviceTimeoutError, SerialDisconnectedError } from '../types'
 import { workshopPresets } from '../config/workshops'
+import { setLocale } from '../i18n'
 import { createWorkshopContext, type WorkshopContext } from '../services/prompt/WorkshopRules'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, mounted: false, effects: [] as Array<() => unknown> }))
@@ -83,6 +84,7 @@ beforeEach(() => {
   active = false; callbacks = []; confirmedBy = 'still-running'
   selectedWorkshop = null
   vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn() })
+  setLocale('ja')
   vi.stubGlobal('confirm', vi.fn(() => true))
   vi.stubGlobal('navigator', { serial: { addEventListener: vi.fn(), removeEventListener: vi.fn() } })
   vi.spyOn(WebSerialTransport.prototype, 'connect').mockResolvedValue()
@@ -106,6 +108,49 @@ function kit(kitId: string) {
 }
 
 describe('修正依頼のコードと教材のスナップショット', () => {
+  it.each(['en', 'zh'] as const)('エラー後の言語変更 %s でも操作時のコード・機器・教材・ログを維持する', async locale => {
+    selectedWorkshop = kit('007')
+    await render().connect()
+    render().setSource('print("running-007")\nraise ValueError("failure")')
+    await render().run()
+    render().setLog('original-device-log')
+    callbacks[0].onComplete?.({ ...stopped, state: 'error', intentionalStop: false, stderr: 'Traceback (most recent call last):\n  File "main.py", line 2\nValueError: failure' })
+    const original = render().error!
+    selectedWorkshop = kit('008')
+    render().setSource('print("unrelated-008")')
+    render().setLog('unrelated-new-log')
+    setLocale(locale)
+    const translated = render().error!
+    expect(translated.repairPrompt).toContain(locale === 'en' ? 'Respond in English' : '请用简体中文回答')
+    expect(translated.repairPrompt).toContain('target-007')
+    expect(translated.repairPrompt).toContain('original-device-log')
+    expect(translated.repairPrompt).not.toContain('target-008')
+    expect(translated.repairPrompt).not.toContain('unrelated-008')
+    expect(translated.repairPrompt).not.toContain('unrelated-new-log')
+    expect(translated.sourceSnapshot).toBe(original.sourceSnapshot)
+    expect(translated.deviceSnapshot).toEqual(original.deviceSnapshot)
+    expect(translated.traceback).toBe(original.traceback)
+    expect(WebSerialTransport.prototype.connect).toHaveBeenCalledTimes(1)
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledTimes(1)
+    expect(RawReplClient.prototype.startLongRunning).toHaveBeenCalledTimes(1)
+  })
+
+  it('USB切断後の新しい機器の同期失敗で、以前の機種を確認済みとして使わない', async () => {
+    await render().connect()
+    expect(render().info.nanoC6Confirmed).toBe(true)
+    disconnectDetected()
+    vi.mocked(MicroPythonDevice.prototype.enterNormalMode).mockRejectedValueOnce(new Error('new-device-sync-failure'))
+    await render().connect()
+    const app = render()
+    expect(app.error?.message).toBe('new-device-sync-failure')
+    expect(app.info.nanoC6Confirmed).toBe(false)
+    expect(app.error?.deviceSnapshot?.deviceName).toBe('未接続')
+    expect(app.error?.deviceSnapshot?.nanoC6Confirmed).toBe(false)
+    expect(app.error?.deviceSnapshot?.boardId).toBeUndefined()
+    expect(app.error?.repairPrompt).toContain('確認できた機種: 未確認')
+    expect(app.error?.repairPrompt).toContain('SoC: 未確認')
+  })
+
   it('実行後にコード・キットを変更しても、実行時の文脈と最新ログを使う', async () => {
     selectedWorkshop = kit('007')
     await render().connect()
@@ -251,7 +296,7 @@ describe('修正依頼のコードと教材のスナップショット', () => {
   })
 })
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { setLocale('ja'); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 async function startProgram() {
   await render().connect()

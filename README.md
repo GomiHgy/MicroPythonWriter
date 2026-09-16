@@ -1,7 +1,7 @@
 # MicroPython Web Programmer
 
 MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリアルで操作するサンプル静的Webアプリ。「プログラム」タブでコードを書込み、「コントローラ」タブでは **Web Bluetooth API** でLEDを操作・状態表示する。USB側はWebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
-デモプログラムとしてM5NanoC6を想定して動作させている。
+想定機器は **M5NanoC6／AtomS3Lite**。機種ごとの内蔵LED・ボタンの違いを教材設定に反映する。対応表記は実機検証済みの保証ではなく、対象UIFlow2版と配線で別途確認する。
 
 ## 対応範囲
 
@@ -9,6 +9,21 @@ MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリア�
 - Bluetooth: NanoLED v1対応プログラムが必要。ブラウザと準備は下の「Bluetoothコントローラ」を参照。
 - HTTPSまたは `localhost` が必要。GitHub PagesはHTTPSなので公開後そのまま使える。
 - USB VID/PIDは固定していない。USB接続ボタンのクリックから、ブラウザ標準のポート選択を表示する。
+
+### 機種別のピン
+
+| 機器 | 外付けLED（Grove G2） | 本体ボタン（active LOW） | 内蔵RGB LED | 内蔵LEDの補足 |
+| --- | --- | --- | --- | --- |
+| M5NanoC6（ESP32-C6） | GPIO2 | GPIO9 | GPIO20 | RGB電源制御 GPIO19、青色LED GPIO7 |
+| AtomS3Lite（ESP32-S3） | GPIO2 | GPIO41 | GPIO35 | NanoC6のGPIO19電源制御・GPIO7青色LEDを流用しない |
+
+外付けLEDと内蔵LEDを混同しない。配線定義の正本は [src/config/boards.ts](src/config/boards.ts)。公式資料は [M5NanoC6](https://docs.m5stack.com/en/core/M5NanoC6)、[AtomS3 Lite](https://docs.m5stack.com/en/core/AtomS3%20Lite)。ESP32-S3というSoC名だけでAtomS3Liteとは判定しない。
+
+### 表示言語
+
+画面上部で **日本語／English／简体中文** を切り替えられる。操作ラベル・案内・確認ダイアログに加え、「AIの準備」の文面とエラー修正依頼の説明も選択言語になる。言語はこのブラウザへ保存する（保存不可でもその画面では切替可能）。
+
+言語変更でUSB/BLE接続、実行状態、編集中コード、講師の未適用設定をリセットしない。ユーザーが入力したコード・基準コード・教材名・氏名、シリアルログや機器から取得した原文は翻訳しない。修正依頼は実行時のコード・機器・教材設定を保持したまま説明言語だけを切り替える。
 
 ## 安全設計
 
@@ -51,22 +66,23 @@ USB未接続・Web Serial非対応でも準備文は作れる。コピー、キ�
 
 ### 講師の事前設定
 
-配布用プリセットは [src/config/workshops.ts](src/config/workshops.ts)。共通の `sharedProfile` をもとに、固定のプリセット `id` とキット別の `profile` を定義する。教材ID・版・表示名、UIFlow2版、LED型番・個数・BPP・最大輝度、文字列のキットID、使用機能を記入する。構造と記入例、更新・保存方法は [講師向けガイド](docs/ai-preparation.md) を参照。
+配布用プリセットは [src/config/workshops.ts](src/config/workshops.ts)。M5NanoC6用とAtomS3Lite用を別々に用意している。共通の `sharedProfile` をもとに、固定のプリセット `id` とキット別の `profile` を定義する。`boardId`（`m5nanoc6`／`atoms3lite`）、教材ID・版・表示名、UIFlow2版、LED型番・個数・BPP・最大輝度、文字列のキットID、使用機能を記入する。構造と記入例、更新・保存方法は [講師向けガイド](docs/ai-preparation.md) を参照。
 
 例えば、講師が実物に `001` と割り当てたキットは次の形で追加する。`sharedProfile` の未設定値は、実機に合わせた確認済みの値で別途補完する。
 
 ```typescript
 { id: 'kit-slot-a', profile: {
   ...sharedProfile,
+  boardId: 'm5nanoc6',
   kitId: '001',
   features: { ...sharedProfile.features },
   baseline: { code: '', verification: null },
 } }
 ```
 
-初期プリセットの **キットID・UIFlow2版・LED型番・LED数・最大輝度は未設定**。例示値やUSBから取得したMicroPython版で埋めない。LED_BPP=3、GPIO2/9、GRB、bitstream条件、OFF→点灯時200ms以上は教材の固定仕様。設定が不足・不正なら参加者のコピーとテキスト保存は無効になるが、通常のUSB書込みは止めない。
+両機種の初期プリセットとも **キットID・UIFlow2版・LED型番・LED数・最大輝度は未設定**。例示値やUSBから取得したMicroPython版で埋めない。LED_BPP=3、外付けLED GPIO2、選択機種のボタンピン、GRB、bitstream条件、OFF→点灯時200ms以上は教材の固定仕様。設定が不足・不正なら参加者のコピーとテキスト保存は無効になるが、通常のUSB書込みは止めない。
 
-「講師用設定」を開けば、このブラウザで設定を補完できる。折りたたみは誤操作を減らす表示であり、認証・権限制御ではない。BLEを使う場合は対象UIFlow2で講師が確認した基準コード全文と確認情報、WebコントローラならNanoLED v1確認も必要。未登録・未確認・対象版不一致はBLEだけを使えなくし、設定済みのLED・ボタンの準備は続けられる。未確認のBLE基盤は新規生成しない。
+「講師用設定」を開けば、このブラウザで設定を補完できる。機種とピンは読み取り専用で表示し、機種変更は「使うキット」で行う。折りたたみは誤操作を減らす表示であり、認証・権限制御ではない。BLEを使う場合は対象機種・UIFlow2版で講師が確認した基準コード全文と確認情報、WebコントローラならNanoLED v1確認も必要。未登録・未確認・対象機種や版の不一致はBLEだけを使えなくし、設定済みのLED・ボタンの準備は続けられる。NanoC6で確認したコードをAtomS3Liteの確認済みコードとして流用せず、未確認のBLE基盤は新規生成しない。
 
 設定の変更中・基準コードの読込み中は、古い準備文を取り違えないようコピーとファイル保存を止める。読込みが終わり、必要項目を確認して「設定を適用」すると再び使える。
 
@@ -74,7 +90,7 @@ USB未接続・Web Serial非対応でも準備文は作れる。コピー、キ�
 
 プレビュー・コピー・UTF-8テキスト保存は同じ生成文を使う。コピーが拒否・非対応の場合は「準備文の内容を見る」の読み取り専用欄を選択して手動コピーする。成功通知はコピー完了後だけ表示し、AIへの送信や設定完了とは表示しない。コピー・ファイル保存の両方で、持ち出す全文に秘密情報らしき代入があれば確認できる（検出は補助で、完全ではない）。
 
-基準コードは原則メモリ上だけで保持し、ブラウザへの保存は講師の明示操作でのみ行う。保存内容は教材ID・設定版・プリセットIDに紐づけ、復元時も検証する。設定版を変えた際に旧設定を自動移行しない。破損・容量超過・保存不可では警告し、新機能がアプリを落とさないようにする。編集中コードやログをこの設定領域へ保存しない。
+基準コードは原則メモリ上だけで保持し、ブラウザへの保存は講師の明示操作でのみ行う。保存内容は教材ID・設定版・プリセットID・対象機種に紐づけ、復元時も検証する。設定版を変えた際に旧設定を自動移行しない。例外として、既知の初期NanoC6プリセットで機種IDだけがない旧保存データはNanoC6として復元する。AtomS3Liteへは移行しない。破損・容量超過・保存不可では警告し、新機能がアプリを落とさないようにする。編集中コードやログをこの設定領域へ保存しない。
 
 WriterはAI API・独自チャット・解析機能を追加せず、自動で外部送信しない。ただし、自分でAIへ貼り付けて送った内容は、そのAIサービスへ送信される。AIに渡す固定仕様はコードを強制するサンドボックスでも実機確認の代わりでもない。
 
@@ -126,7 +142,7 @@ Viteの `base` は `./` なのでGitHub Pagesのプロジェクトページで�
 
 Vitestではバイトキューの分割受信、状態遷移、Raw-paste対応／非対応、main.py.tmpのチャンク書込み、サイズ確認、Traceback、意図的停止、boot_option / NVS安全フォールバック、AI修正依頼と秘密情報検出をモックで検証する。
 
-Bluetoothもモックによる通信・状態解析の検証と、実際のNanoC6/LEDを使う確認を分ける。自動テストの成功は、UIFlow2のBLE API、電波、発光、実際のブラウザとOSでの接続成功の証明ではない。NanoLED v1の実機確認項目は [通信仕様のチェックリスト（5節）](docs/ble-protocol.md) を参照し、未実施は `NOT RUN` とする。
+Bluetoothもモックによる通信・状態解析の検証と、実際のM5NanoC6／AtomS3Lite・LEDを使う確認を分ける。自動テストの成功は、UIFlow2のBLE API、電波、発光、実際のブラウザとOSでの接続成功の証明ではない。NanoLED v1の実機確認項目は [通信仕様のチェックリスト（5節）](docs/ble-protocol.md) を参照し、未実施は `NOT RUN` とする。
 
 `npm run dev` の起動後、`/src/test/fixtures/bluetooth.html` で模擬機器を使うUIテスト画面を開ける。実機とは通信せず、20バイト分割の通知、リモコン、スライダー、通知停止、切断・再接続を確認できる。このテスト専用の入口は本番ビルドの `dist` には含まれない。
 
@@ -140,6 +156,8 @@ Bluetoothもモックによる通信・状態解析の検証と、実際のNanoC
 ## 復旧と既知の制約
 
 USBシリアルへ接続できない場合、NanoC6の **GPIO9ボタンを押したままUSBケーブルを接続** するとESP32-C6のFirmware書込み用Download Modeへ入れる。この操作は通常の `main.py` 書込みとは別。必要に応じてMicroPythonファームウェアを書き直す。本アプリはMVPとしてファームウェア書込み機能を含まない。
+
+上記はNanoC6専用の復旧操作であり、AtomS3LiteのGPIO41ボタンへ読み替えない。AtomS3Liteの復旧は [機種別の公式手順](https://docs.m5stack.com/en/core/AtomS3%20Lite) を確認する。
 
 - Python例外が出ない論理的な不具合は自動判定できない。
 - Web Serial API非対応ブラウザではUSB書込みを利用できない。BluetoothはWeb Bluetooth APIの対応が別途必要。

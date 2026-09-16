@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { useLocale } from '../i18n'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
@@ -14,13 +15,14 @@ function initialSettings() {
 }
 
 export function useWorkshopPreparation() {
+  const { locale } = useLocale()
   const [settings, setSettings] = useState(initialSettings)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WorkshopProfile | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const editGeneration = useRef(0)
   const selectedProfile = settings.profiles.find(preset => preset.id === selectedId)?.profile ?? null
-  const context = useMemo(() => selectedProfile ? createWorkshopContext(selectedProfile) : null, [selectedProfile])
+  const context = useMemo(() => selectedProfile ? createWorkshopContext(selectedProfile, locale) : null, [selectedProfile, locale])
   const prompt = useMemo(() => context ? buildStartPrompt(context) : '', [context])
   const draftErrors = useMemo(() => draft ? validateWorkshopProfile(draft) : [], [draft])
   const hasPendingChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(selectedProfile), [draft, selectedProfile])
@@ -40,7 +42,8 @@ export function useWorkshopPreparation() {
     setIsImporting(false)
     setDraft(previous => {
       if (!previous) return previous
-      const next = { ...previous, ...patch, materialId: previous.materialId, revision: previous.revision }
+      // 機器の変更はプリセット選択で行う。別機器の配線・実機確認を混ぜない。
+      const next = { ...previous, ...patch, materialId: previous.materialId, revision: previous.revision, boardId: previous.boardId }
       if (next.firmwareVersion !== previous.firmwareVersion || next.baseline.code !== previous.baseline.code) next.baseline = { ...next.baseline, verification: null }
       return next
     })
@@ -69,7 +72,7 @@ export function useWorkshopPreparation() {
       setNotice('基準コード・対象UIFlow2版・確認した講師名を入力してください。')
       return
     }
-    editDraft({ baseline: { code: draft.baseline.code, verification: { code: draft.baseline.code, firmwareVersion: draft.firmwareVersion, confirmedBy: confirmedBy.trim(), confirmedAt: new Date().toISOString(), nanoLedV1 } } })
+    editDraft({ baseline: { code: draft.baseline.code, verification: { code: draft.baseline.code, firmwareVersion: draft.firmwareVersion, boardId: draft.boardId, confirmedBy: confirmedBy.trim(), confirmedAt: new Date().toISOString(), nanoLedV1 } } })
   }
 
   async function importBaseline(file: Pick<File, 'name' | 'size' | 'text'>) {

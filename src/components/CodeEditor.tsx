@@ -5,7 +5,7 @@ import { defaultKeymap, indentWithTab } from '@codemirror/commands'
 import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 
-export function CodeEditor({ value, onChange, dark, wrap, errorLine, onSave, onRun }: { value: string; onChange(value: string): void; dark: boolean; wrap: boolean; errorLine?: number; onSave(): void; onRun(): void }) {
+export function CodeEditor({ value, onChange, dark, wrap, errorLine, onSave, onRun, label = 'Pythonコードエディタ' }: { value: string; onChange(value: string): void; dark: boolean; wrap: boolean; errorLine?: number; onSave(): void; onRun(): void; label?: string }) {
   const host = useRef<HTMLDivElement>(null); const viewRef = useRef<EditorView | null>(null)
   const actions = useRef({ onSave, onRun })
   useEffect(() => { actions.current = { onSave, onRun } }, [onSave, onRun])
@@ -18,5 +18,5 @@ export function CodeEditor({ value, onChange, dark, wrap, errorLine, onSave, onR
   }, [dark, wrap])
   useEffect(() => { const view = viewRef.current; if (view && value !== view.state.doc.toString()) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } }) }, [value])
   useEffect(() => { const view = viewRef.current; if (errorLine && view) { const line = view.state.doc.line(Math.min(errorLine, view.state.doc.lines)); view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: 'center' }) }) } }, [errorLine])
-  return <div className="editor" ref={host} aria-label="Pythonコードエディタ" />
+  return <div className="editor" ref={host} aria-label={label} />
 }

@@ -1,4 +1,7 @@
+import { isBoardId, type BoardId } from '../../config/boards'
+
 export interface WorkshopVerification {
+  boardId?: BoardId
   code: string
   firmwareVersion: string
   confirmedBy: string
@@ -7,6 +10,7 @@ export interface WorkshopVerification {
 }
 
 export interface WorkshopProfile {
+  boardId: BoardId
   materialId: string
   revision: string
   displayName: string
@@ -40,7 +44,7 @@ const nullableString = (value: unknown) => value === null || typeof value === 's
 const nullableNumber = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value))
 
 export function isWorkshopProfile(value: unknown): value is WorkshopProfile {
-  if (!record(value) || !exactKeys(value, ['materialId', 'revision', 'displayName', 'kitId', 'firmwareVersion', 'ledModel', 'ledCount', 'ledBpp', 'maxBrightnessPercent', 'features', 'baseline'])) return false
+  if (!record(value) || !exactKeys(value, ['boardId', 'materialId', 'revision', 'displayName', 'kitId', 'firmwareVersion', 'ledModel', 'ledCount', 'ledBpp', 'maxBrightnessPercent', 'features', 'baseline']) || !isBoardId(value.boardId)) return false
   if (![value.materialId, value.revision, value.displayName].every(item => typeof item === 'string' && item.length <= MAX_PROFILE_TEXT_LENGTH)) return false
   if (![value.kitId, value.firmwareVersion, value.ledModel].every(item => nullableString(item) && (item === null || (item as string).length <= MAX_PROFILE_TEXT_LENGTH))) return false
   if (![value.ledCount, value.ledBpp, value.maxBrightnessPercent].every(nullableNumber)) return false
@@ -48,7 +52,8 @@ export function isWorkshopProfile(value: unknown): value is WorkshopProfile {
   if (!record(value.baseline) || !exactKeys(value.baseline, ['code', 'verification']) || typeof value.baseline.code !== 'string' || value.baseline.code.length > MAX_BASELINE_CODE_LENGTH) return false
   const verification = value.baseline.verification
   if (verification === null) return true
-  return record(verification) && exactKeys(verification, ['code', 'firmwareVersion', 'confirmedBy', 'confirmedAt', 'nanoLedV1'])
+  return record(verification) && exactKeys(verification, ['code', 'firmwareVersion', 'confirmedBy', 'confirmedAt', 'nanoLedV1', ...(Object.hasOwn(verification, 'boardId') ? ['boardId'] : [])])
+    && (!Object.hasOwn(verification, 'boardId') || isBoardId(verification.boardId))
     && typeof verification.code === 'string' && verification.code.length <= MAX_BASELINE_CODE_LENGTH
     && [verification.firmwareVersion, verification.confirmedBy, verification.confirmedAt].every(item => typeof item === 'string' && item.length <= MAX_PROFILE_TEXT_LENGTH)
     && typeof verification.nanoLedV1 === 'boolean'
@@ -56,6 +61,7 @@ export function isWorkshopProfile(value: unknown): value is WorkshopProfile {
 
 export function cloneWorkshopProfile(profile: WorkshopProfile): WorkshopProfile {
   return {
+    boardId: profile.boardId,
     materialId: profile.materialId,
     revision: profile.revision,
     displayName: profile.displayName,
@@ -72,6 +78,7 @@ export function cloneWorkshopProfile(profile: WorkshopProfile): WorkshopProfile 
 
 export function validateWorkshopProfile(profile: WorkshopProfile): string[] {
   const errors: string[] = []
+  if (!isBoardId(profile.boardId)) errors.push('対応機器をM5NanoC6またはAtomS3Liteから選んでください。')
   if (!identifier.test(profile.materialId)) errors.push('教材IDは半角英数字で始まる64文字以内の英数字・ハイフン・アンダースコア・ドットにしてください。')
   if (!identifier.test(profile.revision)) errors.push('教材の版は半角英数字で始まる64文字以内の英数字・ハイフン・アンダースコア・ドットにしてください。')
   if (!validProfileText(profile.displayName)) errors.push('教材の表示名を200文字以内で設定してください。空欄・改行・未記入のテンプレートは使えません。')
@@ -95,6 +102,7 @@ export function getBlePreparationReasons(profile: WorkshopProfile): string[] {
   const verification = profile.baseline.verification
   if (!verification) reasons.push('BLE基準コードの実機確認情報が未登録です。講師の確認が必要です。')
   else {
+    if ((verification.boardId ?? 'm5nanoc6') !== profile.boardId) reasons.push('BLEの確認対象機器が設定と一致しません。講師の再確認が必要です。')
     if (verification.code !== code) reasons.push('基準コードが確認時から変更されています。講師の再確認が必要です。')
     if (verification.firmwareVersion !== profile.firmwareVersion) reasons.push('BLEの確認対象UIFlow2版が設定と一致しません。講師の再確認が必要です。')
     if (!validProfileText(verification.confirmedBy) || !validProfileText(verification.confirmedAt) || !Number.isFinite(Date.parse(verification.confirmedAt))) reasons.push('BLEを確認した講師名と確認日時を設定してください。')

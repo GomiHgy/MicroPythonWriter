@@ -1,6 +1,8 @@
 # NanoLED v1：コントローラ通信仕様（講師・実装者向け）
 
-Webアプリの「コントローラ」タブと、NanoC6上で実行するBLEプログラムの共通仕様。USBでの書込みとは別の通信で、接続だけではプログラムを書き換えない。
+Webアプリの「コントローラ」タブと、M5NanoC6／AtomS3Lite上で実行するBLEプログラムの共通仕様。USBでの書込みとは別の通信で、接続だけではプログラムを書き換えない。対象機種・UIFlow2版ごとに講師の実機確認が必要であり、NanoC6での確認をAtomS3Liteの確認として流用しない。
+
+画面は日本語・英語・簡体字中国語に切り替えられるが、通信仕様は言語によって変えない。`NanoLED-` という名前の接頭辞、UUID、ASCIIコマンド、JSONキー、モード名・HEXデータは両機種で共通のまま維持する。名前にNanoと含まれていてもNanoC6専用とは限らない。
 
 **この仕様は、従来の任意のBLE基準コードと自動的に互換になるものではない。** 本リポジトリには、対象のUIFlow2ファームウェアで実機確認済みのBLE基準コードは含まれていない。講師は [prompt.md のプロンプトE0](../prompt.md) を使い、手元の確認済み基準コードへ本仕様を組み込み、実機確認してから配布する。未確認のAPIやライブラリを推測して置き換えない。
 
@@ -82,13 +84,17 @@ TXへ **ASCIIだけのJSONを1行、末尾にLF** で送る。ログやデバッ
 
 ## 4. ハードウェア上の固定条件
 
-[prompt.md](../prompt.md) のGPIO2、GPIO9アクティブLOW、キットのLED数、最大輝度、`machine.bitstream()`、800kHz用の固定タイミング、GRB送信は維持する。`neopixel`を追加しない。
+[prompt.md](../prompt.md) と選択キットの `boardId` に従い、外付けLEDはGrove G2 / GPIO2、本体ボタンは **M5NanoC6ならGPIO9、AtomS3LiteならGPIO41**（両方active LOW）とする。キットのLED数、最大輝度、`machine.bitstream()`、800kHz用の固定タイミング、GRB送信は維持する。`neopixel`を追加しない。
+
+外付けLEDを内蔵LEDへ置き換えない。M5NanoC6の内蔵RGBはGPIO20、RGB電源制御はGPIO19、青色LEDはGPIO7。AtomS3Liteの内蔵RGBはGPIO35で、NanoC6の電源制御ピンを流用しない。配線は [M5NanoC6](https://docs.m5stack.com/en/core/M5NanoC6)／[AtomS3 Lite](https://docs.m5stack.com/en/core/AtomS3%20Lite) の公式資料と照合する。
 
 OFF状態かつ全LED出力0から点灯モードへ移るときは、起動直後を含めて最低200msの非ブロッキングフェードを適用する。点灯中の色変更、明るさ変更、アニメーション中の一時的な黒フレームでは再開始しない。OFFコマンドはフェードインを取り消して消灯する。
 
 ## 5. 講師の受入確認（実機）
 
 以下は自動テストではなく、対象ファームウェア・実際のLED・対応ブラウザで行う。未実施なら `NOT RUN` と記録する。
+
+- 対象機種・UIFlow2版・LED構成を記録し、ボタンと外付けLEDのピンが上記の機種別定義に一致する。
 
 - 固有名のキットを選び、接続・初回状態受信・切断・再接続できる。
 - PINK/BLUE/MAGIC/RAINBOW/OFFがすべて反映され、OFF後も接続とボタンが使える。

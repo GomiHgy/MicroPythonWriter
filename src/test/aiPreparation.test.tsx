@@ -6,10 +6,12 @@ import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
+import { setLocale } from '../i18n'
 
 const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as Array<() => void>, focus: vi.fn(), select: vi.fn() }))
 vi.mock('react', async () => ({
   ...await vi.importActual<typeof import('react')>('react'),
+  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
   useState: <Value,>(initial: Value | (() => Value)) => {
     const index = harness.cursor++
     if (!(index in harness.slots)) harness.slots[index] = typeof initial === 'function' ? (initial as () => Value)() : initial
@@ -24,7 +26,7 @@ vi.mock('react', async () => ({
   },
 }))
 
-const profile: WorkshopProfile = { materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
+const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
 function preparation(): WorkshopPreparation {
   const context = createWorkshopContext(profile)
   return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
@@ -47,10 +49,53 @@ function event(element: Element, name: string, value?: unknown) { return (elemen
 function render(prep: WorkshopPreparation, onOpenProgram = vi.fn()) { harness.cursor = 0; const node = AiPreparationPanel({ preparation: prep, onOpenProgram }); harness.effects.splice(0).forEach(effect => effect()); return node }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
 
-beforeEach(() => { harness.slots = []; harness.cursor = 0; harness.effects = []; harness.focus.mockClear(); harness.select.mockClear(); vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } }); vi.stubGlobal('confirm', vi.fn(() => true)) })
+beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harness.effects = []; harness.focus.mockClear(); harness.select.mockClear(); vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } }); vi.stubGlobal('confirm', vi.fn(() => true)) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  it('英語・中国語へ切り替えてもプレビュー状態と入力済みデータを維持する', () => {
+    const prep = preparation()
+    event(find(render(prep), element => element.type === 'details' && element.props.className === 'ai-preview'), 'onToggle', { currentTarget: { open: true } })
+    for (const [locale, label] of [['en', 'Copy setup prompt for AI'], ['zh', '复制给 AI 的准备提示词']] as const) {
+      setLocale(locale)
+      const node = render(prep)
+      expect(content(node)).toContain(label)
+      expect(content(node)).toContain('テスト教材')
+      expect(find(node, element => element.type === 'details' && element.props.className === 'ai-preview').props.open).toBe(true)
+      expect(find(node, element => element.type === 'textarea').props.value).toBe(prep.prompt)
+      expect(prep.selectProfile).not.toHaveBeenCalled()
+      expect(prep.editDraft).not.toHaveBeenCalled()
+    }
+  })
+  it.each(['m5nanoc6', 'atoms3lite'] as const)('%s の内蔵LED・外付けLED・ボタンを区別して表示する', boardId => {
+    const prep = { ...preparation(), draft: { ...profile, boardId } }
+    const panel = render(prep)
+    const teacher = find(panel, element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const node = (teacher.type as (props: typeof teacher.props) => ReactNode)(teacher.props)
+    const text = content(node)
+    expect(text).toContain('外付けLED: GPIO2')
+    expect(text).toContain(boardId === 'm5nanoc6' ? '本体ボタン: GPIO9' : '本体ボタン: GPIO41')
+    expect(text).toContain(boardId === 'm5nanoc6' ? '内蔵RGB LED: GPIO20' : '内蔵RGB LED: GPIO35')
+    if (boardId === 'atoms3lite') expect(text).not.toContain('内蔵RGB電源')
+  })
+  it('講師用の開閉や確認者入力をリセットせず、英語・中国語の全ラベルを表示する', () => {
+    const prep = preparation()
+    const teacher = find(render(prep), element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const renderTeacher = () => { harness.cursor = 0; return (teacher.type as (props: typeof teacher.props) => ReactNode)(teacher.props) }
+    const nameInput = find(renderTeacher(), element => element.type === 'label' && element.props.className === 'ai-confirm-name')
+    event(find(nameInput, element => element.type === 'input'), 'onChange', { target: { value: '講師の入力データ' } })
+    for (const [locale, title] of [['en', 'Instructor settings'], ['zh', '讲师设置']] as const) {
+      setLocale(locale)
+      const node = renderTeacher()
+      expect(content(node)).toContain(title)
+      expect(content(node)).not.toMatch(/[ぁ-んァ-ヶ]/)
+      const label = find(node, element => element.type === 'label' && element.props.className === 'ai-confirm-name')
+      expect(find(label, element => element.type === 'input').props.value).toBe('講師の入力データ')
+      expect(prep.editDraft).not.toHaveBeenCalled()
+    }
+  })
   it('コピー完了が返らなくても操作を復帰し、遅い完了で成功表示に変えない', async () => {
     vi.useFakeTimers()
     let resolve!: () => void

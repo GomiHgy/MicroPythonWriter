@@ -21,7 +21,18 @@ export function restoreWorkshopProfile(preset: WorkshopPreset, getStorage: () =>
     const record = data as Record<string, unknown>
     if (Object.keys(record).sort().join(',') !== 'materialId,presetId,profile,revision,schemaVersion') throw new Error('shape')
     if (record.schemaVersion !== STORAGE_SCHEMA || record.presetId !== preset.id || record.materialId !== preset.profile.materialId || record.revision !== preset.profile.revision) throw new Error('version')
-    if (!isWorkshopProfile(record.profile) || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile).length) throw new Error('profile')
+    // 旧版は NanoC6 だけだった。既知の配布設定に限り機器識別子を補い、
+    // 任意の旧データや AtomS3Lite の設定へ NanoC6 の配線を流用しない。
+    const storedProfile = record.profile
+    if (storedProfile && typeof storedProfile === 'object' && !Array.isArray(storedProfile)
+      && !('boardId' in storedProfile)
+      && preset.id === 'nano-c6-led-default'
+      && preset.profile.materialId === 'nano-c6-led-workshop'
+      && preset.profile.revision === 'writer-ai-1'
+      && preset.profile.boardId === 'm5nanoc6') {
+      record.profile = { ...storedProfile, boardId: 'm5nanoc6' }
+    }
+    if (!isWorkshopProfile(record.profile) || record.profile.boardId !== preset.profile.boardId || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile).length) throw new Error('profile')
     return { profile: cloneWorkshopProfile(record.profile), notice: '' }
   } catch {
     return { profile: fallback, notice: '保存済みの設定を読み込めませんでした。未対応の版・破損・容量・保存機能を講師が確認してください。配布された設定を使っています。' }
@@ -29,7 +40,7 @@ export function restoreWorkshopProfile(preset: WorkshopPreset, getStorage: () =>
 }
 
 export function storeWorkshopProfile(preset: WorkshopPreset, profile: WorkshopProfile, persistBaseline: boolean, getStorage: () => SettingsStorage = () => localStorage): string {
-  if (!isWorkshopProfile(profile) || validateWorkshopProfile(profile).length || profile.materialId !== preset.profile.materialId || profile.revision !== preset.profile.revision) return '設定が不正なため保存できません。講師用設定を確認してください。'
+  if (!isWorkshopProfile(profile) || validateWorkshopProfile(profile).length || profile.boardId !== preset.profile.boardId || profile.materialId !== preset.profile.materialId || profile.revision !== preset.profile.revision) return '設定が不正なため保存できません。講師用設定を確認してください。'
   const saved = cloneWorkshopProfile(profile)
   if (!persistBaseline) saved.baseline = { code: '', verification: null }
   try {

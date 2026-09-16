@@ -4,6 +4,7 @@ import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile } from '../services/workshop/WorkshopProfile'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
+import { boardDefinitions, identifyBoard, identifySoc } from '../config/boards'
 
 function profile(): WorkshopProfile {
   return {
@@ -35,6 +36,30 @@ function bleProfile(): WorkshopProfile {
 }
 
 describe('WorkshopProfileの設定検証', () => {
+  it('AtomS3Liteを別プリセットとし未確定設定やNanoC6用基準コードを流用しない', () => {
+    const atom = workshopPresets.find(preset => preset.profile.boardId === 'atoms3lite')!
+    expect(atom.id).toBe('atom-s3-lite-led-default')
+    expect(atom.profile.materialId).not.toBe(workshopPresets[0].profile.materialId)
+    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', kitId: null, firmwareVersion: null, ledModel: null, ledCount: null, maxBrightnessPercent: null, baseline: { code: '', verification: null } })
+    expect(buildStartPrompt(createWorkshopContext(atom.profile))).toBe('')
+  })
+
+  it('型番を指定せずSoCだけから製品を断定しない', () => {
+    expect(identifyBoard('M5Stack NanoC6 with ESP32C6')).toBe('m5nanoc6')
+    expect(identifyBoard('M5Stack AtomS3-Lite with ESP32S3')).toBe('atoms3lite')
+    for (const text of ['ESP32-S3', 'ESP32C6', 'AtomS3', 'AtomS3R', 'M5Stack CoreS3', '9']) expect(identifyBoard(text)).toBeUndefined()
+    expect(identifySoc('ESP32-S3')).toBe('ESP32-S3')
+    expect(identifySoc('ESP32C6')).toBe('ESP32-C6')
+    expect(boardDefinitions.m5nanoc6).toMatchObject({ ledPin: 2, buttonPin: 9, rgbPin: 20, rgbPowerPin: 19, statusLedPin: 7 })
+    expect(boardDefinitions.atoms3lite).toMatchObject({ ledPin: 2, buttonPin: 41, rgbPin: 35, rgbPowerPin: null, statusLedPin: null })
+  })
+
+  it('機種なし・未知機種を構造検証で拒否する', () => {
+    const value: Record<string, unknown> = { ...profile() }
+    delete value.boardId
+    expect(isWorkshopProfile(value)).toBe(false)
+    expect(isWorkshopProfile({ ...profile(), boardId: 'esp32-s3' })).toBe(false)
+  })
   it('配布プリセットで未確定の実機設定を推測しない', () => {
     const preset = workshopPresets[0]
     expect(preset.id).toBe('nano-c6-led-default')
@@ -102,6 +127,17 @@ describe('WorkshopProfileの設定検証', () => {
 })
 
 describe('BLEの準備状態', () => {
+  it('旧NanoC6確認をAtomS3Liteへ流用せず、確認機種を一致させる', () => {
+    const value = bleProfile()
+    expect(createWorkshopContext(value).bleEnabled).toBe(true)
+    value.boardId = 'atoms3lite'
+    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(getBlePreparationReasons(value).join('\n')).toContain('確認対象機器')
+    value.baseline.verification!.boardId = 'atoms3lite'
+    expect(createWorkshopContext(value).bleEnabled).toBe(true)
+    value.boardId = 'm5nanoc6'
+    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+  })
   it('基準コードが未登録・未確認でもLEDとボタン用の準備は止めない', () => {
     const value = profile()
     value.features.ble = true
@@ -200,6 +236,40 @@ describe('BLEの準備状態', () => {
 })
 
 describe('一回で渡せる初回準備文と共通ルール', () => {
+  it('AtomS3Liteではボタン41・内蔵RGB35を使い、NanoC6の内蔵電源制御を流用しない', () => {
+    const value = { ...profile(), boardId: 'atoms3lite' as const }
+    const prompt = buildStartPrompt(createWorkshopContext(value))
+    for (const text of ['機器: M5Stack AtomS3Lite', 'SoC: ESP32-S3', '本体ボタンを使う場合はGPIO41のアクティブLOW', '内蔵RGB LEDはGPIO35', '未確認のRGB電源制御ピンを追加しない', '外付けLEDはGrove G2のGPIO2']) expect(prompt).toContain(text)
+    expect(prompt).not.toContain('本体ボタンを使う場合はGPIO9')
+    expect(prompt).not.toContain('RGB電源有効化はGPIO19をHIGH')
+    const noButton = buildStartPrompt(createWorkshopContext({ ...value, features: { ...value.features, button: false } }))
+    expect(noButton).toContain('GPIO41の初期化・読み取り・チャタリング対策・ボタン操作を追加しない')
+  })
+
+  it.each(['en', 'zh'] as const)('初回準備文全体を%sへ切り替え、固定値と基準コードを保持する', locale => {
+    const value = bleProfile()
+    value.boardId = 'atoms3lite'
+    value.displayName = 'Test workshop'
+    value.baseline.verification!.boardId = value.boardId
+    value.baseline.verification!.confirmedBy = 'Test instructor'
+    const context = createWorkshopContext(value, locale)
+    const prompt = buildStartPrompt(context)
+    expect(context.locale).toBe(locale)
+    for (const text of ['AtomS3Lite', 'ESP32-S3', 'GPIO41', 'GPIO35', 'GPIO2', 'LED_COUNT: 37', 'MAX_BRIGHTNESS_PERCENT: 25', 'WS2812_TIMING_NS = (400, 850, 800, 450)', 'machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)', 'MIN_OFF_TO_ON_FADE_MS = 200', 'period_ms = 3000 - 29 * n', '6e400001-b5a3-f393-e0a9-e50e24dcca9e', 'NanoLED-007', value.baseline.code]) expect(prompt).toContain(text)
+    expect(prompt).not.toMatch(/[\u3040-\u30ff]/u)
+    expect(prompt).not.toContain('{buttonPin}')
+    expect(prompt).toContain(locale === 'en' ? 'Respond in English' : '请用简体中文回答')
+  })
+
+  it.each(['en', 'zh'] as const)('不正設定とBLE未準備の説明も%sにする', locale => {
+    const value = { ...profile(), features: { button: true, ble: true, controller: true }, ledCount: null }
+    const context = createWorkshopContext(value, locale)
+    expect(context.errors.length).toBeGreaterThan(0)
+    expect(context.errors.join('\n')).not.toMatch(/[\u3040-\u30ff]/u)
+    expect(context.bleReasons.join('\n')).not.toMatch(/[\u3040-\u30ff]/u)
+    expect(context.rules).toContain(locale === 'en' ? 'Settings are incomplete or invalid' : '设置不完整或无效')
+    expect(buildStartPrompt(context)).toBe('')
+  })
   it('ボタンなしのキットにGPIO9の初期化・操作・相談を追加させない', () => {
     const value = bleProfile()
     value.features.button = false

@@ -5,6 +5,7 @@ import { CodeEditor } from '../components/CodeEditor'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import type { AppError } from '../types'
+import { setLocale } from '../i18n'
 
 type Element = ReactElement<Record<string, unknown>>
 
@@ -32,6 +33,7 @@ vi.mock('react', async () => ({
     }]
   },
   useEffect: vi.fn(),
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
 }))
 vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown) => { harness.contexts.push(context); return harness.programmer } }))
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
@@ -63,6 +65,7 @@ function event(element: Element, name: string, value?: unknown) {
 }
 
 beforeEach(() => {
+  setLocale('ja')
   harness.slots = []; harness.cursor = 0
   harness.preparation.context = null; harness.contexts = []; harness.programmer.error = undefined
   harness.programmer.state = 'running'; harness.programmer.supported = true; harness.programmer.source = 'print("keep this draft")'
@@ -73,7 +76,7 @@ beforeEach(() => {
   vi.stubGlobal('document', { getElementById: harness.getElementById })
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { setLocale('ja'); vi.unstubAllGlobals() })
 
 it('最初はプログラムタブを表示し、両タブの見出しとパネルを関連付ける', () => {
   const view = render()
@@ -190,4 +193,18 @@ it('エラー後に変更された編集コードへ過去のエラー行を表�
 it('機器上のコードが未取得の場合は編集コードにエラー行を表示しない', () => {
   harness.programmer.error = { exceptionType: 'Error', message: 'test', traceback: 'test', intentionalInterrupt: false, stage: '停止', repairPrompt: 'unknown code', sourceKnown: false, line: 7 }
   expect(find(render(), element => element.type === CodeEditor).props.errorLine).toBeUndefined()
+})
+
+it.each([['en', 'Program', 'Language'], ['zh', '程序', '显示语言']])('言語 %s を切り替えても編集・タブ・機器操作を維持する', (locale, programLabel, languageLabel) => {
+  event(byId(render(), 'tab-preparation'), 'onClick')
+  const editorBefore = find(render(), element => element.type === CodeEditor).props.value
+  const selector = find(render(), element => element.type === 'select' && element.props['aria-label'] === '表示言語')
+  event(selector, 'onChange', { target: { value: locale } })
+  const view = render()
+  expect(byId(view, 'tab-program').props.children).toContain(programLabel)
+  expect(byId(view, 'panel-preparation').props.hidden).toBe(false)
+  expect(find(view, element => element.type === 'select' && element.props['aria-label'] === languageLabel).props.value).toBe(locale)
+  expect(find(view, element => element.type === CodeEditor).props.value).toBe(editorBefore)
+  expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
+  for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset'] as const) expect(harness.programmer[operation]).not.toHaveBeenCalled()
 })

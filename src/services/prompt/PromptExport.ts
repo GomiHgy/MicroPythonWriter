@@ -1,4 +1,5 @@
 import { hasSensitiveAssignments } from './RepairPromptBuilder'
+import { getLocale, translate } from '../../i18n'
 
 export const PREPARATION_COPIED_MESSAGE = '準備文をコピーしたよ。好きなAIの新しい会話に貼り付けて送ってね'
 export const PREPARATION_COPY_FAILED_MESSAGE = 'コピーできませんでした。「準備文の内容を見る」のテキスト欄を選択して、手動でコピーしてください。'
@@ -10,7 +11,7 @@ export type SensitiveConfirmation = (message: string) => boolean
 export function allowPromptExport(text: string, confirmSensitive: SensitiveConfirmation = message => confirm(message)) {
   if (!text) return false
   if (!hasSensitiveAssignments(text)) return true
-  return confirmSensitive('準備文にパスワードやAPIキーなどの秘密情報が含まれる可能性があります。「準備文の内容を見る」で内容を確認できます。外へ持ち出してよい内容ですか？\n検出は補助で、すべての秘密情報を見つけられるわけではありません。')
+  return confirmSensitive(translate(getLocale(), '準備文にパスワードやAPIキーなどの秘密情報が含まれる可能性があります。「準備文の内容を見る」で内容を確認できます。外へ持ち出してよい内容ですか？\n検出は補助で、すべての秘密情報を見つけられるわけではありません。'))
 }
 
 export async function copyPreparationPrompt(text: string, confirmSensitive?: SensitiveConfirmation, getClipboard: () => Pick<Clipboard, 'writeText'> | undefined = () => navigator.clipboard): Promise<ExportResult> {

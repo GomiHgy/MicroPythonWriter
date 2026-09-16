@@ -12,6 +12,51 @@ const profile = (): WorkshopProfile => ({ ...workshopPresets[0].profile, kitId: 
 const builder = new RepairPromptBuilder()
 
 describe('ワークショップ修正依頼', () => {
+  it.each(['en', 'zh'] as const)('アプリ由来の未取得表示と操作名のみ%sへ翻訳し、原文データを変えない', locale => {
+    const unavailableDevice = { ...device, deviceName: '未接続', microPythonVersion: '未取得', firmwareInfo: '未取得', nanoC6Confirmed: false }
+    const rawError = { ...error, message: '機器の原文エラー', traceback: '機器の原文トレースバック' }
+    const repair = builder.build(rawError, '# 原文コード', unavailableDevice, '原文ログ: 未取得', 'USB接続', null, { locale })
+    expect(repair).toContain(locale === 'en' ? 'Device: Not connected' : '设备: 未连接')
+    expect(repair).toContain(locale === 'en' ? 'MicroPython: Not available' : 'MicroPython: 尚未获取')
+    expect(repair).toContain(locale === 'en' ? 'Firmware information: Not available' : '固件信息: 尚未获取')
+    expect(repair).toContain(locale === 'en' ? '\nUSB connection\n' : '\nUSB 连接\n')
+    for (const raw of ['機器の原文エラー', '機器の原文トレースバック', '# 原文コード', '原文ログ: 未取得']) expect(repair).toContain(raw)
+    const runtime = builder.build(error, 'source', { ...device, deviceName: '実機の名前', firmwareInfo: '未取得を含む実機原文', microPythonVersion: '実機バージョン' }, 'log', 'DEVICE_RUNTIME_ERROR', null, { locale })
+    for (const raw of ['実機の名前', '未取得を含む実機原文', '実機バージョン', '(DEVICE_RUNTIME_ERROR)']) expect(runtime).toContain(raw)
+  })
+  it.each(['en', 'zh'] as const)('言語変更後も操作時設定・コード・ログを保持して%sで全文生成する', locale => {
+    const input = { ...profile(), boardId: 'atoms3lite' as const, displayName: 'Test material' }
+    const context = createWorkshopContext(input)
+    const atom = { ...device, deviceName: 'AtomS3Lite', boardId: 'atoms3lite' as const, soc: 'ESP32-S3' as const, nanoC6Confirmed: false }
+    const source = '# 日本語コードは変えない\nprint("snapshot")'
+    const log = '日本語ログも変えない'
+    const repair = builder.build(error, source, atom, log, 'DEVICE_RUNTIME_ERROR', context, { locale })
+    for (const value of [source, log, error.traceback, 'GPIO41', 'GPIO35', 'SoC: ESP32-S3', 'LED_COUNT: 37', 'instructor-uiflow-version']) expect(repair).toContain(value)
+    expect(repair).not.toContain('## ワークショップの設定スナップショット')
+    expect(repair).toContain(locale === 'en' ? 'Respond in English' : '请用简体中文回答')
+    expect(context.locale).toBe('ja')
+    expect(context.profile.ledCount).toBe(37)
+  })
+
+  it('汎用機器へNanoC6とESP32-C6を固定で割り当てない', () => {
+    const unknown = { ...device, deviceName: 'MicroPython device', microPythonVersion: 'v1', nanoC6Confirmed: false }
+    const repair = builder.build(error, 'source', unknown, 'log', '実行')
+    expect(repair).toContain('確認できた機種: 未確認')
+    expect(repair).toContain('SoC: 未確認')
+    expect(repair).not.toContain('SoC: ESP32-C6')
+    const s3 = builder.build(error, 'source', { ...unknown, deviceName: 'ESP32-S3' }, 'log', '実行')
+    expect(s3).toContain('確認できた機種: 未確認')
+    expect(s3).toContain('SoC: ESP32-S3')
+  })
+
+  it('選択キットと取得機器の不一致を隠さず、GPIO依存の修正を保留する', () => {
+    const context = createWorkshopContext({ ...profile(), boardId: 'atoms3lite' })
+    const repair = builder.build(error, 'source', device, 'log', '実行', context)
+    expect(repair).toContain('確認できた機種: M5NanoC6')
+    expect(repair).toContain('機器: M5Stack AtomS3Lite')
+    expect(repair).toContain('選択教材と取得した機器の種類が一致しません')
+    expect(repair).toContain('設定に依存する修正版の生成は保留')
+  })
   it('初回準備文と同じ固定ルールを全文1回だけ使い、修正対象の情報を保持する', () => {
     const context = createWorkshopContext(profile())
     const source = 'print("complete-source")\n' + 'value = 1\n'.repeat(1000) + 'raise ValueError("failed")'

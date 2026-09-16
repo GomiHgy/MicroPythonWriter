@@ -36,6 +36,8 @@
 .ai-file-label input { box-sizing: border-box; max-width: 100%; font-size: .8rem; }
 .ai-confirm-name { max-width: 380px; }
 .ai-teacher .notice { margin: 14px 0; }
+.ai-board-pins { display: block; font-size: .88rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ai-board-pins p { margin: 5px 0; }
 .ai-teacher code { overflow-wrap: anywhere; }
 :root[data-theme=dark] .ai-preparation select, :root[data-theme=dark] .ai-preparation textarea, :root[data-theme=dark] .ai-settings-grid input, :root[data-theme=dark] .ai-confirm-name input { background: #101c29; color: #eef5ff; border-color: #55708a; }
 :root[data-theme=dark] .ai-help, :root[data-theme=dark] .ai-privacy, :root[data-theme=dark] .ai-simple-steps span, :root[data-theme=dark] .ai-kit-summary p span { color: #adbed0; }

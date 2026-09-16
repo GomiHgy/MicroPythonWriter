@@ -1,9 +1,27 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyPreparationPrompt, downloadPreparationPrompt, preparationFileName, PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
+import { setLocale, translate } from '../i18n'
 
+beforeEach(() => { setLocale('ja') })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('準備文のコピーとファイル保存', () => {
+  it.each(['en', 'zh'] as const)('%s の秘密情報確認をコピーと保存の両方で使い、内容は翻訳し直さない', async locale => {
+    setLocale(locale)
+    const confirmation = vi.fn<(message: string) => boolean>(() => false)
+    const writeText = vi.fn()
+    const prompt = 'API_KEY="コード内の日本語"'
+    const copied = await copyPreparationPrompt(prompt, confirmation, () => ({ writeText }))
+    const saved = downloadPreparationPrompt(prompt, '007', 'test-1', confirmation)
+    expect(copied.cancelled).toBe(true)
+    expect(saved.cancelled).toBe(true)
+    expect(confirmation).toHaveBeenCalledTimes(2)
+    const question = confirmation.mock.calls[0][0]
+    expect(question).toContain(locale === 'en' ? 'passwords or API keys' : '密码或 API 密钥')
+    expect(confirmation.mock.calls[1][0]).toBe(question)
+    expect(writeText).not.toHaveBeenCalled()
+    expect(translate(locale, copied.message)).toContain(locale === 'en' ? 'cancelled' : '已取消')
+  })
   it.each(['resolve', 'reject'])('未完了のコピーは有限時間で手動案内し、後の%sで結果を書き換えない', async settle => {
     vi.useFakeTimers()
     let resolve!: () => void

@@ -7,6 +7,7 @@ import { WebSerialTransport } from '../services/serial/WebSerialTransport'
 import { FileTransferService } from '../services/micropython/FileTransferService'
 import { TracebackParser } from '../services/micropython/TracebackParser'
 import { BootModeService } from '../services/micropython/BootModeService'
+import { DeviceProbe } from '../services/micropython/DeviceProbe'
 import { RepairPromptBuilder, hasSensitiveAssignments } from '../services/prompt/RepairPromptBuilder'
 import { BootModeUnsupportedError, DeviceTimeoutError } from '../types'
 import { FakeMicroPythonRepl } from './fakes'
@@ -55,6 +56,23 @@ describe('起動モード', () => {
   it('boot_option=0を使う', async () => { const fake = new FakeMicroPythonRepl(); await new BootModeService(fake as never).set(0, { bootOptionSupported: true, nvsFallbackSupported: false }); expect(fake.commands[0]).toContain('set_boot_option(0)') })
   it('boot_optionなしではNVS set_u8だけへフォールバックする', async () => { const fake = new FakeMicroPythonRepl(); await new BootModeService(fake as never).set(1, { bootOptionSupported: false, nvsFallbackSupported: true }); expect(fake.commands[0]).toContain('set_u8') })
   it('set_u8非対応なら拒否する', async () => await expect(new BootModeService(new FakeMicroPythonRepl() as never).set(1, { bootOptionSupported: false, nvsFallbackSupported: false })).rejects.toBeInstanceOf(BootModeUnsupportedError))
+})
+
+describe('機器識別', () => {
+  const probe = (board: string, uname: string) => new DeviceProbe({ execute: async () => ({ stdout: `__M5_WEB_PROBE_BEGIN__\nboard=${board}\nuname=${uname}\nm5=1\nboot_module=0\nnvs=False\n__M5_WEB_PROBE_END__` }) } as never).probe()
+  it('M5NanoC6とAtomS3Liteを明示的な製品名で識別する', async () => {
+    expect(await probe('M5NanoC6', 'ESP32C6')).toMatchObject({ boardId: 'm5nanoc6', soc: 'ESP32-C6', boardConfirmed: true, nanoC6Confirmed: true })
+    expect(await probe('AtomS3Lite', 'ESP32S3')).toMatchObject({ boardId: 'atoms3lite', soc: 'ESP32-S3', boardConfirmed: true, nanoC6Confirmed: false })
+  })
+  it('SoCだけ・数値のboardだけでは機種確定せず、未取得bootを0扱いしない', async () => {
+    const s3 = await probe('9', 'ESP32-S3')
+    expect(s3).toMatchObject({ soc: 'ESP32-S3', boardConfirmed: false, nanoC6Confirmed: false })
+    expect(s3.boardId).toBeUndefined()
+    expect(s3.bootOption).toBeUndefined()
+    const c6 = await probe('', 'ESP32C6')
+    expect(c6.nanoC6Confirmed).toBe(false)
+    expect(c6.boardId).toBeUndefined()
+  })
 })
 describe('修正依頼プロンプト', () => {
   it('必要な実行環境とエラーを含む', () => { const prompt = new RepairPromptBuilder().build({ exceptionType: 'NameError', message: 'x', traceback: 'trace', intentionalInterrupt: false }, 'x', { deviceName: 'NanoC6', microPythonVersion: 'v1', firmwareInfo: 'impl', nanoC6Confirmed: true, bootOptionSupported: true, nvsFallbackSupported: false }, 'log', '実行'); expect(prompt).toContain('NameError'); expect(prompt).toContain('NanoC6') })

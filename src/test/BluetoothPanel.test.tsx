@@ -2,6 +2,12 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import type { BluetoothSnapshot } from '../services/bluetooth/BluetoothController'
+import { bluetoothMessages } from '../i18n/bluetoothMessages'
+import type { Locale } from '../i18n/types'
+import panelSource from '../components/BluetoothPanel.tsx?raw'
+import controllerSource from '../services/bluetooth/BluetoothController.ts?raw'
+import protocolSource from '../services/bluetooth/protocol.ts?raw'
+import ts from 'typescript'
 
 type Element = ReactElement<Record<string, unknown>>
 type Scope = { slots: unknown[]; cleanups: Map<number, () => void> }
@@ -13,6 +19,17 @@ const harness = vi.hoisted(() => ({
   snapshot: {} as BluetoothSnapshot,
   connect: vi.fn(), disconnect: vi.fn(), send: vi.fn(),
   instances: 0,
+  locale: 'ja' as Locale,
+}))
+
+vi.mock('../i18n', () => ({
+  useLocale: () => ({
+    locale: harness.locale,
+    t: (text: string, params: Record<string, string | number> = {}) => {
+      const translated = harness.locale === 'ja' ? text : bluetoothMessages[text]?.[harness.locale] ?? text
+      return translated.replace(/\{(\w+)\}/g, (match, key: string) => String(params[key] ?? match))
+    },
+  }),
 }))
 
 vi.mock('react', async () => ({
@@ -117,6 +134,7 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-15T10:00:00Z'))
   vi.stubGlobal('window', { setInterval, clearInterval })
   harness.scopes.clear(); harness.sliderKeys.clear(); harness.effects = []; harness.instances = 0
+  harness.locale = 'ja'
   harness.connect.mockReset(); harness.disconnect.mockReset(); harness.send.mockReset().mockResolvedValue(true)
   harness.snapshot = { phase: 'disconnected', deviceName: null, receivedAt: null, status: null, error: null, sending: false }
 })
@@ -328,5 +346,90 @@ describe('スライダーと追加コマンド', () => {
     expect(button(view, '送る').props.disabled).toBe(true)
     event(find(view, element => element.type === 'form'), 'onSubmit', { preventDefault: vi.fn() })
     expect(harness.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('Bluetooth画面の言語切り替え', () => {
+  it.each([
+    ['en', 'Connect Bluetooth', 'Pink', 'Brightness and speed', '3 LEDs. 2 lit. Pink'],
+    ['zh', '连接蓝牙', '粉色', '亮度与速度', '3 个 LED。2 个亮起。粉色'],
+  ] as const)('%sでも機器名・受信色・コマンドは変えず、表示と読み上げを翻訳する', (locale, connectLabel, pinkLabel, title, previewLabel) => {
+    connected()
+    harness.locale = locale
+    const view = panel()
+    expect(button(view, connectLabel).props.disabled).toBe(true)
+    expect(content(view)).toContain(title)
+    expect(content(view)).toContain('NanoLED-07')
+    expect(find(view, element => element.props.className === 'led-preview').props['aria-label']).toBe(previewLabel)
+    expect(find(view, element => element.props.title === 'LED 1: #800020').props.style).toMatchObject({ backgroundColor: '#800020' })
+    event(button(view, pinkLabel), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('PINK')
+    expect(content(view)).not.toMatch(/[ぁ-んァ-ヶ]/u)
+  })
+
+  it('接続中に言語を変えてもコントローラ・スライダー編集中の値・追加コマンドを維持する', () => {
+    connected()
+    panel()
+    event(slider('BRIGHTNESS'), 'onChange', { target: { value: '37' } })
+    event(find(panel(), element => element.props.id === 'ble-custom-command'), 'onChange', { target: { value: ' star_2 ' } })
+    harness.locale = 'en'
+    expect(slider('BRIGHTNESS').props.value).toBe(37)
+    expect(slider('BRIGHTNESS').props['aria-valuetext']).toBe('37 percent')
+    expect(content(sliderView('BRIGHTNESS'))).toContain('Your selection')
+    harness.locale = 'zh'
+    expect(slider('BRIGHTNESS').props.value).toBe(37)
+    expect(slider('BRIGHTNESS').props['aria-valuetext']).toBe('百分之37')
+    expect(find(panel(), element => element.props.id === 'ble-custom-command').props.value).toBe(' star_2 ')
+    expect(harness.instances).toBe(1)
+    expect(harness.connect).not.toHaveBeenCalled()
+    expect(harness.disconnect).not.toHaveBeenCalled()
+    expect(harness.send).not.toHaveBeenCalled()
+    event(slider('BRIGHTNESS'), 'onPointerUp')
+    expect(harness.send).toHaveBeenLastCalledWith('BRIGHTNESS 37')
+    event(find(panel(), element => element.type === 'form'), 'onSubmit', { preventDefault: vi.fn() })
+    expect(harness.send).toHaveBeenLastCalledWith('STAR_2')
+  })
+
+  it('表示済みの接続エラーも切り替え直後に翻訳する', () => {
+    harness.snapshot = { ...harness.snapshot, error: 'Bluetoothの接続が切れました。機器の電源と距離を確認して、もう一度つないでください。' }
+    expect(content(panel())).toContain('Bluetoothの接続が切れました')
+    harness.locale = 'en'
+    expect(content(panel())).toContain('Bluetooth disconnected.')
+    harness.locale = 'zh'
+    expect(content(panel())).toContain('蓝牙连接已断开。')
+    expect(harness.instances).toBe(1)
+    expect(harness.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('両機種を案内し、独自モード名は翻訳せずそのまま表示する', () => {
+    expect(content(panel())).toContain('M5NanoC6／AtomS3Lite')
+    connected({ status: { v: 1, mode: 'STAR_2', brightness: 20, speed: 0, pixels: 'abcdef' } })
+    harness.locale = 'en'
+    expect(content(panel())).toContain('M5NanoC6 / AtomS3Lite')
+    expect(content(panel())).toContain('STAR_2')
+  })
+
+  it('画面と通信サービスの全日本語メッセージに英語・簡体字中国語が揃い、置換項目も一致する', () => {
+    const sources = [['BluetoothPanel.tsx', panelSource], ['BluetoothController.ts', controllerSource], ['protocol.ts', protocolSource]]
+    const keys: string[] = []
+    for (const [path, text] of sources) {
+      const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+      const visit = (node: ts.Node) => {
+        if (ts.isStringLiteral(node) && /[ぁ-んァ-ヶ一-龯]/u.test(node.text)) keys.push(node.text)
+        ts.forEachChild(node, visit)
+      }
+      visit(source)
+    }
+    expect(keys.length).toBeGreaterThan(80)
+    for (const key of keys) {
+      expect(bluetoothMessages, key).toHaveProperty(key)
+      const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()
+      for (const locale of ['en', 'zh'] as const) {
+        const translated = bluetoothMessages[key][locale]
+        expect(translated.trim(), `${locale}: ${key}`).not.toBe('')
+        expect(translated, `${locale}: ${key}`).not.toMatch(/[ぁ-んァ-ヶ]/u)
+        expect(placeholders(translated), `${locale}: ${key}`).toEqual(placeholders(key))
+      }
+    }
   })
 })

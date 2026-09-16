@@ -4,18 +4,21 @@
 .app-tabs button[aria-selected=true] { color: #0758a4; background: #fff; box-shadow: 0 2px 8px #203c621a; }
 .app-tabs button span { margin-right: 6px; }
 .bluetooth-panel { max-width: 1120px; margin: 0 auto; }
+.bluetooth-panel .device-copy { min-width: 0; overflow-wrap: anywhere; }
+.bluetooth-panel .section-heading > div { min-width: 0; }
 .bluetooth-panel .notice { margin-top: 12px; }
 .bluetooth-guide { color: #526b84; line-height: 1.8; font-size: .9rem; margin: 16px 2px; }
 .text-button { color: #075fac; background: transparent; border: 0; padding: 1px 3px; text-decoration: underline; text-underline-offset: 3px; }
 .controller-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 16px; }
 .controller-grid .panel { padding: 24px; min-width: 0; }
 .small-badge { border-radius: 999px; background: #edf2f7; color: #587089; padding: 6px 10px; font-size: .76rem; white-space: nowrap; }
+.bluetooth-panel .small-badge { max-width: 155px; text-align: center; white-space: normal; }
 .small-badge.live { color: #087443; background: #dff7e8; }
 .mode-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 12px; }
 .mode-button { display: flex; flex-direction: column; align-items: center; min-height: 122px; justify-content: center; gap: 5px; background: #f5f9fd; color: #26435f; border: 2px solid #d7e4ef; border-radius: 14px; }
 .mode-button.selected { border-color: #1675ce; background: #eaf5ff; box-shadow: 0 0 0 1px #1675ce; }
 .mode-button strong { font-size: 1rem; }
-.mode-button small { color: #526b84; font-size: .8rem; }
+.mode-button small { color: #526b84; font-size: .8rem; text-align: center; }
 .mode-icon { line-height: 1.15; font-size: 1.85rem; }
 .lights-off { width: 100%; min-height: 46px; font-weight: 700; }
 .slider-heading { margin: 26px 0 18px; }

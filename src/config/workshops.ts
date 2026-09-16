@@ -6,9 +6,10 @@ export interface WorkshopPreset {
 }
 
 const sharedProfile: WorkshopProfile = {
+  boardId: 'm5nanoc6',
   materialId: 'nano-c6-led-workshop',
   revision: 'writer-ai-1',
-  displayName: 'NanoC6 LEDワークショップ',
+  displayName: 'M5NanoC6 LEDワークショップ',
   kitId: null,
   firmwareVersion: null,
   ledModel: null,
@@ -21,4 +22,5 @@ const sharedProfile: WorkshopProfile = {
 
 export const workshopPresets: WorkshopPreset[] = [
   { id: 'nano-c6-led-default', profile: { ...sharedProfile, features: { ...sharedProfile.features }, baseline: { ...sharedProfile.baseline } } },
+  { id: 'atom-s3-lite-led-default', profile: { ...sharedProfile, boardId: 'atoms3lite', materialId: 'atom-s3-lite-led-workshop', displayName: 'AtomS3Lite LEDワークショップ', features: { ...sharedProfile.features }, baseline: { ...sharedProfile.baseline } } },
 ]

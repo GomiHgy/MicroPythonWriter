@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWorkshopPreparation } from '../hooks/useWorkshopPreparation'
 import { workshopPresets } from '../config/workshops'
+import { setLocale } from '../i18n'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }))
 vi.mock('react', () => ({
+  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
   useRef: <Value,>(initial: Value) => { const index = hooks.cursor++; if (!(index in hooks.slots)) hooks.slots[index] = { current: initial }; return hooks.slots[index] },
   useState: <Value,>(initial: Value | (() => Value)) => {
     const index = hooks.cursor++
@@ -30,10 +32,50 @@ function verifyBaseline() {
   render().confirmBaseline('テスト講師', true)
 }
 
-beforeEach(() => { hooks.slots = []; hooks.cursor = 0; vi.stubGlobal('localStorage', { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }) })
+beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubGlobal('localStorage', { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('AI準備用hookは講師設定だけを扱う', () => {
+  it('言語変更で準備文だけを再生成し、キット・未適用設定・基準コードを維持する', () => {
+    verifyBaseline()
+    render().applyDraft()
+    render().editDraft({ displayName: '名前を編集中', baseline: { code: 'print("日本語を保持")', verification: null } })
+    const before = render()
+    setLocale('en')
+    const english = render()
+    expect(english.prompt).not.toBe(before.prompt)
+    expect(english.context?.locale).toBe('en')
+    expect(english.selectedId).toBe(before.selectedId)
+    expect(english.selectedProfile).toBe(before.selectedProfile)
+    expect(english.draft).toBe(before.draft)
+    expect(english.hasPendingChanges).toBe(true)
+    setLocale('zh')
+    const chinese = render()
+    expect(chinese.context?.locale).toBe('zh')
+    expect(chinese.prompt).not.toBe(english.prompt)
+    expect(chinese.draft?.baseline.code).toBe('print("日本語を保持")')
+    setLocale('ja')
+    expect(render().prompt).toBe(before.prompt)
+  })
+  it('機器別キットは設定・実機確認を共有せず、確認登録は対象機器に結び付く', () => {
+    verifyBaseline()
+    render().applyDraft()
+    expect(render().draft?.baseline.verification?.boardId).toBe('m5nanoc6')
+    render().selectProfile('atom-s3-lite-led-default')
+    expect(render().draft?.boardId).toBe('atoms3lite')
+    expect(render().draft?.baseline.verification).toBeNull()
+    expect(render().draft?.kitId).toBeNull()
+    render().editDraft({ boardId: 'm5nanoc6', kitId: '008', firmwareVersion: 'test-ui-atom', ledModel: 'test-rgb', ledCount: 12, maxBrightnessPercent: 25, baseline: { code: 'print("atom")', verification: null } })
+    expect(render().draft?.boardId).toBe('atoms3lite')
+    render().confirmBaseline('テスト講師', true)
+    expect(render().draft?.baseline.verification?.boardId).toBe('atoms3lite')
+    render().applyDraft()
+    expect(render().prompt).toContain('GPIO41')
+    expect(render().prompt).toContain('GPIO35')
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().draft?.kitId).toBe('007')
+    expect(render().draft?.boardId).toBe('m5nanoc6')
+  })
   it('通常利用は初期未選択、未設定キットを選んでも出力しない', () => {
     expect(render().context).toBeNull()
     expect(render().prompt).toBe('')

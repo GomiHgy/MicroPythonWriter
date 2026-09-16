@@ -1,13 +1,40 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { WorkshopPreset } from '../config/workshops'
+import { workshopPresets, type WorkshopPreset } from '../config/workshops'
 import { cloneWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { MAX_STORED_PROFILE_LENGTH, removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile, workshopStorageKey } from '../services/workshop/WorkshopStorage'
 
-const profile: WorkshopProfile = { materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true }, baseline: { code: 'print("test baseline")', verification: { code: 'print("test baseline")', firmwareVersion: 'test-ui-2', confirmedBy: 'テスト講師', confirmedAt: '2026-09-15T00:00:00.000Z', nanoLedV1: true } } }
+const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true }, baseline: { code: 'print("test baseline")', verification: { code: 'print("test baseline")', firmwareVersion: 'test-ui-2', confirmedBy: 'テスト講師', confirmedAt: '2026-09-15T00:00:00.000Z', nanoLedV1: true } } }
 const preset: WorkshopPreset = { id: 'test-preset', profile: { ...cloneWorkshopProfile(profile), kitId: null, baseline: { code: '', verification: null } } }
 function storage() { const values = new Map<string, string>(); return { values, getItem: vi.fn((key: string) => values.get(key) ?? null), setItem: vi.fn((key: string, value: string) => { values.set(key, value) }), removeItem: vi.fn((key: string) => { values.delete(key) }) } }
 
 describe('ワークショップ設定の安全なブラウザ保存', () => {
+  it('既知の旧NanoC6配布設定のみ機器IDを安全に補完する', () => {
+    const target = storage()
+    const nano = workshopPresets[0]
+    const configured = { ...profile, materialId: nano.profile.materialId, revision: nano.profile.revision }
+    storeWorkshopProfile(nano, configured, true, () => target)
+    const saved = JSON.parse(target.values.get(workshopStorageKey(nano))!)
+    delete saved.profile.boardId
+    target.values.set(workshopStorageKey(nano), JSON.stringify(saved))
+    const restored = restoreWorkshopProfile(nano, () => target)
+    expect(restored.notice).toBe('')
+    expect(restored.profile.boardId).toBe('m5nanoc6')
+    expect(restored.profile.kitId).toBe('007')
+    expect(restored.profile.baseline.code).toBe(profile.baseline.code)
+  })
+  it.each(['missing', 'other'])('AtomS3Liteへ機器IDが%sの設定を復元しない', reason => {
+    const target = storage()
+    const atom = workshopPresets[1]
+    const configured = { ...profile, boardId: 'atoms3lite' as const, materialId: atom.profile.materialId, revision: atom.profile.revision }
+    storeWorkshopProfile(atom, configured, false, () => target)
+    const saved = JSON.parse(target.values.get(workshopStorageKey(atom))!)
+    if (reason === 'missing') delete saved.profile.boardId
+    else saved.profile.boardId = 'm5nanoc6'
+    target.values.set(workshopStorageKey(atom), JSON.stringify(saved))
+    expect(restoreWorkshopProfile(atom, () => target).profile).toEqual(atom.profile)
+    expect(restoreWorkshopProfile(atom, () => target).notice).not.toBe('')
+    expect(storeWorkshopProfile(atom, { ...configured, boardId: 'm5nanoc6' }, false, () => target)).not.toBe('')
+  })
   it('通常保存は基準コードと確認情報を除き、先頭ゼロを復元する', () => {
     const target = storage()
     expect(storeWorkshopProfile(preset, profile, false, () => target)).toBe('')

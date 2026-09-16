@@ -3,7 +3,7 @@ import { Terminal as Xterm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
-export function Terminal({ log, dark, autoScroll }: { log: string; dark: boolean; autoScroll: boolean }) {
+export function Terminal({ log, dark, autoScroll, label = 'シリアルターミナル' }: { log: string; dark: boolean; autoScroll: boolean; label?: string }) {
   const host = useRef<HTMLDivElement>(null); const term = useRef<Xterm | null>(null)
   useEffect(() => {
     if (!host.current) return
@@ -23,5 +23,5 @@ export function Terminal({ log, dark, autoScroll }: { log: string; dark: boolean
     return () => { cancelAnimationFrame(frame); observer.disconnect(); terminal.dispose() }
   }, [dark])
   useEffect(() => { const terminal = term.current; if (!terminal) return; terminal.reset(); terminal.write([...log].filter(character => ![1, 4, 5].includes(character.charCodeAt(0))).join('')); if (autoScroll) terminal.scrollToBottom() }, [log, autoScroll])
-  return <div className="terminal" ref={host} aria-label="シリアルターミナル" />
+  return <div className="terminal" ref={host} aria-label={label} />
 }
