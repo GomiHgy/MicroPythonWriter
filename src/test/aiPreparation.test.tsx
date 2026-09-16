@@ -26,10 +26,10 @@ vi.mock('react', async () => ({
   },
 }))
 
-const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
+const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
 function preparation(): WorkshopPreparation {
   const context = createWorkshopContext(profile)
-  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
+  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
 }
 type Element = ReactElement<Record<string, unknown>>
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
@@ -53,6 +53,17 @@ beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harn
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  it('3つのLED設定は講師用設定を開かず編集できる', () => {
+    const prep = preparation()
+    const node = render(prep)
+    const settings = find(node, item => item.type === 'fieldset' && item.props.className === 'ai-led-settings')
+    for (const [label, key, value] of [['LED数', 'ledCount', '10'], ['最大輝度（%）', 'maxBrightnessPercent', '20'], ['外部LEDピン（GPIO）', 'ledPin', '3']]) {
+      const field = find(settings, item => item.type === 'label' && content(item).startsWith(label))
+      event(find(field, item => item.type === 'input'), 'onChange', { target: { value } })
+      expect(prep.editLedSettings).toHaveBeenLastCalledWith({ [key]: Number(value) })
+    }
+    expect(prep.editDraft).not.toHaveBeenCalled()
+  })
   it('英語・中国語へ切り替えてもプレビュー状態と入力済みデータを維持する', () => {
     const prep = preparation()
     event(find(render(prep), element => element.type === 'details' && element.props.className === 'ai-preview'), 'onToggle', { currentTarget: { open: true } })

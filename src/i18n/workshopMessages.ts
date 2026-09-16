@@ -1,9 +1,10 @@
 import type { Locale, MessageCatalog } from './types'
 
 export const workshopMessages: MessageCatalog = {
-  'M5NanoC6 LEDワークショップ': { en: 'M5NanoC6 LED workshop', zh: 'M5NanoC6 LED 工作坊' },
-  'NanoC6 LEDワークショップ': { en: 'M5NanoC6 LED workshop', zh: 'M5NanoC6 LED 工作坊' },
-  'AtomS3Lite LEDワークショップ': { en: 'AtomS3Lite LED workshop', zh: 'AtomS3Lite LED 工作坊' },
+  '外部LEDピンは0〜48の整数で入力し、使用機器で出力可能なGPIOと配線を確認してください。': { en: 'Enter an external LED pin as an integer from 0 to 48. Check that your device supports output on this GPIO and verify the wiring.', zh: '外接 LED 引脚请输入 0 到 48 的整数，并确认设备支持该 GPIO 输出及接线正确。' },
+  'M5NanoC6 LEDワークショップ': { en: 'M5NanoC6', zh: 'M5NanoC6' },
+  'NanoC6 LEDワークショップ': { en: 'M5NanoC6', zh: 'M5NanoC6' },
+  'AtomS3Lite LEDワークショップ': { en: 'AtomS3Lite', zh: 'AtomS3Lite' },
   '対応機器をM5NanoC6またはAtomS3Liteから選んでください。': { en: 'Select M5NanoC6 or AtomS3Lite as the target board.', zh: '请选择 M5NanoC6 或 AtomS3Lite 作为目标设备。' },
   '教材IDは半角英数字で始まる64文字以内の英数字・ハイフン・アンダースコア・ドットにしてください。': { en: 'Material ID must start with an ASCII letter or digit and use at most 64 letters, digits, hyphens, underscores or dots.', zh: '教材 ID 必须以半角字母或数字开头，最多 64 个字母、数字、连字符、下划线或点。' },
   '教材の版は半角英数字で始まる64文字以内の英数字・ハイフン・アンダースコア・ドットにしてください。': { en: 'Material revision must start with an ASCII letter or digit and use at most 64 letters, digits, hyphens, underscores or dots.', zh: '教材版本必须以半角字母或数字开头，最多 64 个字母、数字、连字符、下划线或点。' },

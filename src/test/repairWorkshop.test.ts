@@ -82,7 +82,7 @@ describe('ワークショップ修正依頼', () => {
     expect(repair).toContain(baselineCode)
     expect(repair).toContain('NanoLED-007')
     expect(repair).toContain('6e400001-b5a3-f393-e0a9-e50e24dcca9e')
-    expect(repair).toContain('BRIGHTNESS 100は講師設定の最大輝度の100%')
+    expect(repair).toContain('BRIGHTNESS 100は準備画面で設定した最大輝度の100%')
     expect(repair).toContain('Notifyは1回20バイト以下')
     expect(repair).toContain('物理的な発光をセンサーで測定した結果ではない')
     expect(hasSensitiveAssignments(repair)).toBe(true)

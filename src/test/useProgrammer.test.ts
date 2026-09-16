@@ -116,13 +116,16 @@ describe('修正依頼のコードと教材のスナップショット', () => {
     render().setLog('original-device-log')
     callbacks[0].onComplete?.({ ...stopped, state: 'error', intentionalStop: false, stderr: 'Traceback (most recent call last):\n  File "main.py", line 2\nValueError: failure' })
     const original = render().error!
-    selectedWorkshop = kit('008')
+    selectedWorkshop = createWorkshopContext({ ...kit('008').profile, ledPin: 3, ledCount: 10, maxBrightnessPercent: 20 })
     render().setSource('print("unrelated-008")')
     render().setLog('unrelated-new-log')
     setLocale(locale)
     const translated = render().error!
     expect(translated.repairPrompt).toContain(locale === 'en' ? 'Respond in English' : '请用简体中文回答')
     expect(translated.repairPrompt).toContain('target-007')
+    expect(translated.repairPrompt).toContain('LED_PIN: 2')
+    expect(translated.repairPrompt).toContain('LED_COUNT: 37')
+    expect(translated.repairPrompt).not.toContain('LED_PIN: 3')
     expect(translated.repairPrompt).toContain('original-device-log')
     expect(translated.repairPrompt).not.toContain('target-008')
     expect(translated.repairPrompt).not.toContain('unrelated-008')

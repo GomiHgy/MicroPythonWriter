@@ -27,14 +27,14 @@ function codeBlock(code: string) {
 }
 
 const ledRules = `## LEDとボタンの固定ルール
-- 外付けLEDはGrove G2のGPIO2。GPIO2をmachine.Pin(LED_PIN, machine.Pin.OUT)で初期化する。Grove G1は使用しない。5VとGNDを接続し共通GNDを維持する。
+- 外付けLEDは設定のGPIO{ledPin}。machine.Pin(LED_PIN, machine.Pin.OUT)で初期化する。デフォルトGPIO2はGrove G2。変更時は実際の配線と対象機器で出力可能なGPIOかを確認し、USB・内蔵LED・ボタン等と競合させない。電源仕様を確認し共通GNDを維持する。
 - 本体ボタンを使う場合はGPIO9のアクティブLOW（押すとLOW、離すとHIGH）。必要に応じてmachine.Pin.PULL_UPを使い、メインループで読み、約40msのチャタリング対策をする。M5.BtnA・NanoC6.BtnAで代用しない。使用機能が「本体ボタンなし」のキットにはボタン操作を追加しない。
 - 内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。講師からの指示がない内蔵LED操作を追加しない。
 - import machine と import timeを基本とし、neopixelをimportしない。LED送信はmachine.bitstream()とbytearrayを使用する。
 - BITSTREAM_TIMING = 1 は800kHzを表す固定ラベル。encoding=0、WS2812_TIMING_NS = (400, 850, 800, 450)（T0H,T0L,T1H,T1L、ナノ秒）を変更しない。
 - bytearray(LED_COUNT * LED_BPP)に全LEDの1フレーム分を作り、machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)でまとめて送る。第3引数に数値の1を直接渡さない。LED1個ずつ送信しない。
 - 色指定はRGB、送信バッファはGRB。offset = led_index * LED_BPP、順にgreen、red、blueを入れる。送信後はtime.sleep_us(80)程度のリセット待ちを入れる。
-- 全ての消灯・単色・演出の出力を共通処理へ通す。RGBを0〜255へ制限し、講師設定の最大輝度、利用者の明るさ、フェード係数を適用してからGRB順へ格納する。最大輝度を超える要求でも安全上限を変更しない。
+- 全ての消灯・単色・演出の出力を共通処理へ通す。RGBを0〜255へ制限し、準備画面で設定した最大輝度、利用者の明るさ、フェード係数を適用してからGRB順へ格納する。最大輝度を超える要求でも安全上限を変更しない。
 - 起動時は共通の送信処理で全LEDへ0を送って安全な消灯状態へ初期化する。起動演出が指定されていても、その後の最初の点灯にはOFFから点灯する最低200msの条件を適用する。
 - machine.bitstreamなど必要なAPIが対象環境で確認できない場合は講師確認が必要と伝え、代替APIやライブラリを推測しない。外部ライブラリの追加インストールを参加者へ要求しない。
 - 講師が明示しないuasyncio、スレッド、GPIO割り込みを追加しない。停止時・KeyboardInterrupt時は可能な限りLEDを消灯し、Ctrl-C停止を妨げない。
@@ -66,7 +66,7 @@ const nanoLedRules = `## NanoLED v1通信仕様
 - 機器は分割受信を結合してLFまで届いた行だけを順番に処理する。複数行を処理し、受信行バッファ上限は128バイト。超過行を次のLFまで破棄する。コマンドキューも有界にし、満杯の追加分を捨てて診断する。
 - PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS を全て維持する。PINKは全体ピンク、BLUEは全体青、MAGICはピンク・紫・青を左から右へ流す、RAINBOWは全体のレインボー変化。
 - OFFは直ちに全LEDを消灯し、フェードインを取り消すがプログラムとBLEを継続する。STATUSは状態通知だけで動作を変更しない。
-- nは0〜100の整数。引数不足・小数・範囲外・未知コマンドでは状態を変更しない。BRIGHTNESS 100は講師設定の最大輝度の100%であり安全上限自体を変えない。BRIGHTNESS 0は現在モードを保持する。OFF中の明るさ・速さ変更では点灯しない。
+- nは0〜100の整数。引数不足・小数・範囲外・未知コマンドでは状態を変更しない。BRIGHTNESS 100は準備画面で設定した最大輝度の100%であり安全上限自体を変えない。BRIGHTNESS 0は現在モードを保持する。OFF中の明るさ・速さ変更では点灯しない。
 - SPEED 0は停止ではなく最も遅い、100は最も速い。標準MAGIC/RAINBOWの周期はperiod_ms = 3000 - 29 * n。LED数で1周期が変わらない。追加演出でも0は停止にせず同じ向きで速さを反映する。
 - 指定省略時の起動状態はmode=OFF、brightness=100、speed=0。利用者の明示した起動演出は安全上限とOFF→ONフェードを守って適用できる。通知は実際の適用状態を返す。
 - 追加モード名は^[A-Z][A-Z0-9_]{0,15}$、最大16文字。STATUS、BRIGHTNESS、SPEEDは予約語でモード名にしない。追加演出は機器側への実装が必要。
@@ -88,9 +88,9 @@ export function createWorkshopContext(input: WorkshopProfile, locale: Locale = '
   const board = isBoardId(profile.boardId) ? boardDefinitions[profile.boardId] : null
   const buttonPin = board?.buttonPin ?? '未確認'
   const onboardRule = profile.boardId === 'atoms3lite'
-    ? '内蔵RGB LEDはGPIO35。外付けLEDのGPIO2や本体ボタンGPIO41と混同しない。NanoC6のGPIO20・GPIO19・GPIO7を流用しない。AtomS3Liteに未確認のRGB電源制御ピンを追加しない。講師からの指示がない内蔵LED操作を追加しない。'
+    ? '内蔵RGB LEDはGPIO35。外付けLEDや本体ボタンGPIO41と混同しない。NanoC6のGPIO20・GPIO19・GPIO7を流用しない。AtomS3Liteに未確認のRGB電源制御ピンを追加しない。講師からの指示がない内蔵LED操作を追加しない。'
     : '内蔵RGB LEDはGPIO20、RGB電源有効化はGPIO19をHIGH、青色LEDはGPIO7。外付けLEDや本体ボタンGPIO9と混同しない。AtomS3LiteのGPIO35・GPIO41を流用しない。講師からの指示がない内蔵LED操作を追加しない。'
-  const boardLedRules = ledRules.replaceAll('GPIO9', `GPIO${buttonPin}`).replace('M5.BtnA・NanoC6.BtnA', 'M5.BtnA・未確認の機器API').replace('内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。講師からの指示がない内蔵LED操作を追加しない。', board ? onboardRule : '機器が未設定です。ピン番号や内蔵LED仕様を推測しない。')
+  const boardLedRules = ledRules.replaceAll('GPIO9', `GPIO${buttonPin}`).replaceAll('{ledPin}', setting(profile.ledPin)).replace('M5.BtnA・NanoC6.BtnA', 'M5.BtnA・未確認の機器API').replace('内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。講師からの指示がない内蔵LED操作を追加しない。', board ? onboardRule : '機器が未設定です。ピン番号や内蔵LED仕様を推測しない。')
   const header = `## ワークショップの設定スナップショット
 教材ID: ${setting(profile.materialId)}
 教材の版: ${setting(profile.revision)}
@@ -101,6 +101,7 @@ SoC: ${board?.soc ?? '未確認'}
 対象UIFlow2ファームウェア: ${setting(profile.firmwareVersion)}
 外付けLEDの型番: ${setting(profile.ledModel)}
 LED_COUNT: ${setting(profile.ledCount)}
+LED_PIN: ${setting(profile.ledPin)}
 LED_BPP: ${setting(profile.ledBpp)}（対応仕様はRGB・3チャンネルのみ）
 MAX_BRIGHTNESS_PERCENT: ${setting(profile.maxBrightnessPercent)}
 使用機能: 外付けLED / 本体ボタン${profile.features.button ? 'あり' : 'なし'} / BLE${bleEnabled ? '利用可' : '利用不可'} / Webコントローラ${controllerEnabled ? '利用可' : '利用不可'}
@@ -134,6 +135,7 @@ SoC: ${board?.soc ?? unknown}
 Target UIFlow2 firmware: ${value(profile.firmwareVersion)}
 External LED model: ${value(profile.ledModel)}
 LED_COUNT: ${value(profile.ledCount)}
+LED_PIN: ${value(profile.ledPin)}
 LED_BPP: ${value(profile.ledBpp)} (RGB, 3 channels only)
 MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
 Features: external LEDs / onboard button ${enabled(profile.features.button)} / BLE ${enabled(bleEnabled)} / web controller ${enabled(controllerEnabled)}
@@ -150,6 +152,7 @@ SoC: ${board?.soc ?? unknown}
 目标 UIFlow2 固件: ${value(profile.firmwareVersion)}
 外接 LED 型号: ${value(profile.ledModel)}
 LED_COUNT: ${value(profile.ledCount)}
+LED_PIN: ${value(profile.ledPin)}
 LED_BPP: ${value(profile.ledBpp)}（仅支持 RGB 三通道）
 MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
 功能: 外接 LED / 机身按钮${enabled(profile.features.button)} / BLE ${enabled(bleEnabled)} / 网页控制器${enabled(controllerEnabled)}
@@ -158,9 +161,9 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
 讲师设置的目标 UIFlow2 版本与 USB 获取的 MicroPython 版本及 firmwareInfo 不同，不能根据读取信息推测或覆盖。
 设置值在范围内不代表供电安全或实机运行正常。AI 固定规范不是强制代码执行的沙箱，也不能代替讲师的实机验证。`
   const onboardRule = !board ? (en ? 'The board is unknown. Do not guess pin assignments or onboard LED specifications.' : '设备未知，不能猜测引脚或内置 LED 规格。') : board.id === 'atoms3lite'
-    ? (en ? 'Onboard RGB is GPIO35, separate from external GPIO2 and button GPIO41. Do not copy NanoC6 GPIO20/GPIO19/GPIO7 or invent a separate AtomS3Lite RGB power-enable pin. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO35，与外接 GPIO2 和按钮 GPIO41 不同。不能套用 NanoC6 的 GPIO20/GPIO19/GPIO7，也不能猜测 AtomS3Lite 独立 RGB 供电使能引脚。未经讲师指示，不添加内置 LED 操作。')
+    ? (en ? 'Onboard RGB is GPIO35, separate from external LEDs and button GPIO41. Do not copy NanoC6 GPIO20/GPIO19/GPIO7 or invent a separate AtomS3Lite RGB power-enable pin. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO35，与外接 LED 和按钮 GPIO41 不同。不能套用 NanoC6 的 GPIO20/GPIO19/GPIO7，也不能猜测 AtomS3Lite 独立 RGB 供电使能引脚。未经讲师指示，不添加内置 LED 操作。')
     : (en ? 'Onboard RGB is GPIO20, its power is enabled by GPIO19 HIGH, and the blue LED is GPIO7. Keep these separate from external LEDs and button GPIO9. Do not copy AtomS3Lite GPIO35/GPIO41. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO20，GPIO19 拉高使能其供电，蓝色 LED 为 GPIO7。它们与外接 LED 及按钮 GPIO9 不同，不能套用 AtomS3Lite 的 GPIO35/GPIO41。未经讲师指示，不添加内置 LED 操作。')
-  const led = interpolatePrompt(block.led, { ledPin: board?.ledPin ?? unknown, buttonPin, onboardRule })
+  const led = interpolatePrompt(block.led, { ledPin: value(profile.ledPin), buttonPin, onboardRule })
   const verification = profile.baseline.verification
   const availability = bleEnabled
     ? `${en ? 'BLE device name' : 'BLE 设备名称'}: NanoLED-${profile.kitId}\n${block.ble}\n\n${verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED v1 conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED v1。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'Instructor registration' : '讲师登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'Instructor-confirmed and registered' : '讲师已验证并登记') : (en ? 'Unverified' : '未验证')}\n${codeBlock(profile.baseline.code)}`

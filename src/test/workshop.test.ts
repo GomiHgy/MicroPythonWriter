@@ -36,11 +36,26 @@ function bleProfile(): WorkshopProfile {
 }
 
 describe('WorkshopProfileの設定検証', () => {
+  it.each(['ja', 'en', 'zh'] as const)('%s の準備・共通ルールは外部ピンとLED設定を反映する', locale => {
+    const value = { ...profile(), boardId: 'atoms3lite' as const, ledPin: 9, ledCount: 10, maxBrightnessPercent: 20 }
+    const context = createWorkshopContext(value, locale)
+    const prompt = buildStartPrompt(context)
+    expect(prompt).toContain('LED_PIN: 9')
+    expect(prompt).toContain('LED_COUNT: 10')
+    expect(prompt).toContain('MAX_BRIGHTNESS_PERCENT: 20')
+    expect(prompt).toContain('GPIO41')
+    expect(prompt).toContain('GPIO35')
+    expect(prompt).toContain(locale === 'ja' ? '外付けLEDは設定のGPIO9' : locale === 'en' ? 'External LEDs use the configured GPIO9' : '外接 LED 使用设置的 GPIO9')
+    expect(prompt).not.toContain('{ledPin}')
+  })
+  it.each([null, -1, 1.5, 49, NaN, Infinity])('外部LEDピン %s を拒否する', ledPin => {
+    expect(validateWorkshopProfile({ ...profile(), ledPin }).some(text => text.includes('外部LEDピン'))).toBe(true)
+  })
   it('AtomS3Liteを別プリセットとし未確定設定やNanoC6用基準コードを流用しない', () => {
     const atom = workshopPresets.find(preset => preset.profile.boardId === 'atoms3lite')!
     expect(atom.id).toBe('atom-s3-lite-led-default')
     expect(atom.profile.materialId).not.toBe(workshopPresets[0].profile.materialId)
-    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', kitId: null, firmwareVersion: null, ledModel: null, ledCount: null, maxBrightnessPercent: null, baseline: { code: '', verification: null } })
+    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', kitId: null, firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, baseline: { code: '', verification: null } })
     expect(buildStartPrompt(createWorkshopContext(atom.profile))).toBe('')
   })
 
@@ -63,8 +78,8 @@ describe('WorkshopProfileの設定検証', () => {
   it('配布プリセットで未確定の実機設定を推測しない', () => {
     const preset = workshopPresets[0]
     expect(preset.id).toBe('nano-c6-led-default')
-    expect(preset.profile).toMatchObject({ kitId: null, firmwareVersion: null, ledModel: null, ledCount: null, maxBrightnessPercent: null, ledBpp: 3, baseline: { code: '', verification: null } })
-    expect(validateWorkshopProfile(preset.profile)).toHaveLength(5)
+    expect(preset.profile).toMatchObject({ kitId: null, firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, ledBpp: 3, baseline: { code: '', verification: null } })
+    expect(validateWorkshopProfile(preset.profile)).toHaveLength(3)
     expect(buildStartPrompt(createWorkshopContext(preset.profile))).toBe('')
   })
 
@@ -239,7 +254,7 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
   it('AtomS3Liteではボタン41・内蔵RGB35を使い、NanoC6の内蔵電源制御を流用しない', () => {
     const value = { ...profile(), boardId: 'atoms3lite' as const }
     const prompt = buildStartPrompt(createWorkshopContext(value))
-    for (const text of ['機器: M5Stack AtomS3Lite', 'SoC: ESP32-S3', '本体ボタンを使う場合はGPIO41のアクティブLOW', '内蔵RGB LEDはGPIO35', '未確認のRGB電源制御ピンを追加しない', '外付けLEDはGrove G2のGPIO2']) expect(prompt).toContain(text)
+    for (const text of ['機器: M5Stack AtomS3Lite', 'SoC: ESP32-S3', '本体ボタンを使う場合はGPIO41のアクティブLOW', '内蔵RGB LEDはGPIO35', '未確認のRGB電源制御ピンを追加しない', '外付けLEDは設定のGPIO2']) expect(prompt).toContain(text)
     expect(prompt).not.toContain('本体ボタンを使う場合はGPIO9')
     expect(prompt).not.toContain('RGB電源有効化はGPIO19をHIGH')
     const noButton = buildStartPrompt(createWorkshopContext({ ...value, features: { ...value.features, button: false } }))

@@ -32,7 +32,11 @@ export function restoreWorkshopProfile(preset: WorkshopPreset, getStorage: () =>
       && preset.profile.boardId === 'm5nanoc6') {
       record.profile = { ...storedProfile, boardId: 'm5nanoc6' }
     }
+    // 従来は外部LEDピンがGPIO2固定だったため、欠けた項目だけ補完する。
+    if (record.profile && typeof record.profile === 'object' && !Array.isArray(record.profile) && !('ledPin' in record.profile)) record.profile = { ...record.profile, ledPin: 2 }
     if (!isWorkshopProfile(record.profile) || record.profile.boardId !== preset.profile.boardId || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile).length) throw new Error('profile')
+    if (record.profile.displayName === 'M5NanoC6 LEDワークショップ' || record.profile.displayName === 'NanoC6 LEDワークショップ') record.profile.displayName = 'M5NanoC6'
+    if (record.profile.displayName === 'AtomS3Lite LEDワークショップ') record.profile.displayName = 'AtomS3Lite'
     return { profile: cloneWorkshopProfile(record.profile), notice: '' }
   } catch {
     return { profile: fallback, notice: '保存済みの設定を読み込めませんでした。未対応の版・破損・容量・保存機能を講師が確認してください。配布された設定を使っています。' }

@@ -46,6 +46,14 @@ export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
         {preparation.profiles.map(preset => <option key={preset.id} value={preset.id}>{t(preset.profile.displayName)} — {t('キット {value}', { value: preset.profile.kitId ?? t('未設定') })}</option>)}
       </select>
       {profile && <div className="ai-kit-summary"><p><strong>{t(profile.displayName)}</strong><span>{t('版 {revision} ／ キット {kit}', { revision: profile.revision, kit: profile.kitId ?? t('未設定') })}</span></p><div className="ai-feature-list"><span>LED</span>{profile.features.button && <span>{t('本体ボタン')}</span>}{context?.bleEnabled && <span>Bluetooth</span>}{context?.controllerEnabled && <span>{t('Webコントローラ')}</span>}</div></div>}
+      {profile && <fieldset className="ai-led-settings" disabled={copying || preparation.isImporting}><legend>{t('LEDの設定')}</legend>
+        <div className="ai-settings-grid">
+          <label>{t('LED数')}<input type="number" min="1" step="1" value={profile.ledCount ?? ''} onChange={event => preparation.editLedSettings({ ledCount: numberOrNull(event.target.value) })} /></label>
+          <label>{t('最大輝度（%）')}<input type="number" min="0.01" max="100" step="any" value={profile.maxBrightnessPercent ?? ''} onChange={event => preparation.editLedSettings({ maxBrightnessPercent: numberOrNull(event.target.value) })} /></label>
+          <label>{t('外部LEDピン（GPIO）')}<input type="number" min="0" max="48" step="1" value={profile.ledPin ?? ''} onChange={event => preparation.editLedSettings({ ledPin: numberOrNull(event.target.value) })} /></label>
+        </div><p className="ai-help">{t('初期値は10個・20%・GPIO2。有効な入力は機種別にこのブラウザへ自動保存します。')}</p>
+        <p className="ai-help">{t('外部LEDピンは実際の配線に合わせてください。内蔵LED・ボタン・USB用のピンと競合させず、電源と出力可能なGPIOを確認してください。')}</p>
+      </fieldset>}
       {context?.errors.length ? <div className="notice warn"><strong>{t('講師の設定が必要です')}</strong><p>{t('このキットは準備中です。講師に設定を確認してもらってください。')}</p><details><summary>{t('講師が確認する項目（{count}件）', { count: context.errors.length })}</summary><ul>{context.errors.map(error => <li key={error}>{t(error)}</li>)}</ul></details></div> : null}
       {profile && (profile.features.ble || profile.features.controller) && !context?.bleEnabled && <p className="ai-help">{t('Bluetoothは講師の準備が必要です。')} {context?.bleReasons.map(reason => t(reason)).join(' ')} {t('LEDと本体ボタンの準備は続けられます。')}</p>}
       {profile && context?.bleEnabled && profile.features.controller && !context.controllerEnabled && <p className="ai-help">{t('Webコントローラは講師のNanoLED v1対応確認が必要です。')} {context.bleReasons.map(reason => t(reason)).join(' ')}</p>}
@@ -72,8 +80,8 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
   const [confirmedBy, setConfirmedBy] = useState('')
   const [testedOnDevice, setTestedOnDevice] = useState(false)
   const [nanoLedV1, setNanoLedV1] = useState(false)
-  const [confirmedCode, setConfirmedCode] = useState({ code: draft?.baseline.code, firmware: draft?.firmwareVersion, boardId: draft?.boardId })
-  const verificationMatches = confirmedCode.code === draft?.baseline.code && confirmedCode.firmware === draft?.firmwareVersion && confirmedCode.boardId === draft?.boardId
+  const [confirmedCode, setConfirmedCode] = useState({ code: draft?.baseline.code, firmware: draft?.firmwareVersion, boardId: draft?.boardId, ledCount: draft?.ledCount, ledPin: draft?.ledPin, brightness: draft?.maxBrightnessPercent })
+  const verificationMatches = confirmedCode.ledCount === draft?.ledCount && confirmedCode.ledPin === draft?.ledPin && confirmedCode.brightness === draft?.maxBrightnessPercent && confirmedCode.code === draft?.baseline.code && confirmedCode.firmware === draft?.firmwareVersion && confirmedCode.boardId === draft?.boardId
   const board = draft ? getBoardDefinition(draft.boardId) : null
   const setField = <Key extends keyof WorkshopProfile,>(key: Key, value: WorkshopProfile[Key]) => {
     if (key === 'baseline' || key === 'firmwareVersion') { setTestedOnDevice(false); setNanoLedV1(false) }
@@ -84,15 +92,13 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
     {!draft ? <p>{t('先に「使うキット」で配布用のキットを選んでください。')}</p> : <>
       <p>{t('このブラウザだけの変更です。共有する配布設定は src/config/workshops.ts で管理します。編集中のプログラムやログは保存しません。')}</p>
       <p className="ai-help">{t('教材ID: {id} ／ 版: {revision}（配布設定で指定）', { id: draft.materialId, revision: draft.revision })}</p>
-      {board && <div className="notice ai-board-pins"><strong>{t('対象機器')}: {board.name}</strong><p>{t('外付けLED: GPIO{led} ／ 本体ボタン: GPIO{button}（押すとLOW）', { led: board.ledPin, button: board.buttonPin })}</p><p>{t('内蔵RGB LED: GPIO{rgb}', { rgb: board.rgbPin })}{board.rgbPowerPin !== null && ` ／ ${t('内蔵RGB電源: GPIO{pin}', { pin: board.rgbPowerPin })}`}{board.statusLedPin !== null && ` ／ ${t('状態LED: GPIO{pin}', { pin: board.statusLedPin })}`}</p><p>{t('外付けLEDと内蔵LEDのピンは別です。機器を変更する場合は「使うキット」で選び直してください。')}</p></div>}
+      {board && <div className="notice ai-board-pins"><strong>{t('対象機器')}: {board.name}</strong><p>{t('外付けLED: GPIO{led} ／ 本体ボタン: GPIO{button}（押すとLOW）', { led: draft.ledPin ?? t('未設定'), button: board.buttonPin })}</p><p>{t('内蔵RGB LED: GPIO{rgb}', { rgb: board.rgbPin })}{board.rgbPowerPin !== null && ` ／ ${t('内蔵RGB電源: GPIO{pin}', { pin: board.rgbPowerPin })}`}{board.statusLedPin !== null && ` ／ ${t('状態LED: GPIO{pin}', { pin: board.statusLedPin })}`}</p><p>{t('外付けLEDと内蔵LEDのピンは別です。機器を変更する場合は「使うキット」で選び直してください。')}</p></div>}
       <div className="ai-settings-grid">
         <label>{t('教材の表示名')}<input value={draft.displayName} maxLength={200} onChange={event => setField('displayName', event.target.value)} /></label>
         <label>{t('キット番号')}<input value={draft.kitId ?? ''} maxLength={40} placeholder={t('講師が割り当てる番号')} onChange={event => setField('kitId', event.target.value || null)} /></label>
         <label>{t('対象UIFlow2ファームウェア版')}<input value={draft.firmwareVersion ?? ''} maxLength={200} placeholder={t('実機で確認した版')} onChange={event => { setField('firmwareVersion', event.target.value || null); setTestedOnDevice(false) }} /></label>
         <label>{t('LED型番')}<input value={draft.ledModel ?? ''} maxLength={200} placeholder={t('キットのLED型番')} onChange={event => setField('ledModel', event.target.value || null)} /></label>
-        <label>{t('LED数')}<input type="number" min="1" step="1" value={draft.ledCount ?? ''} onChange={event => setField('ledCount', numberOrNull(event.target.value))} /></label>
         <label>{t('LED_BPP（今回の対応はRGB=3）')}<input type="number" min="1" step="1" value={draft.ledBpp ?? ''} onChange={event => setField('ledBpp', numberOrNull(event.target.value))} /></label>
-        <label>{t('最大輝度（%）')}<input type="number" min="0.01" max="100" step="any" value={draft.maxBrightnessPercent ?? ''} onChange={event => setField('maxBrightnessPercent', numberOrNull(event.target.value))} /></label>
       </div>
       <p className="ai-help">{t('最大輝度が範囲内でも電源の安全性は保証されません。講師がLED数・電源に合わせて確認してください。キット番号の会場全体での重複は講師が確認します。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。')}</p>
       <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={draft.features[key]} onChange={event => setField('features', { ...draft.features, [key]: event.target.checked })} />{t(label)}</label>)}</fieldset>
@@ -102,7 +108,7 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
         {draft.baseline.code.length > MAX_BASELINE_CODE_LENGTH && <p className="notice warn">{t('基準コードが100,000文字を超えています。内容は省略していません。Bluetoothの準備とブラウザ保存には使えないため、講師が登録内容を確認してください。')}</p>}
         {draft.baseline.verification ? <p className="ai-help">{t('講師による登録: {name} ／ {date} ／ 対象版 {firmware}', { name: draft.baseline.verification.confirmedBy, date: draft.baseline.verification.confirmedAt, firmware: draft.baseline.verification.firmwareVersion })}{draft.baseline.verification.nanoLedV1 ? ` ／ ${t('NanoLED v1対応確認あり')}` : ''} <button className="quiet-button" onClick={() => setField('baseline', { ...draft.baseline, verification: null })}>{t('確認登録を取り消す')}</button></p> : <p className="ai-help">{t('実機確認は未登録です。基準コードや対象版を変えたら、再確認が必要です。')}</p>}
         <label className="ai-confirm-name">{t('確認した講師名')}<input value={confirmedBy} maxLength={200} onChange={event => setConfirmedBy(event.target.value)} /></label>
-        <label className="ai-check"><input type="checkbox" checked={testedOnDevice && verificationMatches} onChange={event => { setConfirmedCode({ code: draft.baseline.code, firmware: draft.firmwareVersion, boardId: draft.boardId }); setTestedOnDevice(event.target.checked) }} />{t('この基準コードを、指定の対象機器・UIFlow2版の実機で確認した')}</label>
+        <label className="ai-check"><input type="checkbox" checked={testedOnDevice && verificationMatches} onChange={event => { setConfirmedCode({ code: draft.baseline.code, firmware: draft.firmwareVersion, boardId: draft.boardId, ledCount: draft.ledCount, ledPin: draft.ledPin, brightness: draft.maxBrightnessPercent }); setTestedOnDevice(event.target.checked) }} />{t('この基準コードを、指定の対象機器・UIFlow2版の実機で確認した')}</label>
         <label className="ai-check"><input type="checkbox" checked={nanoLedV1} onChange={event => setNanoLedV1(event.target.checked)} />{t('NanoLED v1の操作・状態通知・再接続も実機で確認した')}</label>
         <button className="quiet-button" disabled={preparation.isImporting || !testedOnDevice || !verificationMatches || !confirmedBy.trim() || !draft.baseline.code.trim() || !draft.firmwareVersion?.trim()} onClick={() => preparation.confirmBaseline(confirmedBy, nanoLedV1)}>{t('講師の実機確認を登録')}</button>
         <p className="ai-help">{t('講師が入力した確認情報です。Writerがコードを検証したり、実機の動作確認を代行した結果ではありません。')}</p>

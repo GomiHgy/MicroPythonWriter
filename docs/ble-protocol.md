@@ -39,7 +39,7 @@ UTF-8のASCII文字列。**1コマンドをLF（`\n`）で終端する。** 1行
 
 標準モードはすべて実装する。独自の追加モード名は `^[A-Z][A-Z0-9_]{0,15}$` に一致する半角英大文字・数字・アンダースコア、最大16文字。`STATUS`、`BRIGHTNESS`、`SPEED` は予約語であり、モード名に使わない。追加モードは機器側への実装が必要で、文字を送るだけで自動生成されるものではない。
 
-`BRIGHTNESS 100` は、講師が決めた `MAX_BRIGHTNESS_PERCENT` の100%を意味する。例：安全上限50%・スライダー50なら物理出力の上限は25%。**安全上限そのものを変更しない。** 値0で暗くしても現在モードを維持する。OFF中の明るさ・速さ変更は設定だけを更新し、勝手に点灯しない。
+`BRIGHTNESS 100` は、準備画面で設定した `MAX_BRIGHTNESS_PERCENT` の100%を意味する。例：安全上限50%・スライダー50なら物理出力の上限は25%。**安全上限そのものを変更しない。** 値0で暗くしても現在モードを維持する。OFF中の明るさ・速さ変更は設定だけを更新し、勝手に点灯しない。
 
 `SPEED 0` は停止ではなく最もゆっくり、`SPEED 100` は最も速い。標準MAGIC/RAINBOWは `period_ms = 3000 - 29 * n`（0で3秒、100で0.1秒）の周期で位相を進める。LED数で1周期が変わらないようにする。追加演出でも0は停止にせず、0〜100の同じ向きで速さを反映する。指定が省略された場合の標準の起動状態は `mode=OFF`、`brightness=100`、`speed=0`。起動時の光り方などを利用者が明示した場合は、その指定を安全上限とOFF→ONフェードの範囲内で適用できる。通知は標準値を固定で返さず、実際の適用状態を返す。
 
@@ -84,7 +84,7 @@ TXへ **ASCIIだけのJSONを1行、末尾にLF** で送る。ログやデバッ
 
 ## 4. ハードウェア上の固定条件
 
-[prompt.md](../prompt.md) と選択キットの `boardId` に従い、外付けLEDはGrove G2 / GPIO2、本体ボタンは **M5NanoC6ならGPIO9、AtomS3LiteならGPIO41**（両方active LOW）とする。キットのLED数、最大輝度、`machine.bitstream()`、800kHz用の固定タイミング、GRB送信は維持する。`neopixel`を追加しない。
+[prompt.md](../prompt.md) と選択キットの `boardId` に従い、外付けLEDは利用者設定の `ledPin`（初期値はGrove G2 / GPIO2）、本体ボタンは **M5NanoC6ならGPIO9、AtomS3LiteならGPIO41**（両方active LOW）とする。キットのLED数、最大輝度、`machine.bitstream()`、800kHz用の固定タイミング、GRB送信は維持する。`neopixel`を追加しない。
 
 外付けLEDを内蔵LEDへ置き換えない。M5NanoC6の内蔵RGBはGPIO20、RGB電源制御はGPIO19、青色LEDはGPIO7。AtomS3Liteの内蔵RGBはGPIO35で、NanoC6の電源制御ピンを流用しない。配線は [M5NanoC6](https://docs.m5stack.com/en/core/M5NanoC6)／[AtomS3 Lite](https://docs.m5stack.com/en/core/AtomS3%20Lite) の公式資料と照合する。
 

@@ -1,9 +1,9 @@
 import type { MessageCatalog } from './types'
 
 export const appMessages: MessageCatalog = {
-  "かんたん操作": {
-    "en": "Easy device control",
-    "zh": "轻松控制设备"
+  "AIとフルカラーLED電飾をはじめよう": {
+    "en": "Start full-color LED lighting with AI",
+    "zh": "和 AI 一起玩转全彩 LED 灯饰"
   },
   "表示言語": {
     "en": "Language",

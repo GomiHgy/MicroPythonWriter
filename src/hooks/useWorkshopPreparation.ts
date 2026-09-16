@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
+import { restoreLedSettings, saveLedSettings, ledSettingsKey, type LedSettings } from '../services/workshop/LedSettings'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
@@ -7,7 +8,11 @@ import { cloneWorkshopProfile, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile
 import { removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile } from '../services/workshop/WorkshopStorage'
 
 function initialSettings() {
-  const loaded = workshopPresets.map(preset => ({ preset, restored: restoreWorkshopProfile(preset) }))
+  const loaded = workshopPresets.map(preset => {
+    const saved = restoreWorkshopProfile(preset)
+    const led = restoreLedSettings(preset, saved.profile)
+    return { preset, restored: { profile: led.profile, notice: saved.notice || led.notice } }
+  })
   return {
     profiles: loaded.map(({ preset, restored }) => ({ id: preset.id, profile: restored.profile })),
     notice: loaded.find(({ restored }) => restored.notice)?.restored.notice ?? '',
@@ -28,6 +33,16 @@ export function useWorkshopPreparation() {
   const hasPendingChanges = useMemo(() => JSON.stringify(draft) !== JSON.stringify(selectedProfile), [draft, selectedProfile])
 
   function setNotice(notice: string) { setSettings(previous => ({ ...previous, notice })) }
+
+  function editLedSettings(patch: Partial<LedSettings>) {
+    const preset = workshopPresets.find(item => item.id === selectedId)
+    if (!preset || !selectedProfile || !draft || isImporting) return
+    if (Object.entries(patch).every(([key, value]) => selectedProfile[key as keyof LedSettings] === value)) return
+    const next = { ...selectedProfile, ...patch, baseline: { ...selectedProfile.baseline, verification: null } }
+    const notice = saveLedSettings(preset, next)
+    setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === selectedId ? { ...item, profile: next } : item), notice }))
+    setDraft(previous => previous ? { ...previous, ...patch, baseline: { ...previous.baseline, verification: null } } : previous)
+  }
 
   function selectProfile(id: string | null) {
     const next = settings.profiles.find(preset => preset.id === id)
@@ -96,6 +111,7 @@ export function useWorkshopPreparation() {
     if (!preset) return
     const failure = removeWorkshopProfile(preset)
     if (failure) { setNotice(failure); return }
+    try { localStorage.removeItem(ledSettingsKey(preset)) } catch { setNotice('LED設定を保存できませんでした。この画面では使えますが、再読み込みすると失われます。'); return }
     editGeneration.current++
     setIsImporting(false)
     const original = cloneWorkshopProfile(preset.profile)
@@ -103,7 +119,7 @@ export function useWorkshopPreparation() {
     setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: original } : item), notice: 'このキットを配布時の設定に戻しました。保存済みのブラウザ設定も削除しました。' }))
   }
 
-  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, editDraft, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
+  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, editDraft, editLedSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
 }
 
 export type WorkshopPreparation = ReturnType<typeof useWorkshopPreparation>

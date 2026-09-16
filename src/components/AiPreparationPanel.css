@@ -56,3 +56,5 @@
   .ai-kit-summary { align-items: flex-start; flex-direction: column; }
   .ai-preparation select { font-size: .85rem; }
 }
+.ai-led-settings { margin: 18px 0; border: 1px solid #8da4bb; border-radius: 12px; padding: 16px; min-width: 0; }
+.ai-led-settings legend { font-weight: 700; padding: 0 6px; }

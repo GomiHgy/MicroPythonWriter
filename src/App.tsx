@@ -78,7 +78,7 @@ export default function App() {
 
   return <main className="app">
     <header className="hero">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">⚡</span><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("かんたん操作")}</h1><p>{t(activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
+      <div className="brand"><span className="brand-mark" aria-hidden="true">⚡</span><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("AIとフルカラーLED電飾をはじめよう")}</h1><p>{t(activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
       <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={t(dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え')}>{t(dark ? '☀ 明るくする' : '🌙 暗くする')}</button>
       <label className="language-picker"><span>{t("表示言語")}</span><select aria-label={t("表示言語")} value={locale} onChange={event => { if (isLocale(event.target.value)) setLocale(event.target.value) }}><option value="ja">日本語</option><option value="en">English</option><option value="zh">简体中文</option></select></label>
     </header>

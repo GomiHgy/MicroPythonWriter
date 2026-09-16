@@ -11,7 +11,8 @@
 - [ ] `{{RESPONSE_LANGUAGE}}`を **日本語／English／简体中文** のいずれかで置き換えた
 - [ ] `{{UIFLOW2_FIRMWARE_VERSION}}`を記入した
 - [ ] `{{LED_MODEL}}`を記入した
-- [ ] `{{LED_COUNT}}`を記入した
+- [ ] `{{LED_COUNT}}`を記入した（初期値10）
+- [ ] `{{LED_PIN}}`を実配線に合わせて記入した（初期値2）
 - [ ] `{{LED_BPP}}`を記入した
 - [ ] `BITSTREAM_TIMING = 1`になっていることを確認した（800kHz固定）
 - [ ] `WS2812_TIMING_NS = (400, 850, 800, 450)`になっていることを確認した
@@ -31,12 +32,16 @@
 
 ### 機種選択とピンの対応（必須）
 
-| `{{BOARD_NAME}}` | SoC | 外付けLED（Grove G2） | `{{BUTTON_PIN}}` | 内蔵RGB LED | その他の内蔵LEDピン |
+| `{{BOARD_NAME}}` | SoC | 外付けLEDの初期値（Grove G2） | `{{BUTTON_PIN}}` | 内蔵RGB LED | その他の内蔵LEDピン |
 | --- | --- | --- | --- | --- | --- |
 | M5NanoC6 | ESP32-C6 | GPIO2 | 9（active LOW） | GPIO20 | RGB電源 GPIO19、青色LED GPIO7 |
 | AtomS3Lite | ESP32-S3 | GPIO2 | 41（active LOW） | GPIO35 | NanoC6のGPIO19・GPIO7制御を流用しない |
 
 外付けLEDと内蔵LEDは別物。機種が未確認ならSoC名だけで確定せず、講師に確認する。公式資料は [M5NanoC6](https://docs.m5stack.com/en/core/M5NanoC6) と [AtomS3 Lite](https://docs.m5stack.com/en/core/AtomS3%20Lite)。本ファイルの機種対応表は、そのキットの実機確認済みを意味しない。
+
+### 利用者が変更できるLED設定
+
+「AIの準備」でLED数・最大輝度・外部LEDピンを入力する。初期値は10個・20%・GPIO2。有効な入力は現在のブラウザへ機種別に自動保存する。手動テンプレートでは `{{LED_PIN}}` も実配線に合わせて置き換える。値が範囲内でも出力可能・安全とは限らない。内蔵LED・ボタン・USB等との競合を避け、機器の出力可能GPIOと電源を確認する。指定値を固定仕様としてAIへ渡し、AI側で勝手に上限や配線を変更させない。
 
 ### 0.1 LEDドライバに関する重要な変更
 
@@ -140,7 +145,7 @@ M5Stack {{BOARD_NAME}}
 機種とピンの固定対応：
 M5NanoC6はESP32-C6、本体ボタンGPIO9、内蔵RGB GPIO20、RGB電源制御GPIO19、内蔵青色LED GPIO7。
 AtomS3LiteはESP32-S3、本体ボタンGPIO41、内蔵RGB GPIO35。NanoC6のGPIO19電源制御やGPIO7青色LEDを流用しない。
-外付けLEDのGrove G2 / GPIO2は両機種で共通。選択機種とBUTTON_PIN={{BUTTON_PIN}}が一致しない場合は生成を止め、講師確認を案内する。
+外付けLEDはGPIO{{LED_PIN}}。初期値GPIO2は両機種のGrove G2。変更時は実配線・出力可能GPIO・内蔵機能との競合を確認する。選択機種とBUTTON_PIN={{BUTTON_PIN}}が一致しない場合は生成を止め、講師確認を案内する。
 開発環境：
 MicroPython Web ProgrammerのWeb Serial / Raw REPLからUIFlow2ファームウェア上で実行
 UIFlow2ファームウェア：
@@ -177,10 +182,10 @@ LEDの色順：
 LED送信後の待ち時間：
 ・`time.sleep_us(80)`程度でリセット時間を確保する
 LEDテープの接続：
-・GroveのG2をLEDデータ信号として使用
-・GPIO番号は2
-・GroveのG1は今回使用しない
-・5VとGNDもGroveから接続
+・設定のGPIO{{LED_PIN}}をLEDデータ信号として使用（初期値GPIO2はGrove G2）
+・GPIO番号は{{LED_PIN}}
+・指定ピンが実配線および対象機器で出力可能なGPIOと一致することを確認する
+・使用するLEDと電源の仕様を確認し、電源とGNDを接続する
 ・LEDテープと選択機器は共通GND
 本体ボタン：
 ・GPIO番号は{{BUTTON_PIN}}（M5NanoC6=9、AtomS3Lite=41）
@@ -191,7 +196,7 @@ LEDテープの接続：
 ・割り込みではなくメインループ内で読み取る
 ・チャタリング対策時間は40ms程度
 重要：
-外付けLEDテープはGPIO2です。
+外付けLEDテープはGPIO{{LED_PIN}}です。
 選択機器の内蔵LEDと混同しないでください。
 ・M5NanoC6の内蔵WS2812：GPIO20、内蔵WS2812電源制御：GPIO19、内蔵青色LED：GPIO7
 ・AtomS3Liteの内蔵RGB LED：GPIO35。M5NanoC6のGPIO19電源制御やGPIO7青色LEDは使用しない
@@ -389,7 +394,7 @@ Webコントローラ用のNanoLED v1固定仕様：
 ・点灯中の色変更や一時的な黒いフレームでは、200msフェードを再開始しない
 コードを出す前に、内部で次を確認してください。
 1. MicroPythonになっている
-2. LEDデータGPIOが2になっている
+2. LEDデータGPIOが設定の{{LED_PIN}}になっている
 3. ボタンGPIOが選択機種の{{BUTTON_PIN}}になっている（M5NanoC6=9、AtomS3Lite=41）
 4. ボタンがアクティブLOWになっている
 5. LED数が固定仕様と一致している
@@ -424,7 +429,7 @@ Webコントローラ用のNanoLED v1固定仕様：
 4. 「確認結果」
    次のように短く示す
    UIFlow2 / MicroPython：OK
-   LED GPIO2：OK
+   LED GPIO{{LED_PIN}}（設定・配線と一致）：OK
    LED送信 machine.bitstream：OK
    BITSTREAM_TIMING 1（800kHz）：OK
    WS2812_TIMING_NS：OK
@@ -604,7 +609,7 @@ GPIO、LED数、最大輝度、`MIN_OFF_TO_ON_FADE_MS = 200`、消灯から点�
 BLEライブラリの交換、初期化方式やコールバック引数の推測変更は許可しません。
 必要なAPIが確認済み基準コードや対象バージョンの公式資料で確認できなければ、コードを推測せず、不足箇所と講師が確認する事項を示してください。
 基準コードが貼られていなければ、コード生成を止めてください。
-外付けLEDのGPIO2、本体ボタンGPIO{{BUTTON_PIN}}のアクティブLOW、LED数、LED_BPP、最大輝度、machine.bitstream()、GRB順、固定タイミング、OFF→ONの最低200msフェードは変更しないでください。
+外付けLEDのGPIO{{LED_PIN}}、本体ボタンGPIO{{BUTTON_PIN}}のアクティブLOW、LED数、LED_BPP、最大輝度、machine.bitstream()、GRB順、固定タイミング、OFF→ONの最低200msフェードは変更しないでください。
 本体ボタンはM5NanoC6ならGPIO9、AtomS3LiteならGPIO41です。機種と指定ピンが不一致なら生成せず講師に確認してください。
 内蔵RGBはM5NanoC6ならGPIO20（電源GPIO19・青色LED GPIO7は別）、AtomS3LiteならGPIO35です。外付けLEDと混同せず、NanoC6の内蔵LED電源制御をAtomS3Liteへ流用しないでください。
 固定キットがRGB以外またはLED数300個超なら、設定を勝手に変えず対応範囲を確認してください。
@@ -745,7 +750,7 @@ BLEでMAGICを送ったとき
 【確認項目】
 ・MicroPythonコードになっているか
 ・ArduinoやCircuitPythonのAPIが混ざっていないか
-・外付けLEDがGPIO2になっているか
+・外付けLEDがGPIO{{LED_PIN}}になっているか
 ・`neopixel`をimportしていないか
 ・外付けLED送信に`machine.bitstream()`を使用しているか
 ・`BITSTREAM_TIMING`が800kHzを示す`1`になっているか
@@ -756,7 +761,7 @@ BLEでMAGICを送ったとき
 ・RGB値をGRB順で送信バッファへ格納しているか
 ・送信後に`time.sleep_us(80)`程度のリセット待ちがあるか
 ・ボタンが指定機種のGPIO{{BUTTON_PIN}}（M5NanoC6=9、AtomS3Lite=41）、アクティブLOWになっているか
-・内蔵RGB（M5NanoC6=GPIO20、AtomS3Lite=GPIO35）と外付けGPIO2を混同せず、NanoC6のGPIO19・GPIO7制御をAtomS3Liteへ流用していないか
+・内蔵RGB（M5NanoC6=GPIO20、AtomS3Lite=GPIO35）と外付けGPIO{{LED_PIN}}を混同せず、NanoC6のGPIO19・GPIO7制御をAtomS3Liteへ流用していないか
 ・LED数が固定仕様と一致しているか
 ・すべてのLED出力に最大輝度制限がかかっているか
 ・`MIN_OFF_TO_ON_FADE_MS`が`200`になっているか
@@ -805,7 +810,7 @@ MicroPython
 外付けLED：
 {{LED_MODEL}}
 {{LED_COUNT}}個
-GPIO2
+GPIO{{LED_PIN}}
 最大輝度{{MAX_BRIGHTNESS_PERCENT}}%
 消灯から点灯するときのフェード：
 MIN_OFF_TO_ON_FADE_MS：200
@@ -841,7 +846,7 @@ neopixel.NeoPixel
 from neopixel import NeoPixel
 import neopixel
 選択機種とボタンピンの対応が不一致なら、勝手に補正せず講師へ確認してください。
-内蔵RGBはM5NanoC6ならGPIO20、AtomS3LiteならGPIO35です。外付けLEDのGPIO2と混同しないでください。
+内蔵RGBはM5NanoC6ならGPIO20、AtomS3LiteならGPIO35です。外付けLEDのGPIO{{LED_PIN}}と混同しないでください。
 M5NanoC6の内蔵RGB電源制御GPIO19・青色LED GPIO7をAtomS3Liteへ流用しないでください。
 外付けLEDは`bytearray`へGRB順で格納し、共通関数から`machine.bitstream()`で送信してください。
 BLEを使う場合は、講師確認済み基準コードを維持してください。
@@ -936,7 +941,7 @@ OFF：
 消灯する
 明るさと速さのスライダー（BRIGHTNESS n、SPEED n）とSTATUSへの応答を残してください。
 ボタンやスライダーを操作した結果と、本体ボタンによる変更は、最終LED出力を含めたNanoLED v1形式のJSONで通知してください。
-BRIGHTNESS 100でも講師の安全上限を超えず、OFF中にスライダーを動かしても点灯しないようにしてください。
+BRIGHTNESS 100でも準備画面で設定した安全上限を超えず、OFF中にスライダーを動かしても点灯しないようにしてください。
 BLEでモードを変更したあとも、ボタン操作を使えるようにしてください。
 OFF状態から各点灯モードへ移るときだけ、最低200msの非ブロッキングフェードを入れてください。
 すでに点灯中の色変更には、このフェードを強制しないでください。

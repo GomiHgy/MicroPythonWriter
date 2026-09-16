@@ -1,6 +1,14 @@
 import type { MessageCatalog } from './types'
 
 export const preparationMessages: MessageCatalog = {
+  'LEDの設定': { en: 'LED settings', zh: 'LED 设置' },
+  '外部LEDピン（GPIO）': { en: 'External LED pin (GPIO)', zh: '外接 LED 引脚（GPIO）' },
+  '初期値は10個・20%・GPIO2。有効な入力は機種別にこのブラウザへ自動保存します。': { en: 'Defaults: 10 LEDs, 20%, GPIO2. Valid entries are saved automatically in this browser for each device.', zh: '默认值为 10 颗、20%、GPIO2。有效输入会按设备自动保存在此浏览器中。' },
+  '外部LEDピンは実際の配線に合わせてください。内蔵LED・ボタン・USB用のピンと競合させず、電源と出力可能なGPIOを確認してください。': { en: 'Match the external LED pin to your wiring. Check power and GPIO output support, and avoid pins used by onboard LEDs, buttons or USB.', zh: '外接 LED 引脚必须与实际接线一致。请检查供电和 GPIO 输出支持，避免与内置 LED、按钮或 USB 引脚冲突。' },
+  'LED設定が不正です。最後に保存できた値は変更していません。': { en: 'Invalid LED settings. The last saved values have not been changed.', zh: 'LED 设置无效，未更改上次保存的值。' },
+  'LED設定をこのブラウザに自動保存しました。': { en: 'LED settings saved automatically in this browser.', zh: 'LED 设置已自动保存在此浏览器中。' },
+  'LED設定を保存できませんでした。この画面では使えますが、再読み込みすると失われます。': { en: 'Could not save LED settings. They work on this page but will be lost on reload.', zh: '无法保存 LED 设置。当前页面可以使用，但重新加载后会丢失。' },
+  '保存したLED設定を読み込めませんでした。画面の値を確認してください。': { en: 'Could not restore saved LED settings. Check the values shown.', zh: '无法恢复已保存的 LED 设置，请检查显示的值。' },
   'はじめてでも大丈夫': { en: 'No experience needed', zh: '零基础也没关系' },
   '好きなAIと、光り方を考えよう': { en: 'Create your lighting effects with AI', zh: '和喜欢的 AI 一起设计灯光' },
   'キットを選んで準備文をコピー。AIへ1回貼り付ければ、相談を始められます。': { en: 'Choose your kit and copy its setup prompt. Paste it into an AI chat to get started.', zh: '选择套件并复制准备提示词，粘贴到 AI 对话中即可开始。' },

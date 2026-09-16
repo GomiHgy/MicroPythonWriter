@@ -18,6 +18,7 @@ export interface WorkshopProfile {
   firmwareVersion: string | null
   ledModel: string | null
   ledCount: number | null
+  ledPin: number | null
   ledBpp: number | null
   maxBrightnessPercent: number | null
   features: { button: boolean; ble: boolean; controller: boolean }
@@ -44,10 +45,10 @@ const nullableString = (value: unknown) => value === null || typeof value === 's
 const nullableNumber = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value))
 
 export function isWorkshopProfile(value: unknown): value is WorkshopProfile {
-  if (!record(value) || !exactKeys(value, ['boardId', 'materialId', 'revision', 'displayName', 'kitId', 'firmwareVersion', 'ledModel', 'ledCount', 'ledBpp', 'maxBrightnessPercent', 'features', 'baseline']) || !isBoardId(value.boardId)) return false
+  if (!record(value) || !exactKeys(value, ['boardId', 'materialId', 'revision', 'displayName', 'kitId', 'firmwareVersion', 'ledModel', 'ledCount', 'ledPin', 'ledBpp', 'maxBrightnessPercent', 'features', 'baseline']) || !isBoardId(value.boardId)) return false
   if (![value.materialId, value.revision, value.displayName].every(item => typeof item === 'string' && item.length <= MAX_PROFILE_TEXT_LENGTH)) return false
   if (![value.kitId, value.firmwareVersion, value.ledModel].every(item => nullableString(item) && (item === null || (item as string).length <= MAX_PROFILE_TEXT_LENGTH))) return false
-  if (![value.ledCount, value.ledBpp, value.maxBrightnessPercent].every(nullableNumber)) return false
+  if (![value.ledCount, value.ledPin, value.ledBpp, value.maxBrightnessPercent].every(nullableNumber)) return false
   if (!record(value.features) || !exactKeys(value.features, ['button', 'ble', 'controller']) || !Object.values(value.features).every(item => typeof item === 'boolean')) return false
   if (!record(value.baseline) || !exactKeys(value.baseline, ['code', 'verification']) || typeof value.baseline.code !== 'string' || value.baseline.code.length > MAX_BASELINE_CODE_LENGTH) return false
   const verification = value.baseline.verification
@@ -69,6 +70,7 @@ export function cloneWorkshopProfile(profile: WorkshopProfile): WorkshopProfile 
     firmwareVersion: profile.firmwareVersion,
     ledModel: profile.ledModel,
     ledCount: profile.ledCount,
+    ledPin: profile.ledPin,
     ledBpp: profile.ledBpp,
     maxBrightnessPercent: profile.maxBrightnessPercent,
     features: { ...profile.features },
@@ -86,6 +88,7 @@ export function validateWorkshopProfile(profile: WorkshopProfile): string[] {
   if (!validProfileText(profile.firmwareVersion)) errors.push('対象UIFlow2ファームウェアの版を講師が設定してください。機器から取得したMicroPythonの版で代用しません。')
   if (!validProfileText(profile.ledModel)) errors.push('LEDの型番を講師が設定してください。空欄・改行・未記入のテンプレートは使えません。')
   if (!Number.isSafeInteger(profile.ledCount) || profile.ledCount === null || profile.ledCount <= 0 || !Number.isSafeInteger(profile.ledCount * 3)) errors.push('LED数を正の整数で設定してください。')
+  if (!Number.isSafeInteger(profile.ledPin) || profile.ledPin === null || profile.ledPin < 0 || profile.ledPin > 48) errors.push('外部LEDピンは0〜48の整数で入力し、使用機器で出力可能なGPIOと配線を確認してください。')
   if (profile.ledBpp !== 3) errors.push('この教材はLED_BPP=3のRGB LEDのみ対応しています。RGBWなどへ勝手に変換せず、講師が仕様を確認してください。')
   if (profile.maxBrightnessPercent === null || !Number.isFinite(profile.maxBrightnessPercent) || profile.maxBrightnessPercent <= 0 || profile.maxBrightnessPercent > 100) errors.push('最大輝度を0より大きく100以下の数値で講師が設定してください。範囲内でも実機の電源安全性は別途確認が必要です。')
   return errors

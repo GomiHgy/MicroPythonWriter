@@ -7,14 +7,14 @@ export const promptMessages: MessageCatalog = {}
 export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string; ble: string; nanoLed: string; information: string }> = {
   en: {
     led: `## Fixed LED and button rules
-- External LEDs use Grove G2, GPIO{ledPin}. Initialize machine.Pin(LED_PIN, machine.Pin.OUT). Do not use Grove G1. Connect 5V and GND and maintain a common ground.
+- External LEDs use the configured GPIO{ledPin}. Initialize machine.Pin(LED_PIN, machine.Pin.OUT). Default GPIO2 is Grove G2. If changed, verify wiring and GPIO output support without conflicting with USB, onboard LEDs or buttons. Check power requirements and maintain a common ground.
 - If the onboard button is enabled, use GPIO{buttonPin}, active LOW (pressed LOW, released HIGH), optionally machine.Pin.PULL_UP. Read it in the main loop with approximately 40ms debounce. Do not replace it with M5.BtnA or a guessed board API. Do not add button operations for kits without a button feature.
 - {onboardRule}
 - Use import machine and import time as the basis. Do not import neopixel. Use machine.bitstream() and bytearray for LED output.
 - BITSTREAM_TIMING = 1 is only a fixed 800kHz label. Keep encoding=0 and WS2812_TIMING_NS = (400, 850, 800, 450), in nanoseconds, ordered T0H,T0L,T1H,T1L.
 - Build one complete frame in bytearray(LED_COUNT * LED_BPP), then send machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer). Never pass the numeric 1 as the third argument. Do not send one LED at a time.
 - Specify colors as RGB but store the buffer as GRB. At offset = led_index * LED_BPP, store green, red, blue. Follow each transmission with approximately time.sleep_us(80) for reset.
-- Route all OFF, solid colors and animations through the same output function. Clamp RGB to 0–255, apply the instructor maximum brightness, user brightness and fade factor, then store GRB. Never raise the safety cap to satisfy a brighter request.
+- Route all OFF, solid colors and animations through the same output function. Clamp RGB to 0–255, apply the configured maximum brightness, user brightness and fade factor, then store GRB. Never raise the safety cap to satisfy a brighter request.
 - On startup, send zero to every LED through the shared output function. Even a requested startup effect must obey the minimum 200ms OFF-to-ON fade for its first illumination.
 - If a required API such as machine.bitstream is unverified in the target firmware, request instructor verification. Do not guess alternative APIs or libraries or ask participants to install external libraries.
 - Do not add uasyncio, threads or GPIO interrupts unless explicitly specified by the instructor. Turn LEDs off where possible on termination or KeyboardInterrupt; do not obstruct Ctrl-C.
@@ -44,7 +44,7 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - Join fragments and process complete LF-terminated lines in order, including multiple lines. Limit receive lines to 128 bytes; discard an oversized line until the next LF. Bound the command queue and diagnose discarded overflow.
 - Preserve every command: PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS. PINK is solid pink; BLUE solid blue; MAGIC moves pink/purple/blue left to right; RAINBOW cycles all LEDs through rainbow colors.
 - OFF immediately sends zero to every LED and cancels fade-in while the program and BLE continue. STATUS only reports state and changes nothing.
-- n is an integer from 0 to 100. Missing arguments, fractions, out-of-range values or unknown commands leave state unchanged. BRIGHTNESS 100 means 100% of the instructor cap, not a changed cap. BRIGHTNESS 0 retains the mode. Brightness or speed changes while OFF do not turn LEDs on.
+- n is an integer from 0 to 100. Missing arguments, fractions, out-of-range values or unknown commands leave state unchanged. BRIGHTNESS 100 means 100% of the configured cap, not a changed cap. BRIGHTNESS 0 retains the mode. Brightness or speed changes while OFF do not turn LEDs on.
 - SPEED 0 is slowest, not stopped; 100 is fastest. Default MAGIC/RAINBOW period_ms = 3000 - 29 * n, independent of LED count. Additional effects use the same direction of speed scaling and must not stop at 0.
 - Default startup state is mode=OFF, brightness=100, speed=0. Explicit startup effects may override the mode only while respecting the cap and OFF-to-ON fade. Report the actual applied state.
 - Additional mode tokens match ^[A-Z][A-Z0-9_]{0,15}$, at most 16 characters. STATUS, BRIGHTNESS and SPEED are reserved, not modes. Additional effects require firmware implementation.
@@ -60,14 +60,14 @@ Prioritize fixed specifications, instructor-verified baseline code, official M5S
   },
   zh: {
     led: `## LED 和按钮的固定规则
-- 外接 LED 使用 Grove G2 的 GPIO{ledPin}，通过 machine.Pin(LED_PIN, machine.Pin.OUT) 初始化。不要使用 Grove G1。连接 5V 和 GND，确保共地。
+- 外接 LED 使用设置的 GPIO{ledPin}，通过 machine.Pin(LED_PIN, machine.Pin.OUT) 初始化。默认 GPIO2 对应 Grove G2。更改时请确认接线和设备是否支持该 GPIO 输出，避免与 USB、内置 LED 或按钮冲突。确认供电要求并确保共地。
 - 使用机身按钮时，使用 GPIO{buttonPin}、低电平有效（按下为 LOW，松开为 HIGH），按需使用 machine.Pin.PULL_UP。在主循环中读取，并进行约 40ms 的消抖。不要替换成 M5.BtnA 或猜测的设备 API。没有按钮功能的套件不能添加按钮操作。
 - {onboardRule}
 - 以 import machine 和 import time 为基础，不要 import neopixel。使用 machine.bitstream() 和 bytearray 输出 LED 数据。
 - BITSTREAM_TIMING = 1 仅为 800kHz 的固定标签。保持 encoding=0 和 WS2812_TIMING_NS = (400, 850, 800, 450) 不变，单位为纳秒，顺序为 T0H,T0L,T1H,T1L。
 - 在 bytearray(LED_COUNT * LED_BPP) 中构建全部 LED 的完整一帧，然后通过 machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer) 一次发送。第三个参数不能直接传数字 1，不能逐个 LED 发送。
 - 颜色使用 RGB 表示，发送缓冲区使用 GRB。offset = led_index * LED_BPP，依次存储 green、red、blue。每次发送后使用约 time.sleep_us(80) 的复位等待。
-- 熄灭、单色和动画都必须经过同一个输出函数。将 RGB 限制在 0–255，应用讲师设置的最大亮度、用户亮度和渐变系数后，再按 GRB 存储。不能为满足更亮的要求而提高安全上限。
+- 熄灭、单色和动画都必须经过同一个输出函数。将 RGB 限制在 0–255，应用准备页面设置的最大亮度、用户亮度和渐变系数后，再按 GRB 存储。不能为满足更亮的要求而提高安全上限。
 - 启动时，通过共用发送函数向全部 LED 发送 0，安全初始化为熄灭。即使指定了启动效果，首次点亮也必须遵守 OFF 到点亮至少 200ms 的渐亮规则。
 - 如果 machine.bitstream 等必要 API 尚未在目标固件中确认，请要求讲师确认。不要猜测替代 API 或库，也不要要求参与者安装外部库。
 - 未经讲师明确指定，不添加 uasyncio、线程或 GPIO 中断。停止或 KeyboardInterrupt 时尽可能熄灭 LED，不妨碍 Ctrl-C 停止。
@@ -97,7 +97,7 @@ Prioritize fixed specifications, instructor-verified baseline code, official M5S
 - 设备合并分片，仅按顺序处理收到 LF 的完整行，并支持连续多行。接收行缓冲区最多 128 字节，超长行丢弃到下一个 LF。命令队列也必须有界，满时丢弃新增项并诊断。
 - 保留全部命令：PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS。PINK 为全部粉色，BLUE 为全部蓝色，MAGIC 为粉、紫、蓝从左向右流动，RAINBOW 为全部 LED 的彩虹变化。
 - OFF 立即熄灭全部 LED 并取消渐亮，但程序和 BLE 继续运行。STATUS 仅通知状态，不改变行为。
-- n 为 0–100 的整数。缺少参数、小数、越界或未知命令不能改变状态。BRIGHTNESS 100 表示讲师安全亮度上限的 100%，不能更改上限本身。BRIGHTNESS 0 保持当前模式。OFF 时调整亮度或速度不能点亮 LED。
+- n 为 0–100 的整数。缺少参数、小数、越界或未知命令不能改变状态。BRIGHTNESS 100 表示已设置的安全亮度上限的 100%，不能更改上限本身。BRIGHTNESS 0 保持当前模式。OFF 时调整亮度或速度不能点亮 LED。
 - SPEED 0 表示最慢而非停止，100 表示最快。标准 MAGIC/RAINBOW 的 period_ms = 3000 - 29 * n，不随 LED 数量变化。新增效果也使用同方向速度调整，0 不得停止。
 - 默认启动状态为 mode=OFF、brightness=100、speed=0。明确指定启动效果时可以更改模式，但必须遵守安全亮度及 OFF 到 ON 渐变。通知返回实际已应用状态。
 - 新增模式名称必须匹配 ^[A-Z][A-Z0-9_]{0,15}$，最多 16 个字符。STATUS、BRIGHTNESS、SPEED 为保留字，不能作为模式名。新增效果需要在设备程序中实现。
