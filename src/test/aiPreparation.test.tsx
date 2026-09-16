@@ -1,0 +1,163 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AiPreparationPanel } from '../components/AiPreparationPanel'
+import type { WorkshopPreparation } from '../hooks/useWorkshopPreparation'
+import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
+import { createWorkshopContext } from '../services/prompt/WorkshopRules'
+import { PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
+import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
+
+const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as Array<() => void>, focus: vi.fn(), select: vi.fn() }))
+vi.mock('react', async () => ({
+  ...await vi.importActual<typeof import('react')>('react'),
+  useState: <Value,>(initial: Value | (() => Value)) => {
+    const index = harness.cursor++
+    if (!(index in harness.slots)) harness.slots[index] = typeof initial === 'function' ? (initial as () => Value)() : initial
+    return [harness.slots[index], (next: Value | ((previous: Value) => Value)) => { harness.slots[index] = typeof next === 'function' ? (next as (previous: Value) => Value)(harness.slots[index] as Value) : next }]
+  },
+  useRef: () => { const index = harness.cursor++; if (!(index in harness.slots)) harness.slots[index] = { current: { focus: harness.focus, select: harness.select } }; return harness.slots[index] },
+  useEffect: (effect: () => void, dependencies: unknown[]) => {
+    const index = harness.cursor++
+    const previous = harness.slots[index] as unknown[] | undefined
+    if (!previous || dependencies.some((value, position) => !Object.is(value, previous[position]))) harness.effects.push(effect)
+    harness.slots[index] = dependencies
+  },
+}))
+
+const profile: WorkshopProfile = { materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
+function preparation(): WorkshopPreparation {
+  const context = createWorkshopContext(profile)
+  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
+}
+type Element = ReactElement<Record<string, unknown>>
+function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
+  if (Array.isArray(node)) return node.flatMap(child => all(child, predicate))
+  if (!isValidElement<Record<string, unknown>>(node)) return []
+  return [...(predicate(node) ? [node] : []), ...all(node.props.children as ReactNode, predicate)]
+}
+function content(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (Array.isArray(node)) return node.map(content).join('')
+  if (isValidElement<Record<string, unknown>>(node)) return content(node.props.children as ReactNode)
+  return String(node)
+}
+function find(node: ReactNode, predicate: (element: Element) => boolean) { const result = all(node, predicate); expect(result).toHaveLength(1); return result[0] }
+function button(node: ReactNode, label: string) { return find(node, element => element.type === 'button' && content(element.props.children as ReactNode).includes(label)) }
+function event(element: Element, name: string, value?: unknown) { return (element.props[name] as (value: unknown) => unknown)(value) }
+function render(prep: WorkshopPreparation, onOpenProgram = vi.fn()) { harness.cursor = 0; const node = AiPreparationPanel({ preparation: prep, onOpenProgram }); harness.effects.splice(0).forEach(effect => effect()); return node }
+async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
+
+beforeEach(() => { harness.slots = []; harness.cursor = 0; harness.effects = []; harness.focus.mockClear(); harness.select.mockClear(); vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } }); vi.stubGlobal('confirm', vi.fn(() => true)) })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
+
+describe('AIの準備パネル', () => {
+  it('コピー完了が返らなくても操作を復帰し、遅い完了で成功表示に変えない', async () => {
+    vi.useFakeTimers()
+    let resolve!: () => void
+    vi.mocked(navigator.clipboard.writeText).mockImplementation(() => new Promise(done => { resolve = done }))
+    const prep = preparation()
+    event(button(render(prep), '準備文をコピー'), 'onClick')
+    expect(find(render(prep), element => element.type === 'select').props.disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(PREPARATION_COPY_TIMEOUT_MS)
+    const node = render(prep)
+    expect(button(node, '準備文をコピー').props.disabled).toBe(false)
+    expect(find(node, element => element.type === 'select').props.disabled).toBe(false)
+    expect(content(node)).toContain('コピーの完了を確認できませんでした')
+    expect(harness.select).toHaveBeenCalledOnce()
+    resolve(); await flush()
+    expect(content(render(prep))).not.toContain('準備文をコピーしたよ')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+  it('基準コード読込中も以前の準備文をコピー・保存・プレビューしない', () => {
+    const node = render({ ...preparation(), isImporting: true })
+    expect(button(node, '準備文をコピー').props.disabled).toBe(true)
+    expect(button(node, 'ファイルで保存').props.disabled).toBe(true)
+    expect(all(node, element => element.type === 'textarea')).toHaveLength(0)
+    expect(content(node)).toContain('基準コードを読み込み中')
+  })
+  it('未適用の講師設定がある間は古い準備文をコピー・保存しない', () => {
+    const prep = { ...preparation(), hasPendingChanges: true }
+    const node = render(prep)
+    expect(button(node, '準備文をコピー').props.disabled).toBe(true)
+    expect(button(node, 'ファイルで保存').props.disabled).toBe(true)
+    event(button(node, '準備文をコピー'), 'onClick')
+    event(button(node, 'ファイルで保存'), 'onClick')
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+    expect(content(node)).toContain('先に「設定を適用」')
+    expect(all(node, element => element.type === 'textarea')).toHaveLength(0)
+  })
+  it('未選択・設定不備ではコピーと保存を無効にし、プログラムへは進める', () => {
+    const prep = { ...preparation(), selectedId: null, selectedProfile: null, context: null, prompt: '', draft: null }
+    const open = vi.fn()
+    const node = render(prep, open)
+    expect(button(node, '準備文をコピー').props.disabled).toBe(true)
+    expect(button(node, 'ファイルで保存').props.disabled).toBe(true)
+    event(button(node, 'プログラム'), 'onClick')
+    expect(open).toHaveBeenCalledOnce()
+    expect(content(node)).not.toContain('machine.bitstream')
+  })
+  it('プレビューとコピーで同じ全文を使い、成功通知はPromise成功後だけ', async () => {
+    const prep = preparation()
+    let resolve!: () => void
+    vi.mocked(navigator.clipboard.writeText).mockImplementation(() => new Promise(done => { resolve = done }))
+    const node = render(prep)
+    const preview = find(node, element => element.type === 'textarea')
+    expect(preview.props.value).toBe(prep.prompt)
+    expect(preview.props.readOnly).toBe(true)
+    event(button(node, '準備文をコピー'), 'onClick')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(preview.props.value)
+    expect(content(render(prep))).not.toContain('準備文をコピーしたよ')
+    resolve(); await flush()
+    expect(content(render(prep))).toContain('準備文をコピーしたよ')
+  })
+  it.each(['rejected', 'unsupported'])('%s では成功と表示せず、全文を選択して手動コピーへ誘導', async mode => {
+    if (mode === 'rejected') vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('denied'))
+    else vi.stubGlobal('navigator', {})
+    const prep = preparation()
+    event(button(render(prep), '準備文をコピー'), 'onClick')
+    await flush()
+    const node = render(prep)
+    expect(content(node)).toContain('手動でコピー')
+    expect(content(node)).not.toContain('準備文をコピーしたよ')
+    expect(find(node, element => element.type === 'details' && element.props.className === 'ai-preview').props.open).toBe(true)
+    expect(harness.focus).toHaveBeenCalled()
+    expect(harness.select).toHaveBeenCalled()
+    event(button(node, '全文を選択'), 'onClick')
+    expect(harness.select).toHaveBeenCalledTimes(2)
+  })
+  it('キャンセルした秘密情報付き準備文はコピーせず、内容確認へ案内', async () => {
+    vi.mocked(confirm).mockReturnValue(false)
+    const prep = { ...preparation(), prompt: '準備文\nTOKEN="private"' }
+    event(button(render(prep), '準備文をコピー'), 'onClick')
+    await flush()
+    const node = render(prep)
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+    expect(content(node)).toContain('キャンセルしました')
+    expect(find(node, element => element.type === 'textarea').props.value).toBe(prep.prompt)
+  })
+  it('通常リンクはコードや準備文をURLへ含まずコピーと別操作', () => {
+    const node = render(preparation())
+    const links = all(node, element => element.type === 'a')
+    expect(links).toHaveLength(3)
+    for (const link of links) {
+      const url = new URL(link.props.href as string)
+      expect(url.search).toBe(''); expect(url.hash).toBe('')
+      expect(link.props.target).toBe('_blank')
+      expect(link.props.rel).toBe('noopener noreferrer')
+      expect(link.props.onClick).toBeUndefined()
+    }
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+  })
+  it('保存も同じ生成済み文字列を使用する', async () => {
+    vi.useFakeTimers()
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.stubGlobal('document', { createElement: () => ({ click: vi.fn(), remove: vi.fn() }), body: { appendChild: vi.fn() } })
+    const prep = preparation()
+    const node = render(prep)
+    event(button(node, 'ファイルで保存'), 'onClick')
+    const blob = create.mock.calls[0][0] as Blob
+    expect(await blob.text()).toBe(find(node, element => element.type === 'textarea').props.value)
+    vi.runAllTimers()
+  })
+})

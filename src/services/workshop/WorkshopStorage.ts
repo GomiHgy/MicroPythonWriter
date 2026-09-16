@@ -1,0 +1,48 @@
+import type { WorkshopPreset } from '../../config/workshops'
+import { cloneWorkshopProfile, isWorkshopProfile, validateWorkshopProfile, type WorkshopProfile } from './WorkshopProfile'
+
+const STORAGE_SCHEMA = 1
+export const MAX_STORED_PROFILE_LENGTH = 240_000
+type SettingsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+export type WorkshopStorageResult = { profile: WorkshopProfile; notice: string }
+
+export function workshopStorageKey(preset: WorkshopPreset) {
+  return `mpw-workshop:${encodeURIComponent(preset.id)}:${encodeURIComponent(preset.profile.materialId)}:${encodeURIComponent(preset.profile.revision)}`
+}
+
+export function restoreWorkshopProfile(preset: WorkshopPreset, getStorage: () => SettingsStorage = () => localStorage): WorkshopStorageResult {
+  const fallback = cloneWorkshopProfile(preset.profile)
+  try {
+    const raw = getStorage().getItem(workshopStorageKey(preset))
+    if (raw === null) return { profile: fallback, notice: '' }
+    if (raw.length > MAX_STORED_PROFILE_LENGTH) throw new Error('size')
+    const data: unknown = JSON.parse(raw)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('shape')
+    const record = data as Record<string, unknown>
+    if (Object.keys(record).sort().join(',') !== 'materialId,presetId,profile,revision,schemaVersion') throw new Error('shape')
+    if (record.schemaVersion !== STORAGE_SCHEMA || record.presetId !== preset.id || record.materialId !== preset.profile.materialId || record.revision !== preset.profile.revision) throw new Error('version')
+    if (!isWorkshopProfile(record.profile) || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile).length) throw new Error('profile')
+    return { profile: cloneWorkshopProfile(record.profile), notice: '' }
+  } catch {
+    return { profile: fallback, notice: '保存済みの設定を読み込めませんでした。未対応の版・破損・容量・保存機能を講師が確認してください。配布された設定を使っています。' }
+  }
+}
+
+export function storeWorkshopProfile(preset: WorkshopPreset, profile: WorkshopProfile, persistBaseline: boolean, getStorage: () => SettingsStorage = () => localStorage): string {
+  if (!isWorkshopProfile(profile) || validateWorkshopProfile(profile).length || profile.materialId !== preset.profile.materialId || profile.revision !== preset.profile.revision) return '設定が不正なため保存できません。講師用設定を確認してください。'
+  const saved = cloneWorkshopProfile(profile)
+  if (!persistBaseline) saved.baseline = { code: '', verification: null }
+  try {
+    const raw = JSON.stringify({ schemaVersion: STORAGE_SCHEMA, presetId: preset.id, materialId: profile.materialId, revision: profile.revision, profile: saved })
+    if (raw.length > MAX_STORED_PROFILE_LENGTH) return '設定が大きすぎるため保存できません。基準コードはこの画面のメモリ上で利用できます。'
+    getStorage().setItem(workshopStorageKey(preset), raw)
+    return ''
+  } catch {
+    return 'このブラウザには設定を保存できませんでした。現在の画面では設定を使えますが、再読み込みすると失われます。'
+  }
+}
+
+export function removeWorkshopProfile(preset: WorkshopPreset, getStorage: () => SettingsStorage = () => localStorage): string {
+  try { getStorage().removeItem(workshopStorageKey(preset)); return '' }
+  catch { return '保存済みの設定を削除できませんでした。ブラウザの保存設定を確認してください。' }
+}

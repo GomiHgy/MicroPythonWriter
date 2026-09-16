@@ -101,6 +101,7 @@ button, input { font: inherit; padding: 9px 11px; border: 1px solid #1769bc; bor
 button { cursor: pointer; background: #1769bc; color: #fff; transition: transform .12s ease, box-shadow .12s ease, background .12s ease; }
 button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 10px #1b56852b; }
 button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #f0b429; outline-offset: 2px; }
+textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid #f0b429; outline-offset: 2px; }
 button:disabled { opacity: .48; cursor: not-allowed; }
 .notice { margin-bottom: 12px; padding: 12px 15px; }
 .notice.danger { border-color: #e2867d; background: #fff1ef; color: #862a24; }
@@ -129,6 +130,8 @@ footer { margin-top: 12px; padding: 13px 16px; color: #61758a; font-size: .84rem
 }
 
 @media (max-width: 650px) {
+  .app-tabs button { padding-inline: 5px; font-size: .84rem; min-width: 0; }
+  .app-tabs button span { display: block; margin: 0 0 3px; }
   .app { padding: 14px; }
   .hero { align-items: flex-start; flex-direction: column; }
   .theme-button { align-self: flex-start; margin-top: 0; }

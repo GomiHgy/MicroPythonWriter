@@ -1,0 +1,73 @@
+[hidden] { display: none !important; }
+.app-tabs { display: flex; gap: 6px; width: fit-content; padding: 5px; margin: 0 0 18px; border: 1px solid #c6d7e6; border-radius: 14px; background: #e0eaf3; }
+.app-tabs button { padding: 11px 24px; color: #46627e; background: transparent; border-color: transparent; font-weight: 750; }
+.app-tabs button[aria-selected=true] { color: #0758a4; background: #fff; box-shadow: 0 2px 8px #203c621a; }
+.app-tabs button span { margin-right: 6px; }
+.bluetooth-panel { max-width: 1120px; margin: 0 auto; }
+.bluetooth-panel .notice { margin-top: 12px; }
+.bluetooth-guide { color: #526b84; line-height: 1.8; font-size: .9rem; margin: 16px 2px; }
+.text-button { color: #075fac; background: transparent; border: 0; padding: 1px 3px; text-decoration: underline; text-underline-offset: 3px; }
+.controller-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 16px; }
+.controller-grid .panel { padding: 24px; min-width: 0; }
+.small-badge { border-radius: 999px; background: #edf2f7; color: #587089; padding: 6px 10px; font-size: .76rem; white-space: nowrap; }
+.small-badge.live { color: #087443; background: #dff7e8; }
+.mode-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0 12px; }
+.mode-button { display: flex; flex-direction: column; align-items: center; min-height: 122px; justify-content: center; gap: 5px; background: #f5f9fd; color: #26435f; border: 2px solid #d7e4ef; border-radius: 14px; }
+.mode-button.selected { border-color: #1675ce; background: #eaf5ff; box-shadow: 0 0 0 1px #1675ce; }
+.mode-button strong { font-size: 1rem; }
+.mode-button small { color: #526b84; font-size: .8rem; }
+.mode-icon { line-height: 1.15; font-size: 1.85rem; }
+.lights-off { width: 100%; min-height: 46px; font-weight: 700; }
+.slider-heading { margin: 26px 0 18px; }
+.slider-heading h3 { margin: 0; font-size: 1.07rem; }
+.control-slider { margin: 18px 0; }
+.control-slider label { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.control-slider label span { font-size: .78rem; color: #526b84; }
+.control-slider label b { color: #075fac; font-size: .95rem; margin-left: 5px; }
+.control-slider input { display: block; width: 100%; min-width: 0; height: 34px; padding: 0; margin: 8px 0 0; accent-color: #1675ce; cursor: pointer; }
+.control-slider input:disabled { cursor: not-allowed; opacity: .45; }
+.slider-scale { display: flex; justify-content: space-between; font-size: .75rem; color: #526b84; }
+.controller-note { color: #526b84; font-size: .8rem; line-height: 1.8; margin: 16px 0 0; }
+.led-placeholder { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 294px; text-align: center; padding: 20px; margin: 20px 0; border-radius: 16px; background: #f0f5fa; }
+.led-placeholder > span { color: #779cbd; font-size: 3rem; }
+.led-placeholder h3 { font-size: 1.02rem; margin: 12px 0 4px; }
+.led-placeholder p { color: #526b84; font-size: .86rem; line-height: 1.8; }
+.led-summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 24px 0 14px; }
+.led-summary strong { font-size: 1.2rem; }
+.led-summary span { font-size: .82rem; color: #526b84; }
+.led-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(20px, 1fr)); gap: 12px; align-content: center; min-height: 180px; max-height: 390px; overflow: auto; background: #0b121c; border: 1px solid #324255; border-radius: 16px; padding: 24px; }
+.led-dot { display: block; aspect-ratio: 1; border-radius: 50%; border: 1px solid #ffffff30; max-width: 28px; width: 100%; }
+.led-dot.off { border-color: #657080; }
+.outdated .led-preview { opacity: .6; }
+.led-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+.led-values dt { font-size: .72rem; font-weight: 400; color: #526b84; }
+.led-values dd { font-weight: 750; margin-top: 4px; overflow-wrap: anywhere; }
+.received-time { font-size: .78rem; color: #526b84; margin: 18px 0; }
+.refresh-status { width: 100%; }
+.bluetooth-help ol { padding-left: 22px; margin: 0 0 12px; font-size: .9rem; line-height: 1.9; }
+.bluetooth-help .advanced-body > p { font-size: .86rem; line-height: 1.9; }
+.custom-command { display: flex; gap: 8px; margin-top: 8px; }
+.custom-command input { width: 100%; min-width: 0; }
+.custom-command button { white-space: nowrap; }
+:root[data-theme=dark] .app-tabs { background: #152332; border-color: #354d63; }
+:root[data-theme=dark] .app-tabs button { color: #adbed0; }
+:root[data-theme=dark] .app-tabs button[aria-selected=true] { color: #eff7ff; background: #274562; }
+:root[data-theme=dark] .bluetooth-guide, :root[data-theme=dark] .controller-note, :root[data-theme=dark] .mode-button small, :root[data-theme=dark] .control-slider label span, :root[data-theme=dark] .slider-scale, :root[data-theme=dark] .led-placeholder p, :root[data-theme=dark] .led-summary span, :root[data-theme=dark] .led-values dt, :root[data-theme=dark] .received-time { color: #adbed0; }
+:root[data-theme=dark] .text-button, :root[data-theme=dark] .control-slider label b { color: #82c2ff; }
+:root[data-theme=dark] .mode-button { color: #eff7ff; background: #203246; border-color: #3c5268; }
+:root[data-theme=dark] .mode-button.selected { background: #143e65; border-color: #63b3ff; box-shadow: 0 0 0 1px #63b3ff; }
+:root[data-theme=dark] .small-badge { background: #263a4e; color: #bcd0e5; }
+:root[data-theme=dark] .small-badge.live { background: #163e31; color: #8bebbd; }
+:root[data-theme=dark] .led-placeholder { background: #122031; }
+:root[data-theme=dark] .custom-command input { background: #122031; color: #eff7ff; border-color: #55708a; }
+@media (max-width: 800px) { .controller-grid { grid-template-columns: 1fr; } }
+@media (max-width: 650px) {
+  .app-tabs { width: 100%; }
+  .app-tabs button { flex: 1; padding: 11px 6px; font-size: .94rem; }
+  .controller-grid .panel { padding: 18px; }
+  .controller-grid .section-heading { flex-direction: row; gap: 8px; align-items: center; }
+  .small-badge { white-space: normal; text-align: center; max-width: 140px; }
+  .led-values { grid-template-columns: 1fr 1fr; }
+  .led-summary { align-items: flex-start; flex-direction: column; }
+  .led-preview { gap: 10px; padding: 18px; }
+}

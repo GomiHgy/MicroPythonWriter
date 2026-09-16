@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { CodeEditor } from './components/CodeEditor'
 import { Terminal } from './components/Terminal'
+import { BluetoothPanel } from './components/BluetoothPanel'
+import { AiPreparationPanel } from './components/AiPreparationPanel'
 import { hasSensitiveAssignments } from './services/prompt/RepairPromptBuilder'
 import { useProgrammer } from './hooks/useProgrammer'
+import { useWorkshopPreparation } from './hooks/useWorkshopPreparation'
 import './App.css'
 
 const statusCopy: Record<string, { icon: string; eyebrow: string; title: string; description: string; tone: 'ready' | 'running' | 'waiting' | 'warning' | 'error' }> = {
@@ -18,12 +21,16 @@ const statusCopy: Record<string, { icon: string; eyebrow: string; title: string;
 }
 
 const defaultStatus = { icon: '…', eyebrow: 'NanoC6を準備中', title: '少し待ってください', description: 'ケーブルはそのままで、処理が終わるまで待ってください。', tone: 'waiting' as const }
+const tabs = [{ id: 'preparation', label: 'AIの準備', icon: '✦' }, { id: 'program', label: 'プログラム', icon: '✎' }, { id: 'controller', label: 'コントローラ', icon: '🎛' }] as const
+const readPreference = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 
 export default function App() {
-  const app = useProgrammer()
-  const [dark, setDark] = useState(() => localStorage.getItem('mpw-theme') !== 'light')
-  const [wrap, setWrap] = useState(() => localStorage.getItem('mpw-wrap') !== 'false')
-  const [autoScroll, setAutoScroll] = useState(() => localStorage.getItem('mpw-autoscroll') !== 'false')
+  const preparation = useWorkshopPreparation()
+  const app = useProgrammer(preparation.context)
+  const [activeTab, setActiveTab] = useState<typeof tabs[number]['id']>('program')
+  const [dark, setDark] = useState(() => readPreference('mpw-theme') !== 'light')
+  const [wrap, setWrap] = useState(() => readPreference('mpw-wrap') !== 'false')
+  const [autoScroll, setAutoScroll] = useState(() => readPreference('mpw-autoscroll') !== 'false')
   const [timestamps, setTimestamps] = useState(false)
   const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean }>()
   const ready = app.state === 'raw-repl-ready' || app.state === 'stopped'
@@ -36,9 +43,11 @@ export default function App() {
   const runDescription = running ? '今動いているプログラムを止めて、編集内容を実行します。' : '編集内容をNanoC6へ保存して、すぐに試します。'
 
   useEffect(() => {
-    localStorage.setItem('mpw-theme', dark ? 'dark' : 'light')
-    localStorage.setItem('mpw-wrap', String(wrap))
-    localStorage.setItem('mpw-autoscroll', String(autoScroll))
+    try {
+      localStorage.setItem('mpw-theme', dark ? 'dark' : 'light')
+      localStorage.setItem('mpw-wrap', String(wrap))
+      localStorage.setItem('mpw-autoscroll', String(autoScroll))
+    } catch { /* 保存できない環境でも表示と操作は続ける */ }
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
   }, [dark, wrap, autoScroll])
 
@@ -50,7 +59,7 @@ export default function App() {
 
   const copyPrompt = async () => {
     if (!app.error) return
-    if (hasSensitiveAssignments(app.source) && !confirm('プログラムにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してコピーしますか？')) return
+    if (hasSensitiveAssignments(app.error.repairPrompt) && !confirm('修正依頼のコード・設定・ログにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してコピーしますか？検出は補助で、すべての秘密情報を見つけられるわけではありません。')) return
     try {
       if (!navigator.clipboard?.writeText) throw new Error('コピー機能はHTTPSまたはlocalhostでのみ使えます。')
       await navigator.clipboard.writeText(app.error.repairPrompt)
@@ -65,10 +74,26 @@ export default function App() {
 
   return <main className="app">
     <header className="hero">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">⚡</span><div><p className="eyebrow">M5Stack NanoC6</p><h1>プログラム かんたん操作</h1><p>USBでつないで、書いたプログラムをすぐ試せます。</p></div></div>
+      <div className="brand"><span className="brand-mark" aria-hidden="true">⚡</span><div><p className="eyebrow">M5Stack NanoC6</p><h1>NanoC6 かんたん操作</h1><p>{activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。'}</p></div></div>
       <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え'}>{dark ? '☀ 明るくする' : '🌙 暗くする'}</button>
     </header>
 
+    <div className="app-tabs" role="tablist" aria-label="使いたい機能" onKeyDown={event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const index = tabs.findIndex(tab => tab.id === activeTab)
+      const next = tabs[event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length].id
+      setActiveTab(next)
+      document.getElementById(`tab-${next}`)?.focus()
+    }}>
+      {tabs.map(tab => <button key={tab.id} id={`tab-${tab.id}`} role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)}><span aria-hidden="true">{tab.icon}</span> {tab.label}</button>)}
+    </div>
+
+    <div id="panel-preparation" role="tabpanel" aria-labelledby="tab-preparation" hidden={activeTab !== 'preparation'}>
+      <AiPreparationPanel preparation={preparation} onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} />
+    </div>
+
+    <div id="panel-program" role="tabpanel" aria-labelledby="tab-program" hidden={activeTab !== 'program'}>
     {!app.supported && <div className="notice danger" role="alert">このブラウザではUSB接続機能を使えません。パソコン版ChromeまたはEdgeで開いてください。</div>}
 
     <section className={`device-card ${status.tone}`} aria-live="polite">
@@ -95,8 +120,12 @@ export default function App() {
 
     {connected && <details className="advanced-card"><summary><span>⚙</span><div><strong>電源を入れた時の動きを変える</strong><small>NanoC6本体に保存される設定です</small></div></summary><div className="advanced-body"><p>今の設定: <strong>{bootSummary}</strong></p><div className="boot-actions"><button disabled={!ready} onClick={() => app.setBoot(0)}>電源を入れたら自動で実行する</button><button className="quiet-button" disabled={!ready} onClick={() => app.setBoot(1)}>電源を入れても自動実行しない</button></div><p className="advanced-note">設定を変えるとNanoC6は再起動し、USB接続は一度切れます。再起動後は、もう一度「USBをつなぐ」を押してください。</p><div className="secondary-actions"><button className="quiet-button" disabled={busy || app.state === 'disconnected' || app.state === 'connection-lost'} onClick={app.normalMode}>通常動作に戻す</button><button className="quiet-button" disabled={!ready} onClick={app.reset}>↻ NanoC6を再起動</button></div></div></details>}
 
-    <section className="workspace"><div className="panel program-panel"><div className="panel-head"><div><p className="eyebrow">プログラム</p><h2>LEDやボタンの動きを書く場所</h2><p>ここを書き換えて、上の「実行」で試します。</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} /> 長い行を折り返す</label></div><CodeEditor value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.line} onSave={app.write} onRun={app.run} /><p className="shortcut-note">ショートカット: <kbd>Ctrl</kbd> + <kbd>S</kbd> でプログラム更新、<kbd>Ctrl</kbd> + <kbd>Enter</kbd> で実行</p></div><aside className="right"><div className="panel terminal-panel"><div className="panel-head"><div><p className="eyebrow">見守りログ</p><h2>うまくいかない時に見る記録</h2></div><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} /> 自動スクロール</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} /> 時刻</label><button className="quiet-button" onClick={() => app.setLog('')}>消去</button></span></div><Terminal log={stampLog()} dark={dark} autoScroll={autoScroll} /></div>{app.error && <section className="panel error" aria-live="assertive"><p className="eyebrow">困ったとき</p><h2>⚠ {app.error.exceptionType}</h2><p>{app.error.message}</p><dl><dt>起きた場所</dt><dd>{app.error.stage}</dd><dt>確認する行</dt><dd>{app.error.line ?? '見つけられませんでした'} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl><pre>{app.error.traceback}</pre><button onClick={copyPrompt}>AIに相談する文章をコピー</button>{copyNotice && <p className={`copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.text}</p>}</section>}</aside></section>
+    <section className="workspace"><div className="panel program-panel"><div className="panel-head"><div><p className="eyebrow">プログラム</p><h2>LEDやボタンの動きを書く場所</h2><p>ここを書き換えて、上の「実行」で試します。</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} /> 長い行を折り返す</label></div><CodeEditor value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.sourceKnown !== false && (app.error?.sourceSnapshot === undefined || app.error.sourceSnapshot === app.source) ? app.error?.line : undefined} onSave={app.write} onRun={app.run} /><p className="shortcut-note">ショートカット: <kbd>Ctrl</kbd> + <kbd>S</kbd> でプログラム更新、<kbd>Ctrl</kbd> + <kbd>Enter</kbd> で実行</p></div><aside className="right"><div className="panel terminal-panel"><div className="panel-head"><div><p className="eyebrow">見守りログ</p><h2>うまくいかない時に見る記録</h2></div><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} /> 自動スクロール</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} /> 時刻</label><button className="quiet-button" onClick={() => app.setLog('')}>消去</button></span></div><Terminal log={stampLog()} dark={dark} autoScroll={autoScroll} /></div>{app.error && <section className="panel error" aria-live="assertive"><p className="eyebrow">困ったとき</p><h2>⚠ {app.error.exceptionType}</h2><p>{app.error.message}</p><dl><dt>起きた場所</dt><dd>{app.error.stage}</dd><dt>確認する行</dt><dd>{app.error.line ?? '見つけられませんでした'} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl><pre>{app.error.traceback}</pre>{app.error.sourceKnown === false && <p>機器上の実行コードは未取得です。編集中のコードと同じとは確認できていません。</p>}{app.error.sourceKnown !== false && app.error.sourceSnapshot !== undefined && app.error.sourceSnapshot !== app.source && <p>編集内容はエラー発生時から変わっています。AIへの修正依頼には、エラーが起きた時のコードを入れます。</p>}<button onClick={copyPrompt}>AIに相談する文章をコピー</button>{copyNotice && <p className={`copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.text}</p>}</section>}</aside></section>
 
     <footer>このページはコードとログを外部へ送信しません。実機の動きを確認できた時だけ、「電源を入れたら自動で実行する」を使ってください。</footer>
+    </div>
+    <div id="panel-controller" role="tabpanel" aria-labelledby="tab-controller" hidden={activeTab !== 'controller'}>
+      <BluetoothPanel onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} />
+    </div>
   </main>
 }
