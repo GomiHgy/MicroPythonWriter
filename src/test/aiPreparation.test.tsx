@@ -26,7 +26,7 @@ vi.mock('react', async () => ({
   },
 }))
 
-const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
+const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
 function preparation(): WorkshopPreparation {
   const context = createWorkshopContext(profile)
   return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
@@ -53,7 +53,7 @@ beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harn
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
-  it('3つのLED設定は講師用設定を開かず編集できる', () => {
+  it('3つのLED設定は詳細設定を開かず編集できる', () => {
     const prep = preparation()
     const node = render(prep)
     const settings = find(node, item => item.type === 'fieldset' && item.props.className === 'ai-led-settings')
@@ -63,6 +63,45 @@ describe('AIの準備パネル', () => {
       expect(prep.editLedSettings).toHaveBeenLastCalledWith({ [key]: Number(value) })
     }
     expect(prep.editDraft).not.toHaveBeenCalled()
+  })
+  it('対象UIFlow2版と指定の5種類のLED型番を主画面で入力して自動保存へ渡す', () => {
+    const prep = preparation()
+    const settings = find(render(prep), item => item.type === 'fieldset' && item.props.className === 'ai-led-settings')
+    const firmware = find(settings, item => item.type === 'label' && content(item).startsWith('対象UIFlow2ファームウェア版'))
+    const input = find(firmware, item => item.type === 'input')
+    expect(input.props.value).toBe('test-ui-2')
+    expect(input.props.maxLength).toBe(200)
+    event(input, 'onChange', { target: { value: '2.3.6' } })
+    expect(prep.editLedSettings).toHaveBeenLastCalledWith({ firmwareVersion: '2.3.6' })
+    event(input, 'onChange', { target: { value: '' } })
+    expect(prep.editLedSettings).toHaveBeenLastCalledWith({ firmwareVersion: null })
+    const model = find(settings, item => item.type === 'select')
+    expect(all(model, item => item.type === 'option').map(item => item.props.value)).toEqual(['', 'WS2812B', 'WS2812B-MINI', 'WS2812C-2020', 'SK6812', 'SK6812MINI'])
+    for (const value of ['WS2812B', 'WS2812B-MINI', 'WS2812C-2020', 'SK6812', 'SK6812MINI']) {
+      event(model, 'onChange', { target: { value } })
+      expect(prep.editLedSettings).toHaveBeenLastCalledWith({ ledModel: value })
+    }
+    for (const value of ['', 'unknown-led']) {
+      event(model, 'onChange', { target: { value } })
+      expect(prep.editLedSettings).toHaveBeenLastCalledWith({ ledModel: null })
+    }
+    expect(prep.editDraft).not.toHaveBeenCalled()
+  })
+  it('未入力の版や型番を推測せず、キット番号を要求しない', () => {
+    const prep = { ...preparation(), selectedProfile: { ...profile, firmwareVersion: null, ledModel: null } }
+    const panel = render(prep)
+    const settings = find(panel, item => item.type === 'fieldset' && item.props.className === 'ai-led-settings')
+    expect(find(settings, item => item.type === 'select').props.value).toBe('')
+    expect(find(settings, item => item.type === 'input' && item.props.maxLength === 200).props.value).toBe('')
+    const devices = find(panel, item => item.type === 'select' && item.props.id === 'ai-kit')
+    expect(content(devices)).toContain('テスト教材')
+    expect(content(panel)).not.toMatch(/キット|講師|教材ID/)
+    const teacher = find(panel, element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const advanced = (teacher.type as (props: typeof teacher.props) => ReactNode)(teacher.props)
+    expect(content(advanced)).not.toMatch(/キット|講師|教材ID/)
+    expect(content(advanced)).not.toContain('対象UIFlow2ファームウェア版')
+    expect(content(advanced)).not.toContain('LED型番')
   })
   it('英語・中国語へ切り替えてもプレビュー状態と入力済みデータを維持する', () => {
     const prep = preparation()
@@ -90,14 +129,14 @@ describe('AIの準備パネル', () => {
     expect(text).toContain(boardId === 'm5nanoc6' ? '内蔵RGB LED: GPIO20' : '内蔵RGB LED: GPIO35')
     if (boardId === 'atoms3lite') expect(text).not.toContain('内蔵RGB電源')
   })
-  it('講師用の開閉や確認者入力をリセットせず、英語・中国語の全ラベルを表示する', () => {
+  it('詳細設定の開閉や確認者入力をリセットせず、英語・中国語の全ラベルを表示する', () => {
     const prep = preparation()
     const teacher = find(render(prep), element => typeof element.type === 'function')
     harness.slots = []; harness.cursor = 0
     const renderTeacher = () => { harness.cursor = 0; return (teacher.type as (props: typeof teacher.props) => ReactNode)(teacher.props) }
     const nameInput = find(renderTeacher(), element => element.type === 'label' && element.props.className === 'ai-confirm-name')
     event(find(nameInput, element => element.type === 'input'), 'onChange', { target: { value: '講師の入力データ' } })
-    for (const [locale, title] of [['en', 'Instructor settings'], ['zh', '讲师设置']] as const) {
+    for (const [locale, title] of [['en', 'Advanced settings (optional)'], ['zh', '详细设置（按需使用）']] as const) {
       setLocale(locale)
       const node = renderTeacher()
       expect(content(node)).toContain(title)
@@ -107,17 +146,34 @@ describe('AIの準備パネル', () => {
       expect(prep.editDraft).not.toHaveBeenCalled()
     }
   })
+  it.each([{ ledModel: 'SK6812' }, { firmwareVersion: 'another-ui-version' }])('主画面で %j を変えたら古い実機確認チェックを流用できない', changed => {
+    let prep = { ...preparation(), draft: { ...profile, baseline: { code: 'print("baseline")', verification: null } } }
+    const advanced = find(render(prep), element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const renderAdvanced = () => { harness.cursor = 0; return (advanced.type as (props: typeof advanced.props) => ReactNode)({ ...advanced.props, preparation: prep }) }
+    const name = find(renderAdvanced(), element => element.type === 'label' && element.props.className === 'ai-confirm-name')
+    event(find(name, element => element.type === 'input'), 'onChange', { target: { value: 'Device owner' } })
+    const confirmation = find(renderAdvanced(), element => element.type === 'label' && content(element).includes('この基準コードを、指定の対象機器'))
+    event(find(confirmation, element => element.type === 'input'), 'onChange', { target: { checked: true } })
+    expect(button(renderAdvanced(), '実機確認を登録').props.disabled).toBe(false)
+    prep = { ...prep, draft: { ...prep.draft, ...changed } }
+    const changedPanel = renderAdvanced()
+    expect(button(changedPanel, '実機確認を登録').props.disabled).toBe(true)
+    const changedConfirmation = find(changedPanel, element => element.type === 'label' && content(element).includes('この基準コードを、指定の対象機器'))
+    expect(find(changedConfirmation, element => element.type === 'input').props.checked).toBe(false)
+    expect(prep.confirmBaseline).not.toHaveBeenCalled()
+  })
   it('コピー完了が返らなくても操作を復帰し、遅い完了で成功表示に変えない', async () => {
     vi.useFakeTimers()
     let resolve!: () => void
     vi.mocked(navigator.clipboard.writeText).mockImplementation(() => new Promise(done => { resolve = done }))
     const prep = preparation()
     event(button(render(prep), '準備文をコピー'), 'onClick')
-    expect(find(render(prep), element => element.type === 'select').props.disabled).toBe(true)
+    expect(find(render(prep), element => element.type === 'select' && element.props.id === 'ai-kit').props.disabled).toBe(true)
     await vi.advanceTimersByTimeAsync(PREPARATION_COPY_TIMEOUT_MS)
     const node = render(prep)
     expect(button(node, '準備文をコピー').props.disabled).toBe(false)
-    expect(find(node, element => element.type === 'select').props.disabled).toBe(false)
+    expect(find(node, element => element.type === 'select' && element.props.id === 'ai-kit').props.disabled).toBe(false)
     expect(content(node)).toContain('コピーの完了を確認できませんでした')
     expect(harness.select).toHaveBeenCalledOnce()
     resolve(); await flush()
@@ -194,7 +250,8 @@ describe('AIの準備パネル', () => {
   it('通常リンクはコードや準備文をURLへ含まずコピーと別操作', () => {
     const node = render(preparation())
     const links = all(node, element => element.type === 'a')
-    expect(links).toHaveLength(3)
+    expect(links).toHaveLength(4)
+    expect(links.map(link => link.props.href)).toEqual(['https://chatgpt.com/', 'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.deepseek.com/'])
     for (const link of links) {
       const url = new URL(link.props.href as string)
       expect(url.search).toBe(''); expect(url.hash).toBe('')

@@ -8,7 +8,7 @@ import type { DeviceInfo } from '../types'
 
 const device: DeviceInfo = { deviceName: 'test-NanoC6', microPythonVersion: 'probe-micropython-version', firmwareInfo: 'probe-firmware-info', bootOption: 1, nanoC6Confirmed: true, bootOptionSupported: true, nvsFallbackSupported: false }
 const error = { exceptionType: 'ValueError', message: 'failed', traceback: 'Traceback (most recent call last):\n  File "main.py", line 3\nValueError: failed', intentionalInterrupt: false }
-const profile = (): WorkshopProfile => ({ ...workshopPresets[0].profile, kitId: '007', firmwareVersion: 'instructor-uiflow-version', ledModel: 'test-RGB', ledCount: 37, maxBrightnessPercent: 25 })
+const profile = (): WorkshopProfile => ({ ...workshopPresets[0].profile, firmwareVersion: 'instructor-uiflow-version', ledModel: 'WS2812B', ledCount: 37, maxBrightnessPercent: 25 })
 const builder = new RepairPromptBuilder()
 
 describe('ワークショップ修正依頼', () => {
@@ -80,7 +80,7 @@ describe('ワークショップ修正依頼', () => {
     expect(context.bleEnabled).toBe(true)
     const repair = builder.build(error, 'print("device-source")', device, 'log', '実行', context)
     expect(repair).toContain(baselineCode)
-    expect(repair).toContain('NanoLED-007')
+    expect(repair).toContain('NanoLED-')
     expect(repair).toContain('6e400001-b5a3-f393-e0a9-e50e24dcca9e')
     expect(repair).toContain('BRIGHTNESS 100は準備画面で設定した最大輝度の100%')
     expect(repair).toContain('Notifyは1回20バイト以下')
@@ -96,9 +96,9 @@ describe('ワークショップ修正依頼', () => {
     const context = createWorkshopContext(input)
     const repair = builder.build(error, 'actual-source', device, 'log', '実行', context)
     expect(repair).toContain('設定が未設定または不正')
-    expect(repair).toContain('講師が修正するまで')
+    expect(repair).toContain('利用者が修正するまで')
     for (const issue of context.errors) expect(repair).toContain(issue)
-    expect(repair).toContain('キットID: 007')
+    expect(repair).not.toContain('キットID:')
     expect(repair).toContain('actual-source')
     expect(repair).not.toContain('unverified-private-baseline')
   })

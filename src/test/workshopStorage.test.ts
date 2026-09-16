@@ -3,11 +3,33 @@ import { workshopPresets, type WorkshopPreset } from '../config/workshops'
 import { cloneWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { MAX_STORED_PROFILE_LENGTH, removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile, workshopStorageKey } from '../services/workshop/WorkshopStorage'
 
-const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true }, baseline: { code: 'print("test baseline")', verification: { code: 'print("test baseline")', firmwareVersion: 'test-ui-2', confirmedBy: 'テスト講師', confirmedAt: '2026-09-15T00:00:00.000Z', nanoLedV1: true } } }
-const preset: WorkshopPreset = { id: 'test-preset', profile: { ...cloneWorkshopProfile(profile), kitId: null, baseline: { code: '', verification: null } } }
+const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true }, baseline: { code: 'print("test baseline")', verification: { code: 'print("test baseline")', firmwareVersion: 'test-ui-2', confirmedBy: 'テスト講師', confirmedAt: '2026-09-15T00:00:00.000Z', nanoLedV1: true } } }
+const preset: WorkshopPreset = { id: 'test-preset', profile: { ...cloneWorkshopProfile(profile), baseline: { code: '', verification: null } } }
 function storage() { const values = new Map<string, string>(); return { values, getItem: vi.fn((key: string) => values.get(key) ?? null), setItem: vi.fn((key: string, value: string) => { values.set(key, value) }), removeItem: vi.fn((key: string) => { values.delete(key) }) } }
 
 describe('ワークショップ設定の安全なブラウザ保存', () => {
+  it('廃止したキットIDだけを除き、旧設定の入力値と明示保存した基準コードを維持する', () => {
+    const target = storage()
+    storeWorkshopProfile(preset, profile, true, () => target)
+    const saved = JSON.parse(target.values.get(workshopStorageKey(preset))!)
+    saved.profile.kitId = '007'
+    target.values.set(workshopStorageKey(preset), JSON.stringify(saved))
+    const restored = restoreWorkshopProfile(preset, () => target)
+    expect(restored.notice).toBe('')
+    expect(restored.profile).toEqual(profile)
+    expect(restored.profile).not.toHaveProperty('kitId')
+  })
+  it('旧版の任意LED型番は再選択を求め、他の設定とコードを失わず確認情報のみ解除する', () => {
+    const target = storage()
+    storeWorkshopProfile(preset, profile, true, () => target)
+    const saved = JSON.parse(target.values.get(workshopStorageKey(preset))!)
+    saved.profile.kitId = '007'
+    saved.profile.ledModel = 'old-custom-model'
+    target.values.set(workshopStorageKey(preset), JSON.stringify(saved))
+    const restored = restoreWorkshopProfile(preset, () => target)
+    expect(restored.notice).toContain('選び直してください')
+    expect(restored.profile).toEqual({ ...profile, ledModel: null, baseline: { code: profile.baseline.code, verification: null } })
+  })
   it('旧GPIO2固定設定を移行し、既定の表示名だけからワークショップを除く', () => {
     const target = storage()
     storeWorkshopProfile(preset, { ...profile, displayName: 'M5NanoC6 LEDワークショップ' }, true, () => target)
@@ -27,7 +49,7 @@ describe('ワークショップ設定の安全なブラウザ保存', () => {
     const restored = restoreWorkshopProfile(nano, () => target)
     expect(restored.notice).toBe('')
     expect(restored.profile.boardId).toBe('m5nanoc6')
-    expect(restored.profile.kitId).toBe('007')
+    expect(restored.profile).not.toHaveProperty('kitId')
     expect(restored.profile.baseline.code).toBe(profile.baseline.code)
   })
   it.each(['missing', 'other'])('AtomS3Liteへ機器IDが%sの設定を復元しない', reason => {
@@ -43,13 +65,13 @@ describe('ワークショップ設定の安全なブラウザ保存', () => {
     expect(restoreWorkshopProfile(atom, () => target).notice).not.toBe('')
     expect(storeWorkshopProfile(atom, { ...configured, boardId: 'm5nanoc6' }, false, () => target)).not.toBe('')
   })
-  it('通常保存は基準コードと確認情報を除き、先頭ゼロを復元する', () => {
+  it('通常保存は基準コードと確認情報を除き、ユーザー設定を復元する', () => {
     const target = storage()
     expect(storeWorkshopProfile(preset, profile, false, () => target)).toBe('')
     expect(target.values.get(workshopStorageKey(preset))).not.toContain('test baseline')
     const restored = restoreWorkshopProfile(preset, () => target)
     expect(restored.notice).toBe('')
-    expect(restored.profile.kitId).toBe('007')
+    expect(restored.profile).not.toHaveProperty('kitId')
     expect(restored.profile.baseline).toEqual({ code: '', verification: null })
     expect(profile.baseline.verification).not.toBeNull()
   })

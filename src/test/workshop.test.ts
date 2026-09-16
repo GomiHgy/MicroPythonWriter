@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
-import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile } from '../services/workshop/WorkshopProfile'
+import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, LED_MODELS, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile } from '../services/workshop/WorkshopProfile'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { boardDefinitions, identifyBoard, identifySoc } from '../config/boards'
 
@@ -10,9 +10,8 @@ function profile(): WorkshopProfile {
   return {
     ...cloneWorkshopProfile(workshopPresets[0].profile),
     displayName: 'テスト用の教材',
-    kitId: '007',
     firmwareVersion: 'TEST-ONLY-UIFlow2',
-    ledModel: 'TEST-ONLY-RGB',
+    ledModel: 'WS2812B',
     ledCount: 37,
     maxBrightnessPercent: 25,
   }
@@ -36,6 +35,25 @@ function bleProfile(): WorkshopProfile {
 }
 
 describe('WorkshopProfileの設定検証', () => {
+  it.each(LED_MODELS)('自宅でも版とLED型番 %s の指定だけで基本の準備文を作れる', ledModel => {
+    for (const preset of workshopPresets) {
+      const value = { ...cloneWorkshopProfile(preset.profile), firmwareVersion: 'TEST-ONLY-UIFlow2', ledModel }
+      expect(validateWorkshopProfile(value)).toEqual([])
+      expect(value).not.toHaveProperty('kitId')
+      for (const locale of ['ja', 'en', 'zh'] as const) {
+        const prompt = buildStartPrompt(createWorkshopContext(value, locale))
+        for (const setting of [value.firmwareVersion, ledModel, 'LED_COUNT: 10', 'LED_PIN: 2', 'MAX_BRIGHTNESS_PERCENT: 20']) expect(prompt).toContain(setting)
+        expect(prompt).not.toMatch(/KIT_ID|キットID:|Kit ID:|套件 ID:/u)
+      }
+    }
+  })
+
+  it.each(['WS2812', 'RGBW', 'SK6812-RGBW', 'unknown'])('選択肢にないLED型番 %s では準備文を作らない', ledModel => {
+    const context = createWorkshopContext({ ...profile(), ledModel })
+    expect(context.errors.length).toBeGreaterThan(0)
+    expect(buildStartPrompt(context)).toBe('')
+  })
+
   it.each(['ja', 'en', 'zh'] as const)('%s の準備・共通ルールは外部ピンとLED設定を反映する', locale => {
     const value = { ...profile(), boardId: 'atoms3lite' as const, ledPin: 9, ledCount: 10, maxBrightnessPercent: 20 }
     const context = createWorkshopContext(value, locale)
@@ -55,7 +73,7 @@ describe('WorkshopProfileの設定検証', () => {
     const atom = workshopPresets.find(preset => preset.profile.boardId === 'atoms3lite')!
     expect(atom.id).toBe('atom-s3-lite-led-default')
     expect(atom.profile.materialId).not.toBe(workshopPresets[0].profile.materialId)
-    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', kitId: null, firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, baseline: { code: '', verification: null } })
+    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, baseline: { code: '', verification: null } })
     expect(buildStartPrompt(createWorkshopContext(atom.profile))).toBe('')
   })
 
@@ -78,16 +96,16 @@ describe('WorkshopProfileの設定検証', () => {
   it('配布プリセットで未確定の実機設定を推測しない', () => {
     const preset = workshopPresets[0]
     expect(preset.id).toBe('nano-c6-led-default')
-    expect(preset.profile).toMatchObject({ kitId: null, firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, ledBpp: 3, baseline: { code: '', verification: null } })
-    expect(validateWorkshopProfile(preset.profile)).toHaveLength(3)
+    expect(preset.profile).toMatchObject({ firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, ledBpp: 3, baseline: { code: '', verification: null } })
+    expect(validateWorkshopProfile(preset.profile)).toHaveLength(2)
     expect(buildStartPrompt(createWorkshopContext(preset.profile))).toBe('')
   })
 
-  it('正しい設定と先頭ゼロを保持し、端数の最大輝度を許可する', () => {
+  it('正しい設定を保持し、端数の最大輝度を許可する', () => {
     const value = profile()
     value.maxBrightnessPercent = 12.5
     expect(validateWorkshopProfile(value)).toEqual([])
-    expect(createWorkshopContext(value).profile.kitId).toBe('007')
+    expect(createWorkshopContext(value).profile.firmwareVersion).toBe('TEST-ONLY-UIFlow2')
     expect(buildStartPrompt(createWorkshopContext(value))).toContain('MAX_BRIGHTNESS_PERCENT: 12.5')
   })
 
@@ -96,16 +114,6 @@ describe('WorkshopProfileの設定検証', () => {
       expect(validateWorkshopProfile({ ...profile(), [field]: value }).length).toBeGreaterThan(0)
       expect(buildStartPrompt(createWorkshopContext({ ...profile(), [field]: value }))).toBe('')
     }
-  })
-
-  it.each(['', '{{KIT_ID}}', '../01', 'a b', '-01', 'あ', '0123456789012'])('安全に名前へ使えないキットIDを拒否する: %j', kitId => {
-    expect(validateWorkshopProfile({ ...profile(), kitId }).join('\n')).toContain('キットID')
-  })
-
-  it.each(['00', 'A_02-b', '012345678901'])('安全なキットIDを変換せず保持する: %j', kitId => {
-    const value = { ...profile(), kitId }
-    expect(validateWorkshopProfile(value)).toEqual([])
-    expect(createWorkshopContext(value).profile.kitId).toBe(kitId)
   })
 
   it.each(['', '{{REV}}', '../revision', '日本語', 'a\n'])('教材ID・版の不正値を拒否する: %j', value => {
@@ -270,7 +278,7 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const context = createWorkshopContext(value, locale)
     const prompt = buildStartPrompt(context)
     expect(context.locale).toBe(locale)
-    for (const text of ['AtomS3Lite', 'ESP32-S3', 'GPIO41', 'GPIO35', 'GPIO2', 'LED_COUNT: 37', 'MAX_BRIGHTNESS_PERCENT: 25', 'WS2812_TIMING_NS = (400, 850, 800, 450)', 'machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)', 'MIN_OFF_TO_ON_FADE_MS = 200', 'period_ms = 3000 - 29 * n', '6e400001-b5a3-f393-e0a9-e50e24dcca9e', 'NanoLED-007', value.baseline.code]) expect(prompt).toContain(text)
+    for (const text of ['AtomS3Lite', 'ESP32-S3', 'GPIO41', 'GPIO35', 'GPIO2', 'LED_COUNT: 37', 'MAX_BRIGHTNESS_PERCENT: 25', 'WS2812_TIMING_NS = (400, 850, 800, 450)', 'machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)', 'MIN_OFF_TO_ON_FADE_MS = 200', 'period_ms = 3000 - 29 * n', '6e400001-b5a3-f393-e0a9-e50e24dcca9e', 'NanoLED-', value.baseline.code]) expect(prompt).toContain(text)
     expect(prompt).not.toMatch(/[\u3040-\u30ff]/u)
     expect(prompt).not.toContain('{buttonPin}')
     expect(prompt).toContain(locale === 'en' ? 'Respond in English' : '请用简体中文回答')
@@ -310,7 +318,7 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const context = createWorkshopContext(profile())
     const prompt = buildStartPrompt(context)
     expect(prompt).toContain(context.rules)
-    for (const text of ['教材の版「writer-ai-1」', 'キット番号「007」', '最初の質問を1問だけ', '3〜5個', 'おまかせ', '最大6問', 'この仕様で作って', 'main.py全体を1つのPythonコードブロック', 'MicroPythonWriterからRaw REPL', 'AIが実機で動かしていない']) expect(prompt).toContain(text)
+    for (const text of ['使う機器「M5NanoC6」', 'LED設定', '最初の質問を1問だけ', '3〜5個', 'おまかせ', '最大6問', 'この仕様で作って', 'main.py全体を1つのPythonコードブロック', 'MicroPythonWriterからRaw REPL', 'AIが実機で動かしていない']) expect(prompt).toContain(text)
     for (const text of ['準備できたよ。', '{{', '6e400001', 'プロンプトE0', 'Traceback:', '## 現在のmain.py']) expect(prompt).not.toContain(text)
   })
 
@@ -323,18 +331,18 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const context = createWorkshopContext(bleProfile())
     expect(context.bleEnabled).toBe(true)
     expect(context.controllerEnabled).toBe(true)
-    for (const text of ['NanoLED-007', '6e400001-b5a3-f393-e0a9-e50e24dcca9e', '6e400002-b5a3-f393-e0a9-e50e24dcca9e', '6e400003-b5a3-f393-e0a9-e50e24dcca9e', '応答ありWrite', 'Notify', 'LF込み20バイト以下', '128バイト', '有界', 'PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS', 'BRIGHTNESS 0は現在モードを保持', 'OFF中の明るさ・速さ変更では点灯しない', 'SPEED 0は停止ではなく最も遅い', 'period_ms = 3000 - 29 * n', '4096バイト以下', 'RRGGBB', '最後に実際に送信した値をRGB順', '最大5スナップショット/秒', '待機分は最新1件だけ', '完全な新しい行から', '物理的な発光をセンサーで測定した結果ではない']) expect(context.rules).toContain(text)
+    for (const text of ['NanoLED-', '6e400001-b5a3-f393-e0a9-e50e24dcca9e', '6e400002-b5a3-f393-e0a9-e50e24dcca9e', '6e400003-b5a3-f393-e0a9-e50e24dcca9e', '応答ありWrite', 'Notify', 'LF込み20バイト以下', '128バイト', '有界', 'PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS', 'BRIGHTNESS 0は現在モードを保持', 'OFF中の明るさ・速さ変更では点灯しない', 'SPEED 0は停止ではなく最も遅い', 'period_ms = 3000 - 29 * n', '4096バイト以下', 'RRGGBB', '最後に実際に送信した値をRGB順', '最大5スナップショット/秒', '待機分は最新1件だけ', '完全な新しい行から', '物理的な発光をセンサーで測定した結果ではない']) expect(context.rules).toContain(text)
   })
 
   it('設定スナップショットは後の編集と参照を共有しない', () => {
     const value = bleProfile()
     const context = createWorkshopContext(value)
     const rules = context.rules
-    value.kitId = '999'
+    value.firmwareVersion = 'mutated'
     value.features.ble = false
     value.baseline.code = 'changed'
     value.baseline.verification!.confirmedBy = 'changed'
-    expect(context.profile.kitId).toBe('007')
+    expect(context.profile.firmwareVersion).toBe('TEST-ONLY-UIFlow2')
     expect(context.profile.features.ble).toBe(true)
     expect(context.profile.baseline.code).not.toBe('changed')
     expect(context.profile.baseline.verification!.confirmedBy).not.toBe('changed')
@@ -345,7 +353,7 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const context = createWorkshopContext({ ...profile(), maxBrightnessPercent: null })
     expect(context.rules).toContain('設定が未完成または不正')
     expect(context.rules).toContain('汎用設定へ黙って切り替えない')
-    expect(context.rules).toContain('講師が上記を直すまで')
+    expect(context.rules).toContain('利用者が上記を直すまで')
     expect(buildStartPrompt(context)).toBe('')
   })
 

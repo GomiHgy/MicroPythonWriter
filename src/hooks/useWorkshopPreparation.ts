@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
-import { restoreLedSettings, saveLedSettings, ledSettingsKey, type LedSettings } from '../services/workshop/LedSettings'
+import { restoreLedSettings, saveLedSettings, storeLedSettings, ledSettingsKey, type LedSettings } from '../services/workshop/LedSettings'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
-import { cloneWorkshopProfile, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
+import { cloneWorkshopProfile, getBlePreparationReasons, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile } from '../services/workshop/WorkshopStorage'
 
 function initialSettings() {
@@ -59,7 +59,7 @@ export function useWorkshopPreparation() {
       if (!previous) return previous
       // 機器の変更はプリセット選択で行う。別機器の配線・実機確認を混ぜない。
       const next = { ...previous, ...patch, materialId: previous.materialId, revision: previous.revision, boardId: previous.boardId }
-      if (next.firmwareVersion !== previous.firmwareVersion || next.baseline.code !== previous.baseline.code) next.baseline = { ...next.baseline, verification: null }
+      if (next.firmwareVersion !== previous.firmwareVersion || next.ledModel !== previous.ledModel || next.ledCount !== previous.ledCount || next.ledPin !== previous.ledPin || next.ledBpp !== previous.ledBpp || next.maxBrightnessPercent !== previous.maxBrightnessPercent || next.baseline.code !== previous.baseline.code) next.baseline = { ...next.baseline, verification: null }
       return next
     })
     setNotice('変更はまだ適用されていません。確認後に「設定を適用」を押してください。')
@@ -68,7 +68,7 @@ export function useWorkshopPreparation() {
   function applyDraft() {
     if (isImporting) { setNotice('基準コードを読み込み中です。完了してから設定を適用してください。'); return false }
     if (!draft || !selectedId) return false
-    if (draftErrors.length) { setNotice('設定を適用できません。講師用設定の確認項目を直してください。'); return false }
+    if (draftErrors.length) { setNotice('設定を適用できません。設定の確認項目を直してください。'); return false }
     setSettings(previous => ({ profiles: previous.profiles.map(preset => preset.id === selectedId ? { ...preset, profile: cloneWorkshopProfile(draft) } : preset), notice: 'この画面に設定を適用しました。再読み込み後も使う場合は、ブラウザに保存してください。' }))
     return true
   }
@@ -77,14 +77,17 @@ export function useWorkshopPreparation() {
     if (!draft || !applyDraft()) return
     const preset = workshopPresets.find(item => item.id === selectedId)
     if (!preset) return
-    const failure = storeWorkshopProfile(preset, draft, persistBaseline)
+    // 実機確認済みコードの明示保存だけが、設定編集による永続的な失効を解除する。
+    const baselineConfirmed = persistBaseline && draft.baseline.verification !== null
+      && getBlePreparationReasons({ ...draft, features: { ...draft.features, ble: true } }).length === 0
+    const failure = storeWorkshopProfile(preset, draft, persistBaseline) || storeLedSettings(preset, draft, !baselineConfirmed)
     setNotice(failure || (persistBaseline ? '設定と基準コードを、このブラウザに保存しました。' : '設定をこのブラウザに保存しました。基準コードは保存していません。'))
   }
 
   function confirmBaseline(confirmedBy: string, nanoLedV1: boolean) {
     if (isImporting) { setNotice('基準コードを読み込み中です。完了してから確認してください。'); return }
     if (!draft?.baseline.code.trim() || !draft.firmwareVersion?.trim() || !confirmedBy.trim() || confirmedBy.trim().length > 200 || /\{\{|\}\}/.test(confirmedBy + draft.firmwareVersion)) {
-      setNotice('基準コード・対象UIFlow2版・確認した講師名を入力してください。')
+      setNotice('基準コード・対象UIFlow2版・確認した人の名前を入力してください。')
       return
     }
     editDraft({ baseline: { code: draft.baseline.code, verification: { code: draft.baseline.code, firmwareVersion: draft.firmwareVersion, boardId: draft.boardId, confirmedBy: confirmedBy.trim(), confirmedAt: new Date().toISOString(), nanoLedV1 } } })
@@ -116,7 +119,7 @@ export function useWorkshopPreparation() {
     setIsImporting(false)
     const original = cloneWorkshopProfile(preset.profile)
     setDraft(cloneWorkshopProfile(original))
-    setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: original } : item), notice: 'このキットを配布時の設定に戻しました。保存済みのブラウザ設定も削除しました。' }))
+    setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: original } : item), notice: 'この機器を初期設定に戻しました。保存済みのブラウザ設定も削除しました。' }))
   }
 
   return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, editDraft, editLedSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }

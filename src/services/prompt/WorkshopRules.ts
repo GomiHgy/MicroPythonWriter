@@ -29,27 +29,27 @@ function codeBlock(code: string) {
 const ledRules = `## LEDとボタンの固定ルール
 - 外付けLEDは設定のGPIO{ledPin}。machine.Pin(LED_PIN, machine.Pin.OUT)で初期化する。デフォルトGPIO2はGrove G2。変更時は実際の配線と対象機器で出力可能なGPIOかを確認し、USB・内蔵LED・ボタン等と競合させない。電源仕様を確認し共通GNDを維持する。
 - 本体ボタンを使う場合はGPIO9のアクティブLOW（押すとLOW、離すとHIGH）。必要に応じてmachine.Pin.PULL_UPを使い、メインループで読み、約40msのチャタリング対策をする。M5.BtnA・NanoC6.BtnAで代用しない。使用機能が「本体ボタンなし」のキットにはボタン操作を追加しない。
-- 内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。講師からの指示がない内蔵LED操作を追加しない。
+- 内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。利用者からの明示的な指示がない内蔵LED操作を追加しない。
 - import machine と import timeを基本とし、neopixelをimportしない。LED送信はmachine.bitstream()とbytearrayを使用する。
 - BITSTREAM_TIMING = 1 は800kHzを表す固定ラベル。encoding=0、WS2812_TIMING_NS = (400, 850, 800, 450)（T0H,T0L,T1H,T1L、ナノ秒）を変更しない。
 - bytearray(LED_COUNT * LED_BPP)に全LEDの1フレーム分を作り、machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)でまとめて送る。第3引数に数値の1を直接渡さない。LED1個ずつ送信しない。
 - 色指定はRGB、送信バッファはGRB。offset = led_index * LED_BPP、順にgreen、red、blueを入れる。送信後はtime.sleep_us(80)程度のリセット待ちを入れる。
 - 全ての消灯・単色・演出の出力を共通処理へ通す。RGBを0〜255へ制限し、準備画面で設定した最大輝度、利用者の明るさ、フェード係数を適用してからGRB順へ格納する。最大輝度を超える要求でも安全上限を変更しない。
 - 起動時は共通の送信処理で全LEDへ0を送って安全な消灯状態へ初期化する。起動演出が指定されていても、その後の最初の点灯にはOFFから点灯する最低200msの条件を適用する。
-- machine.bitstreamなど必要なAPIが対象環境で確認できない場合は講師確認が必要と伝え、代替APIやライブラリを推測しない。外部ライブラリの追加インストールを参加者へ要求しない。
-- 講師が明示しないuasyncio、スレッド、GPIO割り込みを追加しない。停止時・KeyboardInterrupt時は可能な限りLEDを消灯し、Ctrl-C停止を妨げない。
+- machine.bitstreamなど必要なAPIが対象環境で確認できない場合は実機と対象環境での確認が必要と伝え、代替APIやライブラリを推測しない。外部ライブラリの追加インストールを利用者へ要求しない。
+- 利用者が明示しないuasyncio、スレッド、GPIO割り込みを追加しない。停止時・KeyboardInterrupt時は可能な限りLEDを消灯し、Ctrl-C停止を妨げない。
 
 ## OFFから点灯するときの固定ルール
 - MIN_OFF_TO_ON_FADE_MS = 200 を冒頭に置く。対象は現在モードがOFF、かつ最後に送信した全LED出力が0の状態から点灯モードへ移る場合だけ。起動直後の最初の点灯も含む。
-- フェード時間は参加者指定時間と200msの長い方。指定なしや「パッと点灯」でも200ms。time.ticks_ms()とtime.ticks_diff()を使い、出力係数を0.0から1.0へ非ブロッキングで進める。目標輝度のフレームを先に送信しない。
+- フェード時間は利用者指定時間と200msの長い方。指定なしや「パッと点灯」でも200ms。time.ticks_ms()とtime.ticks_diff()を使い、出力係数を0.0から1.0へ非ブロッキングで進める。目標輝度のフレームを先に送信しない。
 - 点灯中の色変更・明るさ変更・アニメーション中の一時的な黒いフレームではフェードを再開始しない。暗くする変化や消灯にも200msを強制しない。
 - フェード中に別の点灯モードへ変更するときは進行度を維持し、目標色だけを更新する。OFFへ変更した場合はフェードインを中止する。
 - 長いsleep、time.sleep_ms(200)、演出完了まで抜けられないループは禁止。通常のメインループの待ち時間は10〜20ms以下とし、フェード・演出中も利用可能なボタンとBLEを受け付ける。
 - 時刻・現在モード・アニメーション位置・前回更新時刻で1種類の演出を進める。モード変更時に前の演出状態を適切にリセットするが、進行中の点灯フェードは上記の条件を維持する。
-- 指定が省略された場合は起動時OFF、本体ボタンを使う場合は短く1回押す、演出1周期は約3秒、次の操作まで繰り返す。採用した標準設定は参加者へ短く説明する。`
+- 指定が省略された場合は起動時OFF、本体ボタンを使う場合は短く1回押す、演出1周期は約3秒、次の操作まで繰り返す。採用した標準設定は利用者へ短く説明する。`
 
 const bleRules = `## BLE基準コードの維持
-- 下記全文は講師が登録した実機確認情報に対応する基準コードであり、アプリやAIが実機動作を検証したという意味ではない。
+- 下記全文は利用者が登録した実機確認情報に対応する基準コードであり、アプリやAIが実機動作を検証したという意味ではない。
 - BLE初期化方法、サービスとCharacteristicのUUID、受信コールバックの引数形式、デバイス名の形式、使用ライブラリを維持する。存在未確認のAPIを推測したり、別のBLE実装へ置き換えたりしない。
 - 受信コールバックでは受信バイトを有界キューへ保存するだけにする。実際のモード変更とLED更新はメインループで行う。複数コマンドを1つの変数への上書きで失わせない。
 - 分割受信の処理と受信バッファ・コマンドキューを有界に保ち、満杯なら追加分を破棄して短い診断を出す。無制限に待機・再試行しない。切断時の受信途中データを次の接続へ持ち越さない。
@@ -88,14 +88,13 @@ export function createWorkshopContext(input: WorkshopProfile, locale: Locale = '
   const board = isBoardId(profile.boardId) ? boardDefinitions[profile.boardId] : null
   const buttonPin = board?.buttonPin ?? '未確認'
   const onboardRule = profile.boardId === 'atoms3lite'
-    ? '内蔵RGB LEDはGPIO35。外付けLEDや本体ボタンGPIO41と混同しない。NanoC6のGPIO20・GPIO19・GPIO7を流用しない。AtomS3Liteに未確認のRGB電源制御ピンを追加しない。講師からの指示がない内蔵LED操作を追加しない。'
-    : '内蔵RGB LEDはGPIO20、RGB電源有効化はGPIO19をHIGH、青色LEDはGPIO7。外付けLEDや本体ボタンGPIO9と混同しない。AtomS3LiteのGPIO35・GPIO41を流用しない。講師からの指示がない内蔵LED操作を追加しない。'
-  const boardLedRules = ledRules.replaceAll('GPIO9', `GPIO${buttonPin}`).replaceAll('{ledPin}', setting(profile.ledPin)).replace('M5.BtnA・NanoC6.BtnA', 'M5.BtnA・未確認の機器API').replace('内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。講師からの指示がない内蔵LED操作を追加しない。', board ? onboardRule : '機器が未設定です。ピン番号や内蔵LED仕様を推測しない。')
-  const header = `## ワークショップの設定スナップショット
+    ? '内蔵RGB LEDはGPIO35。外付けLEDや本体ボタンGPIO41と混同しない。NanoC6のGPIO20・GPIO19・GPIO7を流用しない。AtomS3Liteに未確認のRGB電源制御ピンを追加しない。利用者からの明示的な指示がない内蔵LED操作を追加しない。'
+    : '内蔵RGB LEDはGPIO20、RGB電源有効化はGPIO19をHIGH、青色LEDはGPIO7。外付けLEDや本体ボタンGPIO9と混同しない。AtomS3LiteのGPIO35・GPIO41を流用しない。利用者からの明示的な指示がない内蔵LED操作を追加しない。'
+  const boardLedRules = ledRules.replaceAll('GPIO9', `GPIO${buttonPin}`).replaceAll('{ledPin}', setting(profile.ledPin)).replace('M5.BtnA・NanoC6.BtnA', 'M5.BtnA・未確認の機器API').replace('内蔵LEDのGPIO20・GPIO19・GPIO7と外付けLEDを混同しない。利用者からの明示的な指示がない内蔵LED操作を追加しない。', board ? onboardRule : '機器が未設定です。ピン番号や内蔵LED仕様を推測しない。')
+  const header = `## 機器とLEDの設定スナップショット
 教材ID: ${setting(profile.materialId)}
 教材の版: ${setting(profile.revision)}
 教材名: ${setting(profile.displayName)}
-キットID: ${setting(profile.kitId)}
 機器: ${board ? `M5Stack ${board.name}` : '未設定または不正'}
 SoC: ${board?.soc ?? '未確認'}
 対象UIFlow2ファームウェア: ${setting(profile.firmwareVersion)}
@@ -107,13 +106,13 @@ MAX_BRIGHTNESS_PERCENT: ${setting(profile.maxBrightnessPercent)}
 使用機能: 外付けLED / 本体ボタン${profile.features.button ? 'あり' : 'なし'} / BLE${bleEnabled ? '利用可' : '利用不可'} / Webコントローラ${controllerEnabled ? '利用可' : '利用不可'}
 本体ボタンの扱い: ${profile.features.button ? `使う場合のGPIO${buttonPin}・アクティブLOW・約40msの条件を維持する。` : `このキットでは使用しない。GPIO${buttonPin}の初期化・読み取り・チャタリング対策・ボタン操作を追加しない。ボタンを使う相談や選択肢も出さない。`}
 実行先: UIFlow2ファームウェア上のMicroPython。MicroPythonWriterからRaw REPLを使ってmain.pyを書き込み・実行する。UIFlow2エディタの利用は必須ではない。
-対象UIFlow2版は講師設定であり、USBのMicroPython版・firmwareInfoとは別物。取得情報から推測・上書きしない。
-講師設定の数値が範囲内であることは電源安全性や実機動作の証明ではない。AI向け固定仕様はコードを強制するサンドボックスではなく、講師の実機確認を代替しない。`
+対象UIFlow2版は利用者の入力値であり、USBのMicroPython版・firmwareInfoとは別物。取得情報から推測・上書きしない。
+入力した数値が範囲内であることは電源安全性や実機動作の証明ではない。AI向け固定仕様はコードを強制するサンドボックスではなく、実機確認を代替しない。`
   const availability = bleEnabled
-    ? `BLEデバイス名: NanoLED-${profile.kitId}\n${bleRules}${profile.baseline.verification?.nanoLedV1 ? `\n\n${nanoLedRules}` : '\nこのキットはWebコントローラ未対応。NanoLED v1への変更を推測せず、確認済み基準コードの通信仕様を維持する。'}\n\n## 登録された基準コード全文\n講師の登録情報: ${profile.baseline.verification?.confirmedBy} / ${profile.baseline.verification?.confirmedAt}\n確認対象UIFlow2: ${profile.baseline.verification?.firmwareVersion}\nNanoLED v1確認: ${profile.baseline.verification?.nanoLedV1 ? '講師が確認と登録' : '未確認'}\n${codeBlock(profile.baseline.code)}`
-    : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。参加者にAPIや通信仕様を質問せず、必要なら「講師の準備が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
-  const invalid = errors.length ? `\n\n## 設定が未完成または不正です\n${errors.map(error => `- ${error}`).join('\n')}\n設定値を推測せず、講師が上記を直すまで、このキットの完成コード生成・設定に依存する修正は保留する。汎用設定へ黙って切り替えない。` : ''
-  const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${availability}\n\n## 情報の扱い\n固定仕様、講師が実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、講師確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
+    ? `BLEデバイス名: 確認済み基準コードのNanoLED-で始まる名前を維持する。キットIDは不要。新しい名前を明示的に設定する場合の例はNanoLED-${board?.name ?? 'Device'}。同名の機器を一意に識別できるとは説明しない。基準コードが対応する名前でなければ確認を求め、黙って変更しない。\n${bleRules}${profile.baseline.verification?.nanoLedV1 ? `\n\n${nanoLedRules}` : '\nこのキットはWebコントローラ未対応。NanoLED v1への変更を推測せず、確認済み基準コードの通信仕様を維持する。'}\n\n## 登録された基準コード全文\n実機確認の登録情報: ${profile.baseline.verification?.confirmedBy} / ${profile.baseline.verification?.confirmedAt}\n確認対象UIFlow2: ${profile.baseline.verification?.firmwareVersion}\nNanoLED v1確認: ${profile.baseline.verification?.nanoLedV1 ? '利用者が確認と登録' : '未確認'}\n${codeBlock(profile.baseline.code)}`
+    : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。利用者にAPIや通信仕様を質問せず、必要なら「対象機器で確認した基準コードの登録が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
+  const invalid = errors.length ? `\n\n## 設定が未完成または不正です\n${errors.map(error => `- ${error}`).join('\n')}\n設定値を推測せず、利用者が上記を直すまで、このキットの完成コード生成・設定に依存する修正は保留する。汎用設定へ黙って切り替えない。` : ''
+  const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${availability}\n\n## 情報の扱い\n固定仕様、実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、実機と対象環境での確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
   return { locale, profile, errors, bleReasons, bleEnabled, controllerEnabled, rules }
 }
 
@@ -125,11 +124,10 @@ function localizedRules(profile: WorkshopProfile, locale: 'en' | 'zh', errors: s
   const board = isBoardId(profile.boardId) ? boardDefinitions[profile.boardId] : null
   const buttonPin = board?.buttonPin ?? unknown
   const enabled = (state: boolean) => en ? state ? 'enabled' : 'disabled' : state ? '启用' : '禁用'
-  const header = en ? `## Workshop settings snapshot
+  const header = en ? `## Device and LED settings snapshot
 Material ID: ${value(profile.materialId)}
 Material revision: ${value(profile.revision)}
 Material name: ${translateWorkshop(locale, value(profile.displayName))}
-Kit ID: ${value(profile.kitId)}
 Board: ${board?.name ?? unknown}
 SoC: ${board?.soc ?? unknown}
 Target UIFlow2 firmware: ${value(profile.firmwareVersion)}
@@ -141,12 +139,11 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
 Features: external LEDs / onboard button ${enabled(profile.features.button)} / BLE ${enabled(bleEnabled)} / web controller ${enabled(controllerEnabled)}
 Button: ${profile.features.button ? `If used, retain GPIO${buttonPin}, active LOW and approximately 40ms debounce.` : `Not used in this kit. Do not initialize or read GPIO${buttonPin}, add debounce/button operations, or offer button-related questions or choices.`}
 Execution target: MicroPython on UIFlow2 firmware. MicroPythonWriter writes and runs main.py through Raw REPL; the UIFlow2 editor is not required.
-The instructor-configured UIFlow2 version is separate from USB MicroPython version/firmwareInfo. Do not infer or overwrite it from probe results.
-Valid setting ranges do not prove electrical safety or hardware operation. These AI instructions are not a code-enforcing sandbox and do not replace instructor hardware verification.` : `## 工作坊设置快照
+The user-entered UIFlow2 version is separate from USB MicroPython version/firmwareInfo. Do not infer or overwrite it from probe results.
+Valid setting ranges do not prove electrical safety or hardware operation. These AI instructions are not a code-enforcing sandbox and do not replace hardware verification.` : `## 设备与 LED 设置快照
 教材 ID: ${value(profile.materialId)}
 教材版本: ${value(profile.revision)}
 教材名称: ${translateWorkshop(locale, value(profile.displayName))}
-套件 ID: ${value(profile.kitId)}
 设备: ${board?.name ?? unknown}
 SoC: ${board?.soc ?? unknown}
 目标 UIFlow2 固件: ${value(profile.firmwareVersion)}
@@ -158,16 +155,16 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
 功能: 外接 LED / 机身按钮${enabled(profile.features.button)} / BLE ${enabled(bleEnabled)} / 网页控制器${enabled(controllerEnabled)}
 按钮: ${profile.features.button ? `使用时保持 GPIO${buttonPin}、低电平有效、约 40ms 消抖。` : `此套件不使用按钮。不要初始化或读取 GPIO${buttonPin}，不要添加消抖、按钮操作或相关提问与选项。`}
 运行环境: UIFlow2 固件上的 MicroPython。MicroPythonWriter 通过 Raw REPL 写入并运行 main.py，无需使用 UIFlow2 编辑器。
-讲师设置的目标 UIFlow2 版本与 USB 获取的 MicroPython 版本及 firmwareInfo 不同，不能根据读取信息推测或覆盖。
-设置值在范围内不代表供电安全或实机运行正常。AI 固定规范不是强制代码执行的沙箱，也不能代替讲师的实机验证。`
+用户输入的目标 UIFlow2 版本与 USB 获取的 MicroPython 版本及 firmwareInfo 不同，不能根据读取信息推测或覆盖。
+设置值在范围内不代表供电安全或实机运行正常。AI 固定规范不是强制代码执行的沙箱，也不能代替用户的实机验证。`
   const onboardRule = !board ? (en ? 'The board is unknown. Do not guess pin assignments or onboard LED specifications.' : '设备未知，不能猜测引脚或内置 LED 规格。') : board.id === 'atoms3lite'
-    ? (en ? 'Onboard RGB is GPIO35, separate from external LEDs and button GPIO41. Do not copy NanoC6 GPIO20/GPIO19/GPIO7 or invent a separate AtomS3Lite RGB power-enable pin. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO35，与外接 LED 和按钮 GPIO41 不同。不能套用 NanoC6 的 GPIO20/GPIO19/GPIO7，也不能猜测 AtomS3Lite 独立 RGB 供电使能引脚。未经讲师指示，不添加内置 LED 操作。')
-    : (en ? 'Onboard RGB is GPIO20, its power is enabled by GPIO19 HIGH, and the blue LED is GPIO7. Keep these separate from external LEDs and button GPIO9. Do not copy AtomS3Lite GPIO35/GPIO41. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO20，GPIO19 拉高使能其供电，蓝色 LED 为 GPIO7。它们与外接 LED 及按钮 GPIO9 不同，不能套用 AtomS3Lite 的 GPIO35/GPIO41。未经讲师指示，不添加内置 LED 操作。')
+    ? (en ? 'Onboard RGB is GPIO35, separate from external LEDs and button GPIO41. Do not copy NanoC6 GPIO20/GPIO19/GPIO7 or invent a separate AtomS3Lite RGB power-enable pin. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO35，与外接 LED 和按钮 GPIO41 不同。不能套用 NanoC6 的 GPIO20/GPIO19/GPIO7，也不能猜测 AtomS3Lite 独立 RGB 供电使能引脚。未经用户指示，不添加内置 LED 操作。')
+    : (en ? 'Onboard RGB is GPIO20, its power is enabled by GPIO19 HIGH, and the blue LED is GPIO7. Keep these separate from external LEDs and button GPIO9. Do not copy AtomS3Lite GPIO35/GPIO41. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO20，GPIO19 拉高使能其供电，蓝色 LED 为 GPIO7。它们与外接 LED 及按钮 GPIO9 不同，不能套用 AtomS3Lite 的 GPIO35/GPIO41。未经用户指示，不添加内置 LED 操作。')
   const led = interpolatePrompt(block.led, { ledPin: value(profile.ledPin), buttonPin, onboardRule })
   const verification = profile.baseline.verification
   const availability = bleEnabled
-    ? `${en ? 'BLE device name' : 'BLE 设备名称'}: NanoLED-${profile.kitId}\n${block.ble}\n\n${verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED v1 conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED v1。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'Instructor registration' : '讲师登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'Instructor-confirmed and registered' : '讲师已验证并登记') : (en ? 'Unverified' : '未验证')}\n${codeBlock(profile.baseline.code)}`
-    : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask participants about APIs or protocols; say instructor preparation is required. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向参与者询问 API 或协议，需要时说明必须由讲师准备。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
-  const invalid = errors.length ? `\n\n## ${en ? 'Settings are incomplete or invalid' : '设置不完整或无效'}\n${errors.map(error => `- ${error}`).join('\n')}\n${en ? 'Do not guess values. Defer complete code generation and setting-dependent repairs until the instructor fixes these issues. Do not silently switch to generic settings.' : '不要猜测设置值。在讲师修正上述问题前，暂缓生成完整代码和依赖设置的修复，不能擅自切换为通用设置。'}` : ''
+    ? `${en ? 'BLE device name' : 'BLE 设备名称'}: ${en ? `Preserve the verified baseline name starting with NanoLED-. No kit ID is required. Only if explicitly setting a new name, an example is NanoLED-${board?.name ?? 'Device'}. Names are not unique identifiers. If the baseline name is incompatible, ask for confirmation rather than silently renaming.` : `保持已验证基准代码中以 NanoLED- 开头的名称，不需要套件编号。只有明确设置新名称时，示例为 NanoLED-${board?.name ?? 'Device'}。名称不保证唯一；如果基准代码名称不兼容，请要求确认，不要擅自更改。`}\n${block.ble}\n\n${verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED v1 conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED v1。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'User registration' : '用户登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified' : '未验证')}\n${codeBlock(profile.baseline.code)}`
+    : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask users about APIs or protocols; say a baseline verified on the target device must be registered. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向用户询问 API 或协议，需要时说明必须登记经目标设备验证的基准代码。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
+  const invalid = errors.length ? `\n\n## ${en ? 'Settings are incomplete or invalid' : '设置不完整或无效'}\n${errors.map(error => `- ${error}`).join('\n')}\n${en ? 'Do not guess values. Defer complete code generation and setting-dependent repairs until the user fixes these settings. Do not silently switch to generic settings.' : '不要猜测设置值。在用户修正上述设置前，暂缓生成完整代码和依赖设置的修复，不能擅自切换为通用设置。'}` : ''
   return `${header}${invalid}\n\n${led}\n\n${availability}\n\n${block.information}`
 }

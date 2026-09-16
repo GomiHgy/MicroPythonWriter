@@ -12,7 +12,7 @@ describe('準備文のコピーとファイル保存', () => {
     const writeText = vi.fn()
     const prompt = 'API_KEY="コード内の日本語"'
     const copied = await copyPreparationPrompt(prompt, confirmation, () => ({ writeText }))
-    const saved = downloadPreparationPrompt(prompt, '007', 'test-1', confirmation)
+    const saved = downloadPreparationPrompt(prompt, 'm5nanoc6', 'test-1', confirmation)
     expect(copied.cancelled).toBe(true)
     expect(saved.cancelled).toBe(true)
     expect(confirmation).toHaveBeenCalledTimes(2)
@@ -89,12 +89,12 @@ describe('準備文のコピーとファイル保存', () => {
     const appendChild = vi.fn()
     vi.stubGlobal('document', { createElement: () => anchor, body: { appendChild } })
     const text = '日本語\n準備文の全文'
-    const result = downloadPreparationPrompt(text, '007', 'test.1', () => true)
+    const result = downloadPreparationPrompt(text, 'm5nanoc6', 'test.1', () => true)
     expect(result.ok).toBe(true)
     const blob = create.mock.calls[0][0] as Blob
     expect(await blob.text()).toBe(text)
     expect(blob.type).toBe('text/plain;charset=utf-8')
-    expect(anchor.download).toBe('NanoLED-007-test-1-AI-preparation.txt')
+    expect(anchor.download).toBe('MicroPython-m5nanoc6-test-1-AI-preparation.txt')
     expect(anchor.click).toHaveBeenCalledOnce()
     expect(anchor.remove).toHaveBeenCalledOnce()
     vi.runAllTimers()
@@ -102,7 +102,7 @@ describe('準備文のコピーとファイル保存', () => {
   })
   it('秘密情報確認をキャンセルしたファイルは生成しない', () => {
     const create = vi.spyOn(URL, 'createObjectURL')
-    expect(downloadPreparationPrompt('api_key="private"', '007', '1', () => false)).toMatchObject({ ok: false, cancelled: true })
+    expect(downloadPreparationPrompt('api_key="private"', 'm5nanoc6', '1', () => false)).toMatchObject({ ok: false, cancelled: true })
     expect(create).not.toHaveBeenCalled()
   })
   it('保存失敗時も作成済みURLと要素を後始末する', () => {
@@ -111,12 +111,12 @@ describe('準備文のコピーとファイル保存', () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const anchor = { href: '', download: '', click: () => { throw new Error('denied') }, remove: vi.fn() }
     vi.stubGlobal('document', { createElement: () => anchor, body: { appendChild: vi.fn() } })
-    expect(downloadPreparationPrompt('準備文', '007', '1', () => true).ok).toBe(false)
+    expect(downloadPreparationPrompt('準備文', 'm5nanoc6', '1', () => true).ok).toBe(false)
     expect(anchor.remove).toHaveBeenCalledOnce()
     vi.runAllTimers()
     expect(revoke).toHaveBeenCalledWith('blob:test')
   })
   it('ファイル名にパス・制御文字・クエリ文字を使わない', () => {
-    expect(preparationFileName('../007\n', 'v1/?unsafe')).toMatch(/^NanoLED-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-AI-preparation\.txt$/)
+    expect(preparationFileName('../007\n', 'v1/?unsafe')).toMatch(/^MicroPython-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-AI-preparation\.txt$/)
   })
 })

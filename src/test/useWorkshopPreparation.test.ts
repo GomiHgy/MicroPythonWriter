@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWorkshopPreparation } from '../hooks/useWorkshopPreparation'
 import { workshopPresets } from '../config/workshops'
 import { setLocale } from '../i18n'
+import { ledSettingsKey } from '../services/workshop/LedSettings'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }))
 vi.mock('react', () => ({
@@ -24,7 +25,7 @@ function HookHarness() { return useWorkshopPreparation() }
 function render() { hooks.cursor = 0; return HookHarness() }
 function prepare() {
   render().selectProfile(workshopPresets[0].id)
-  render().editDraft({ kitId: '007', firmwareVersion: 'test-ui-2', ledModel: 'test-rgb', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true } })
+  render().editDraft({ firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: true, controller: true } })
 }
 function verifyBaseline() {
   prepare()
@@ -36,6 +37,73 @@ beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubG
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('AI準備用hookは講師設定だけを扱う', () => {
+  it.each(['firmwareVersion', 'ledModel'] as const)('%s をA→B→Aへ戻して再読込しても古いBLE確認は復活せず、再確認して明示保存した場合のみ復帰する', field => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
+    verifyBaseline(); render().saveDraft(true)
+    const original = render().selectedProfile![field]
+    render().editLedSettings({ [field]: field === 'firmwareVersion' ? '2.3.2' : 'SK6812' })
+    render().editLedSettings({ [field]: original })
+    expect(JSON.parse(values.get(ledSettingsKey(workshopPresets[0]))!).verificationInvalidated).toBe(true)
+    expect(values.get(ledSettingsKey(workshopPresets[0]))).not.toContain('baseline')
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.[field]).toBe(original)
+    expect(render().selectedProfile?.baseline.code).toBe('print("test baseline")')
+    expect(render().selectedProfile?.baseline.verification).toBeNull()
+    expect(render().context?.bleEnabled).toBe(false)
+    render().saveDraft(true)
+    expect(JSON.parse(values.get(ledSettingsKey(workshopPresets[0]))!).verificationInvalidated).toBe(true)
+    render().confirmBaseline('テスト講師', true)
+    render().saveDraft(true)
+    expect(JSON.parse(values.get(ledSettingsKey(workshopPresets[0]))!).verificationInvalidated).toBe(false)
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().context?.bleEnabled).toBe(true)
+  })
+  it.each(['firmwareVersion', 'ledModel'] as const)('%s はもう一方が未入力でも単独で保存・復元し、両方が揃ってから準備文を生成する', field => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ [field]: field === 'firmwareVersion' ? '2.3.1' : 'SK6812MINI' })
+    expect(render().notice).toContain('自動保存')
+    expect(render().prompt).toBe('')
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.[field]).toBe(field === 'firmwareVersion' ? '2.3.1' : 'SK6812MINI')
+    const other = field === 'firmwareVersion' ? 'ledModel' : 'firmwareVersion'
+    expect(render().selectedProfile?.[other]).toBeNull()
+    render().editLedSettings({ [other]: other === 'firmwareVersion' ? '2.3.1' : 'SK6812MINI' })
+    expect(render().prompt).toContain('2.3.1')
+    expect(render().prompt).toContain('SK6812MINI')
+    expect(render().hasPendingChanges).toBe(false)
+    expect([...values.values()].join()).not.toContain('baseline')
+    render().selectProfile(workshopPresets[1].id)
+    expect(render().selectedProfile).toMatchObject({ firmwareVersion: null, ledModel: null })
+  })
+  it.each(['firmwareVersion', 'ledModel'] as const)('%s の利用者編集は古いBLE確認を失効し、未適用の講師用設定を維持する', field => {
+    verifyBaseline(); render().applyDraft()
+    render().editDraft({ displayName: '未適用の名前' })
+    render().editLedSettings({ [field]: field === 'firmwareVersion' ? '2.3.2' : 'SK6812' })
+    expect(render().selectedProfile?.baseline.verification).toBeNull()
+    expect(render().draft?.baseline.verification).toBeNull()
+    expect(render().draft?.displayName).toBe('未適用の名前')
+    expect(render().selectedProfile?.displayName).not.toBe('未適用の名前')
+    expect(render().context?.bleEnabled).toBe(false)
+    expect(render().hasPendingChanges).toBe(true)
+  })
+  it('ファイル読込中は利用者設定を自動保存せず、読み込んだコードを無断で保存しない', async () => {
+    prepare()
+    let resolve!: (value: string) => void
+    const operation = render().importBaseline({ name: 'baseline.py', size: 10, text: () => new Promise(done => { resolve = done }) })
+    const before = render().selectedProfile
+    render().editLedSettings({ firmwareVersion: '2.3.2', ledModel: 'SK6812' })
+    expect(render().selectedProfile).toBe(before)
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+    resolve('new baseline'); await operation
+    expect(render().draft?.baseline.code).toBe('new baseline')
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
   it('LED設定だけを未設定項目と独立して自動保存し、再読込・機種切替で復元する', () => {
     const values = new Map<string, string>()
     vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })
@@ -68,7 +136,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().selectedProfile?.displayName).not.toBe('未適用の名前')
     expect(render().hasPendingChanges).toBe(true)
     expect(render().context?.bleEnabled).toBe(false)
-    expect(localStorage.setItem).toHaveBeenLastCalledWith(expect.stringContaining('mpw-led:'), JSON.stringify({ ledCount: 37, maxBrightnessPercent: 30, ledPin: 3 }))
+    expect(localStorage.setItem).toHaveBeenLastCalledWith(expect.stringContaining('mpw-led:'), JSON.stringify({ ledCount: 37, maxBrightnessPercent: 30, ledPin: 3, firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', verificationInvalidated: true }))
   })
   it('不正なLED値は準備文を止め、保存失敗は成功通知にしない', () => {
     prepare(); render().applyDraft()
@@ -109,8 +177,8 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     render().selectProfile('atom-s3-lite-led-default')
     expect(render().draft?.boardId).toBe('atoms3lite')
     expect(render().draft?.baseline.verification).toBeNull()
-    expect(render().draft?.kitId).toBeNull()
-    render().editDraft({ boardId: 'm5nanoc6', kitId: '008', firmwareVersion: 'test-ui-atom', ledModel: 'test-rgb', ledCount: 12, maxBrightnessPercent: 25, baseline: { code: 'print("atom")', verification: null } })
+    expect(render().draft?.ledModel).toBeNull()
+    render().editDraft({ boardId: 'm5nanoc6', firmwareVersion: 'test-ui-atom', ledModel: 'WS2812B', ledCount: 12, maxBrightnessPercent: 25, baseline: { code: 'print("atom")', verification: null } })
     expect(render().draft?.boardId).toBe('atoms3lite')
     render().confirmBaseline('テスト講師', true)
     expect(render().draft?.baseline.verification?.boardId).toBe('atoms3lite')
@@ -118,7 +186,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().prompt).toContain('GPIO41')
     expect(render().prompt).toContain('GPIO35')
     render().selectProfile(workshopPresets[0].id)
-    expect(render().draft?.kitId).toBe('007')
+    expect(render().draft?.firmwareVersion).toBe('test-ui-2')
     expect(render().draft?.boardId).toBe('m5nanoc6')
   })
   it('通常利用は初期未選択、未設定キットを選んでも出力しない', () => {
@@ -135,10 +203,10 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().hasPendingChanges).toBe(true)
     expect(render().applyDraft()).toBe(true)
     expect(render().hasPendingChanges).toBe(false)
-    expect(render().prompt).toContain('007')
+    expect(render().prompt).toContain('test-ui-2')
     expect(render().context?.bleEnabled).toBe(false)
     expect(localStorage.setItem).not.toHaveBeenCalled()
-    expect(workshopPresets[0].profile.kitId).toBeNull()
+    expect(workshopPresets[0].profile.ledModel).toBeNull()
     render().selectProfile(null)
     expect(render().context).toBeNull()
   })
@@ -165,7 +233,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     const saved = JSON.parse(vi.mocked(localStorage.setItem).mock.calls[0][1])
     expect(saved.profile.baseline.code).toBe('')
     render().saveDraft(true)
-    expect(vi.mocked(localStorage.setItem).mock.calls[1][1]).toContain('test baseline')
+    expect(vi.mocked(localStorage.setItem).mock.calls[2][1]).toContain('test baseline')
   })
   it('確認者・コード・版が不足した確認登録を拒否する', () => {
     prepare()

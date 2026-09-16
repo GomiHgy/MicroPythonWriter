@@ -103,8 +103,8 @@ beforeEach(() => {
   })
 })
 
-function kit(kitId: string) {
-  return createWorkshopContext({ ...workshopPresets[0].profile, kitId, firmwareVersion: `target-${kitId}`, ledModel: 'test-RGB', ledCount: 37, maxBrightnessPercent: 25 })
+function kit(label: string) {
+  return createWorkshopContext({ ...workshopPresets[0].profile, firmwareVersion: `target-${label}`, ledModel: 'WS2812B', ledCount: 37, maxBrightnessPercent: 25 })
 }
 
 describe('修正依頼のコードと教材のスナップショット', () => {
@@ -216,7 +216,7 @@ describe('修正依頼のコードと教材のスナップショット', () => {
     if (phase === 'start') vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(fail)
     const operation = render().run()
     await entered.promise
-    selectedWorkshop.profile.kitId = 'mutated'
+    selectedWorkshop.profile.displayName = 'mutated'
     selectedWorkshop.rules = 'mutated-rules'
     selectedWorkshop = kit('031')
     render().setSource('print("later-edit")')

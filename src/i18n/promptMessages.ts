@@ -1,14 +1,14 @@
 import type { Locale, MessageCatalog } from './types'
 
 // Long-form prompt blocks are kept together so every language retains the same safety contract.
-// User code, instructor baseline, logs and protocol identifiers are never translated.
+// User code, hardware-verified baseline code, logs and protocol identifiers are never translated.
 export const promptMessages: MessageCatalog = {}
 
 export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string; ble: string; nanoLed: string; information: string }> = {
   en: {
     led: `## Fixed LED and button rules
 - External LEDs use the configured GPIO{ledPin}. Initialize machine.Pin(LED_PIN, machine.Pin.OUT). Default GPIO2 is Grove G2. If changed, verify wiring and GPIO output support without conflicting with USB, onboard LEDs or buttons. Check power requirements and maintain a common ground.
-- If the onboard button is enabled, use GPIO{buttonPin}, active LOW (pressed LOW, released HIGH), optionally machine.Pin.PULL_UP. Read it in the main loop with approximately 40ms debounce. Do not replace it with M5.BtnA or a guessed board API. Do not add button operations for kits without a button feature.
+- If the onboard button is enabled, use GPIO{buttonPin}, active LOW (pressed LOW, released HIGH), optionally machine.Pin.PULL_UP. Read it in the main loop with approximately 40ms debounce. Do not replace it with M5.BtnA or a guessed board API. Do not add button operations when the button feature is disabled.
 - {onboardRule}
 - Use import machine and import time as the basis. Do not import neopixel. Use machine.bitstream() and bytearray for LED output.
 - BITSTREAM_TIMING = 1 is only a fixed 800kHz label. Keep encoding=0 and WS2812_TIMING_NS = (400, 850, 800, 450), in nanoseconds, ordered T0H,T0L,T1H,T1L.
@@ -16,8 +16,8 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - Specify colors as RGB but store the buffer as GRB. At offset = led_index * LED_BPP, store green, red, blue. Follow each transmission with approximately time.sleep_us(80) for reset.
 - Route all OFF, solid colors and animations through the same output function. Clamp RGB to 0–255, apply the configured maximum brightness, user brightness and fade factor, then store GRB. Never raise the safety cap to satisfy a brighter request.
 - On startup, send zero to every LED through the shared output function. Even a requested startup effect must obey the minimum 200ms OFF-to-ON fade for its first illumination.
-- If a required API such as machine.bitstream is unverified in the target firmware, request instructor verification. Do not guess alternative APIs or libraries or ask participants to install external libraries.
-- Do not add uasyncio, threads or GPIO interrupts unless explicitly specified by the instructor. Turn LEDs off where possible on termination or KeyboardInterrupt; do not obstruct Ctrl-C.
+- If a required API such as machine.bitstream is unverified in the target firmware, request verification on the target device. Do not guess alternative APIs or libraries or ask users to install external libraries.
+- Do not add uasyncio, threads or GPIO interrupts unless explicitly specified by the user. Turn LEDs off where possible on termination or KeyboardInterrupt; do not obstruct Ctrl-C.
 
 ## Fixed OFF-to-ON fade rules
 - Define MIN_OFF_TO_ON_FADE_MS = 200 at the top. Apply only when the current mode is OFF AND the last transmitted output of every LED is zero, then switching to a lighting mode. Include the first illumination after startup.
@@ -28,7 +28,7 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - Advance one effect using time, current mode, animation position and last update time. Reset the previous effect state on mode change while preserving an active fade according to the rules above.
 - Unless specified, start OFF; if the button is used, use one short press; use an approximately 3-second effect cycle and repeat until the next operation. Briefly explain the defaults adopted.`,
     ble: `## Preserve the BLE baseline
-- The full baseline below corresponds to instructor-registered hardware verification. It does not mean this app or AI verified hardware behavior.
+- The full baseline below corresponds to hardware verification registered by the user. It does not mean this app or AI verified hardware behavior.
 - Preserve BLE initialization, service and characteristic UUIDs, receive-callback argument format, device-name format and libraries. Never invent APIs or replace the BLE implementation.
 - Receive callbacks only put received bytes in a bounded queue. Perform actual mode changes and LED updates in the main loop. Do not lose multiple commands by overwriting one variable.
 - Bound fragmented receive buffers and command queues. If full, drop additional data with a short diagnostic. Do not wait or retry forever. Discard partial receive data on disconnect.
@@ -56,12 +56,12 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - Discard partial send and receive lines on disconnect. After reconnect/resubscribe start a complete new line. The browser discards old GATT objects and rediscovers services and characteristics.
 - The browser delimits by LF, not Notify boundaries. Invalid JSON or oversized lines do not overwrite state. Clearly indicate missing or stale state. Do not update LED previews merely from sent settings.`,
     information: `## Information handling
-Prioritize fixed specifications, instructor-verified baseline code, official M5Stack/MicroPython documentation, then general knowledge. If specifications and baseline materially conflict, do not silently reconcile them: stop the affected feature and ask the instructor. Never pretend to have read an inaccessible page. This prompt is self-contained; do not require external-page retrieval, repeating initial setup or pasting another URL. Do not switch to Arduino, C++, CircuitPython or desktop Python.`,
+Prioritize fixed specifications, hardware-verified baseline code, official M5Stack/MicroPython documentation, then general knowledge. If specifications and baseline materially conflict, do not silently reconcile them: stop the affected feature and ask the user to verify it on the target device. Never pretend to have read an inaccessible page. This prompt is self-contained; do not require external-page retrieval, repeating initial setup or pasting another URL. Do not switch to Arduino, C++, CircuitPython or desktop Python.`,
   },
   zh: {
     led: `## LED 和按钮的固定规则
 - 外接 LED 使用设置的 GPIO{ledPin}，通过 machine.Pin(LED_PIN, machine.Pin.OUT) 初始化。默认 GPIO2 对应 Grove G2。更改时请确认接线和设备是否支持该 GPIO 输出，避免与 USB、内置 LED 或按钮冲突。确认供电要求并确保共地。
-- 使用机身按钮时，使用 GPIO{buttonPin}、低电平有效（按下为 LOW，松开为 HIGH），按需使用 machine.Pin.PULL_UP。在主循环中读取，并进行约 40ms 的消抖。不要替换成 M5.BtnA 或猜测的设备 API。没有按钮功能的套件不能添加按钮操作。
+- 使用机身按钮时，使用 GPIO{buttonPin}、低电平有效（按下为 LOW，松开为 HIGH），按需使用 machine.Pin.PULL_UP。在主循环中读取，并进行约 40ms 的消抖。不要替换成 M5.BtnA 或猜测的设备 API。未启用按钮功能时，不能添加按钮操作。
 - {onboardRule}
 - 以 import machine 和 import time 为基础，不要 import neopixel。使用 machine.bitstream() 和 bytearray 输出 LED 数据。
 - BITSTREAM_TIMING = 1 仅为 800kHz 的固定标签。保持 encoding=0 和 WS2812_TIMING_NS = (400, 850, 800, 450) 不变，单位为纳秒，顺序为 T0H,T0L,T1H,T1L。
@@ -69,8 +69,8 @@ Prioritize fixed specifications, instructor-verified baseline code, official M5S
 - 颜色使用 RGB 表示，发送缓冲区使用 GRB。offset = led_index * LED_BPP，依次存储 green、red、blue。每次发送后使用约 time.sleep_us(80) 的复位等待。
 - 熄灭、单色和动画都必须经过同一个输出函数。将 RGB 限制在 0–255，应用准备页面设置的最大亮度、用户亮度和渐变系数后，再按 GRB 存储。不能为满足更亮的要求而提高安全上限。
 - 启动时，通过共用发送函数向全部 LED 发送 0，安全初始化为熄灭。即使指定了启动效果，首次点亮也必须遵守 OFF 到点亮至少 200ms 的渐亮规则。
-- 如果 machine.bitstream 等必要 API 尚未在目标固件中确认，请要求讲师确认。不要猜测替代 API 或库，也不要要求参与者安装外部库。
-- 未经讲师明确指定，不添加 uasyncio、线程或 GPIO 中断。停止或 KeyboardInterrupt 时尽可能熄灭 LED，不妨碍 Ctrl-C 停止。
+- 如果 machine.bitstream 等必要 API 尚未在目标固件中确认，请要求在目标实机上确认。不要猜测替代 API 或库，也不要要求用户安装外部库。
+- 未经用户明确指定，不添加 uasyncio、线程或 GPIO 中断。停止或 KeyboardInterrupt 时尽可能熄灭 LED，不妨碍 Ctrl-C 停止。
 
 ## OFF 到点亮的固定渐变规则
 - 在代码开头定义 MIN_OFF_TO_ON_FADE_MS = 200。仅当当前模式为 OFF 且最后发送的全部 LED 输出都为 0，然后切换到点亮模式时应用，包括启动后的首次点亮。
@@ -79,9 +79,9 @@ Prioritize fixed specifications, instructor-verified baseline code, official M5S
 - 渐变中切换到另一点亮模式时，保持进度，仅更新目标颜色。切换到 OFF 时取消渐亮。
 - 禁止长时间 sleep、time.sleep_ms(200) 或必须等待动画结束才能退出的循环。主循环等待时间保持 10–20ms 或更短，在动画和渐变中也要接受可用的按钮和 BLE 输入。
 - 根据时间、当前模式、动画位置和上次更新时间推进一种效果。切换模式时适当重置旧效果状态，但必须按上述规则保持正在进行的渐亮进度。
-- 未指定时，启动为 OFF；使用按钮时采用一次短按；效果周期约 3 秒，重复到下次操作。向参与者简短说明采用的默认设置。`,
+- 未指定时，启动为 OFF；使用按钮时采用一次短按；效果周期约 3 秒，重复到下次操作。向用户简短说明采用的默认设置。`,
     ble: `## 保持 BLE 基准代码
-- 下方完整基准代码对应讲师登记的实机验证信息，不代表本应用或 AI 已验证实机行为。
+- 下方完整基准代码对应用户登记的实机验证信息，不代表本应用或 AI 已验证实机行为。
 - 保持 BLE 初始化方法、服务和特征 UUID、接收回调的参数形式、设备名称格式及库不变。不要猜测不存在或未确认的 API，也不要替换 BLE 实现。
 - 接收回调只将接收到的字节保存到有界队列。实际模式切换和 LED 更新在主循环中处理，不能通过覆盖单一变量丢失多个命令。
 - 分片接收缓冲区和命令队列必须有界。满时丢弃新增数据并给出简短诊断，不无限等待或重试。断开连接时丢弃未完成的接收数据。
@@ -109,7 +109,7 @@ Prioritize fixed specifications, instructor-verified baseline code, official M5S
 - 断开时丢弃发送和接收的半行。重连及重新订阅通知后，从完整新行开始。浏览器丢弃旧 GATT 对象并重新获取服务和特征。
 - 浏览器按 LF 分行，而非 Notify 边界。无效 JSON 或超长行不能覆盖状态。明确提示未收到或停止更新，不能仅根据发送的设置改变 LED 预览。`,
     information: `## 信息处理
-优先级为固定规范、讲师实机验证的基准代码、M5Stack 和 MicroPython 官方资料、一般知识。规范与基准代码存在实质矛盾时，不要擅自修正，应暂停相关功能并请讲师确认。无法读取外部页面时不能假装已读。本提示词已包含必要信息，不依赖外部页面获取、重新初始设置或再次粘贴 URL。不要切换到 Arduino、C++、CircuitPython 或电脑用 Python。`,
+优先级为固定规范、经实机验证的基准代码、M5Stack 和 MicroPython 官方资料、一般知识。规范与基准代码存在实质矛盾时，不要擅自修正，应暂停相关功能并请用户在目标实机上确认。无法读取外部页面时不能假装已读。本提示词已包含必要信息，不依赖外部页面获取、重新初始设置或再次粘贴 URL。不要切换到 Arduino、C++、CircuitPython 或电脑用 Python。`,
   },
 }
 

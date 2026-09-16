@@ -10,7 +10,6 @@ const sharedProfile: WorkshopProfile = {
   materialId: 'nano-c6-led-workshop',
   revision: 'writer-ai-1',
   displayName: 'M5NanoC6',
-  kitId: null,
   firmwareVersion: null,
   ledModel: null,
   ledCount: 10,

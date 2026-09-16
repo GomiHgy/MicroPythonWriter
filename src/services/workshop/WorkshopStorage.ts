@@ -1,5 +1,6 @@
 import type { WorkshopPreset } from '../../config/workshops'
-import { cloneWorkshopProfile, isWorkshopProfile, validateWorkshopProfile, type WorkshopProfile } from './WorkshopProfile'
+import { cloneWorkshopProfile, isLedModel, isWorkshopProfile, validateWorkshopProfile, type WorkshopProfile } from './WorkshopProfile'
+import { UNKNOWN_LED_MODEL_NOTICE } from './LedSettings'
 
 const STORAGE_SCHEMA = 1
 export const MAX_STORED_PROFILE_LENGTH = 240_000
@@ -34,17 +35,29 @@ export function restoreWorkshopProfile(preset: WorkshopPreset, getStorage: () =>
     }
     // 従来は外部LEDピンがGPIO2固定だったため、欠けた項目だけ補完する。
     if (record.profile && typeof record.profile === 'object' && !Array.isArray(record.profile) && !('ledPin' in record.profile)) record.profile = { ...record.profile, ledPin: 2 }
-    if (!isWorkshopProfile(record.profile) || record.profile.boardId !== preset.profile.boardId || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile).length) throw new Error('profile')
+    // 廃止したキット番号を捨てても、利用者の設定や明示保存したコードは維持する。
+    let notice = ''
+    if (record.profile && typeof record.profile === 'object' && !Array.isArray(record.profile)) {
+      const migrated = { ...record.profile } as Record<string, unknown>
+      delete migrated.kitId
+      if (typeof migrated.ledModel === 'string' && !isLedModel(migrated.ledModel)) {
+        migrated.ledModel = null
+        if (migrated.baseline && typeof migrated.baseline === 'object' && !Array.isArray(migrated.baseline)) migrated.baseline = { ...migrated.baseline, verification: null }
+        notice = UNKNOWN_LED_MODEL_NOTICE
+      }
+      record.profile = migrated
+    }
+    if (!isWorkshopProfile(record.profile) || record.profile.boardId !== preset.profile.boardId || record.profile.materialId !== preset.profile.materialId || record.profile.revision !== preset.profile.revision || validateWorkshopProfile(record.profile, true).length) throw new Error('profile')
     if (record.profile.displayName === 'M5NanoC6 LEDワークショップ' || record.profile.displayName === 'NanoC6 LEDワークショップ') record.profile.displayName = 'M5NanoC6'
     if (record.profile.displayName === 'AtomS3Lite LEDワークショップ') record.profile.displayName = 'AtomS3Lite'
-    return { profile: cloneWorkshopProfile(record.profile), notice: '' }
+    return { profile: cloneWorkshopProfile(record.profile), notice }
   } catch {
-    return { profile: fallback, notice: '保存済みの設定を読み込めませんでした。未対応の版・破損・容量・保存機能を講師が確認してください。配布された設定を使っています。' }
+    return { profile: fallback, notice: '保存済みの設定を読み込めませんでした。未対応の版・破損・容量・保存機能を確認してください。初期設定を使っています。' }
   }
 }
 
 export function storeWorkshopProfile(preset: WorkshopPreset, profile: WorkshopProfile, persistBaseline: boolean, getStorage: () => SettingsStorage = () => localStorage): string {
-  if (!isWorkshopProfile(profile) || validateWorkshopProfile(profile).length || profile.boardId !== preset.profile.boardId || profile.materialId !== preset.profile.materialId || profile.revision !== preset.profile.revision) return '設定が不正なため保存できません。講師用設定を確認してください。'
+  if (!isWorkshopProfile(profile) || validateWorkshopProfile(profile).length || profile.boardId !== preset.profile.boardId || profile.materialId !== preset.profile.materialId || profile.revision !== preset.profile.revision) return '設定が不正なため保存できません。設定の入力内容を確認してください。'
   const saved = cloneWorkshopProfile(profile)
   if (!persistBaseline) saved.baseline = { code: '', verification: null }
   try {

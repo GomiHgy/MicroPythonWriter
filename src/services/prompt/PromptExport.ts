@@ -31,12 +31,12 @@ export async function copyPreparationPrompt(text: string, confirmSensitive?: Sen
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export function preparationFileName(kitId: string, revision: string) {
+export function preparationFileName(boardId: string, revision: string) {
   const safe = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'unknown'
-  return `NanoLED-${safe(kitId)}-${safe(revision)}-AI-preparation.txt`
+  return `MicroPython-${safe(boardId)}-${safe(revision)}-AI-preparation.txt`
 }
 
-export function downloadPreparationPrompt(text: string, kitId: string, revision: string, confirmSensitive?: SensitiveConfirmation): ExportResult {
+export function downloadPreparationPrompt(text: string, boardId: string, revision: string, confirmSensitive?: SensitiveConfirmation): ExportResult {
   let url: string | undefined
   let anchor: HTMLAnchorElement | undefined
   try {
@@ -44,7 +44,7 @@ export function downloadPreparationPrompt(text: string, kitId: string, revision:
     url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = preparationFileName(kitId, revision)
+    anchor.download = preparationFileName(boardId, revision)
     document.body.appendChild(anchor)
     anchor.click()
     return { ok: true, cancelled: false, message: '準備文のファイル保存を開始しました。ブラウザのダウンロードを確認してください。' }

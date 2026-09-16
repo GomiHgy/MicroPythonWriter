@@ -159,7 +159,7 @@ it('AIの準備へ移動しても3つのパネルと編集内容を保持する'
 
 it('USB非対応でもAI準備を開けて、不正を含む選択文脈を通信hookへ渡す', () => {
   harness.programmer.supported = false; harness.programmer.state = 'unsupported'
-  harness.preparation.context = { errors: ['LED数が未設定です'], profile: { kitId: '001' } }
+  harness.preparation.context = { errors: ['LED数が未設定です'], profile: { boardId: 'm5nanoc6' } }
   event(byId(render(), 'tab-preparation'), 'onClick')
   expect(byId(render(), 'panel-preparation').props.hidden).toBe(false)
   expect(harness.contexts.at(-1)).toBe(harness.preparation.context)
