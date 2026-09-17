@@ -5,6 +5,7 @@ export interface BoardDefinition {
   id: BoardId
   name: string
   soc: BoardSoc
+  firmwareBurnerUrl: string
   ledPin: number
   buttonPin: number
   rgbPin: number
@@ -17,8 +18,8 @@ export interface BoardDefinition {
 // https://docs.m5stack.com/en/core/AtomS3%20Lite
 // https://github.com/m5stack/M5Unified/blob/master/src/M5Unified.cpp
 export const boardDefinitions: Record<BoardId, BoardDefinition> = {
-  m5nanoc6: { id: 'm5nanoc6', name: 'M5NanoC6', soc: 'ESP32-C6', ledPin: 2, buttonPin: 9, rgbPin: 20, rgbPowerPin: 19, statusLedPin: 7 },
-  atoms3lite: { id: 'atoms3lite', name: 'AtomS3Lite', soc: 'ESP32-S3', ledPin: 2, buttonPin: 41, rgbPin: 35, rgbPowerPin: null, statusLedPin: null },
+  m5nanoc6: { id: 'm5nanoc6', name: 'M5NanoC6', soc: 'ESP32-C6', firmwareBurnerUrl: 'https://burner.m5stack.com/device/nanoc6', ledPin: 2, buttonPin: 9, rgbPin: 20, rgbPowerPin: 19, statusLedPin: 7 },
+  atoms3lite: { id: 'atoms3lite', name: 'AtomS3Lite', soc: 'ESP32-S3', firmwareBurnerUrl: 'https://burner.m5stack.com/device/atoms3-lite', ledPin: 2, buttonPin: 41, rgbPin: 35, rgbPowerPin: null, statusLedPin: null },
 }
 
 export const isBoardId = (value: unknown): value is BoardId => value === 'm5nanoc6' || value === 'atoms3lite'

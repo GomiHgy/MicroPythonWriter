@@ -12,6 +12,7 @@ const numberOrNull = (value: string) => value.trim() === '' || !Number.isFinite(
 export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
   const { t, locale } = useLocale()
   const { selectedProfile: profile, context, prompt } = preparation
+  const board = profile ? getBoardDefinition(profile.boardId) : null
   const [previewOpen, setPreviewOpen] = useState(false)
   const [manualCopy, setManualCopy] = useState(false)
   const [copying, setCopying] = useState(false)
@@ -46,6 +47,17 @@ export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
         {preparation.profiles.map(preset => <option key={preset.id} value={preset.id}>{t(preset.profile.displayName)}</option>)}
       </select>
       {profile && <div className="ai-kit-summary"><p><strong>{t(profile.displayName)}</strong></p><div className="ai-feature-list"><span>LED</span>{profile.features.button && <span>{t('本体ボタン')}</span>}{context?.bleEnabled && <span>Bluetooth</span>}{context?.controllerEnabled && <span>{t('Webコントローラ')}</span>}</div></div>}
+      {board && <section className="notice ai-firmware-setup" aria-labelledby="ai-firmware-heading">
+        <h3 id="ai-firmware-heading">{t('はじめて使うとき：UIFlow2を書き込む')}</h3>
+        <p>{t('すでにUIFlow2を書き込んでいる人は、この手順を飛ばせます。')}</p>
+        <p className="ai-help">{t('書き込みで機器内のプログラムが消える場合があります。必要なコードは先にPCへ保存してください。')}</p>
+        <ol>
+          <li>{t('このアプリやほかのアプリでUSB接続中なら、いったん切断してください。')}</li>
+          <li>{t('下のM5Burnerを開き、「UIFlow2.0」を選んで機器へ書き込みます。')}</li>
+          <li>{t('書き込み後はM5BurnerのUSB接続を切り、この画面へ戻って、書き込んだ版を下に入力してください。')}</li>
+        </ol>
+        <div className="ai-links"><a href={board.firmwareBurnerUrl} target="_blank" rel="noopener noreferrer">{t('{board}の書き込みページを開く ↗', { board: board.name })}</a></div>
+      </section>}
       {profile && <fieldset className="ai-led-settings" disabled={copying || preparation.isImporting}><legend>{t('LEDの設定')}</legend>
         <div className="ai-settings-grid">
           <label>{t('対象UIFlow2ファームウェア版')}<input value={profile.firmwareVersion ?? ''} maxLength={200} placeholder={t('実機で確認した版')} onChange={event => preparation.editLedSettings({ firmwareVersion: event.target.value || null })} /></label>
@@ -97,7 +109,6 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
       {board && <div className="notice ai-board-pins"><strong>{t('対象機器')}: {board.name}</strong><p>{t('外付けLED: GPIO{led} ／ 本体ボタン: GPIO{button}（押すとLOW）', { led: draft.ledPin ?? t('未設定'), button: board.buttonPin })}</p><p>{t('内蔵RGB LED: GPIO{rgb}', { rgb: board.rgbPin })}{board.rgbPowerPin !== null && ` ／ ${t('内蔵RGB電源: GPIO{pin}', { pin: board.rgbPowerPin })}`}{board.statusLedPin !== null && ` ／ ${t('状態LED: GPIO{pin}', { pin: board.statusLedPin })}`}</p><p>{t('外付けLEDと内蔵LEDのピンは別です。機器を変更する場合は「使う機器」で選び直してください。')}</p></div>}
       <div className="ai-settings-grid">
         <label>{t('設定の表示名')}<input value={draft.displayName} maxLength={200} onChange={event => setField('displayName', event.target.value)} /></label>
-        <label>{t('LED_BPP（今回の対応はRGB=3）')}<input type="number" min="1" step="1" value={draft.ledBpp ?? ''} onChange={event => setField('ledBpp', numberOrNull(event.target.value))} /></label>
       </div>
       <p className="ai-help">{t('最大輝度が範囲内でも電源の安全性は保証されません。LED数と電源に合わせて確認してください。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。')}</p>
       <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={draft.features[key]} onChange={event => setField('features', { ...draft.features, [key]: event.target.checked })} />{t(label)}</label>)}</fieldset>

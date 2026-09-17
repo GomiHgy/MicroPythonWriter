@@ -1,6 +1,13 @@
 import type { MessageCatalog } from './types'
 
 export const preparationMessages: MessageCatalog = {
+  'はじめて使うとき：UIFlow2を書き込む': { en: 'First-time setup: install UIFlow2', zh: '首次使用：烧录 UIFlow2' },
+  'すでにUIFlow2を書き込んでいる人は、この手順を飛ばせます。': { en: 'If UIFlow2 is already installed, you can skip this step.', zh: '如果已经烧录 UIFlow2，可以跳过此步骤。' },
+  '書き込みで機器内のプログラムが消える場合があります。必要なコードは先にPCへ保存してください。': { en: 'Installing firmware may erase programs on the device. Save any code you need to your computer first.', zh: '烧录固件可能会清除设备内的程序。请先将需要保留的代码保存到电脑。' },
+  'このアプリやほかのアプリでUSB接続中なら、いったん切断してください。': { en: 'If this app or another app is connected over USB, disconnect it first.', zh: '如果此应用或其他应用已通过 USB 连接设备，请先断开连接。' },
+  '下のM5Burnerを開き、「UIFlow2.0」を選んで機器へ書き込みます。': { en: 'Open M5Burner below, select UIFlow2.0, and install it on your device.', zh: '打开下方的 M5Burner，选择 UIFlow2.0 并烧录到设备。' },
+  '書き込み後はM5BurnerのUSB接続を切り、この画面へ戻って、書き込んだ版を下に入力してください。': { en: 'When finished, disconnect USB in M5Burner, return here, and enter the version you installed below.', zh: '完成后，在 M5Burner 中断开 USB 连接，返回此页面，并在下方填写烧录的版本。' },
+  '{board}の書き込みページを開く ↗': { en: 'Open the {board} firmware installer ↗', zh: '打开 {board} 固件烧录页面 ↗' },
   '保存済みのLED型番は現在の選択肢にありません。ほかの設定は復元しました。LEDの型番を選び直してください。': { en: 'The saved LED model is no longer an available option. Other settings were restored. Please choose your LED model again.', zh: '已保存的 LED 型号不在当前选项中。其他设置已恢复，请重新选择 LED 型号。' },
   'LEDの設定': { en: 'LED settings', zh: 'LED 设置' },
   '外部LEDピン（GPIO）': { en: 'External LED pin (GPIO)', zh: '外接 LED 引脚（GPIO）' },
@@ -61,7 +68,6 @@ export const preparationMessages: MessageCatalog = {
   '実機で確認した版': { en: 'Version checked on the device', zh: '已在实机确认的版本' },
   'LED型番': { en: 'LED model', zh: 'LED 型号' },
   'LED数': { en: 'Number of LEDs', zh: 'LED 数量' },
-  'LED_BPP（今回の対応はRGB=3）': { en: 'LED_BPP (supported: RGB = 3)', zh: 'LED_BPP（目前支持 RGB = 3）' },
   '最大輝度（%）': { en: 'Maximum brightness (%)', zh: '最大亮度（%）' },
   '最大輝度が範囲内でも電源の安全性は保証されません。LED数と電源に合わせて確認してください。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。': { en: 'A valid brightness limit does not guarantee power safety. Check your LED count and power supply. The MicroPython version reported over USB is never automatically used as the target UIFlow2 version.', zh: '亮度在允许范围内也不保证供电安全，请结合 LED 数量和电源进行确认。USB 读取的 MicroPython 版本不会自动设为目标 UIFlow2 版本。' },
   '使う機能': { en: 'Features to use', zh: '使用的功能' },

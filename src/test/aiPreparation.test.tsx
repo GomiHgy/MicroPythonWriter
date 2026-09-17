@@ -53,6 +53,53 @@ beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harn
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  it.each(['ja', 'en', 'zh'] as const)('%s の書き込み案内は選択機種のページだけを開き、版やコードを変更しない', locale => {
+    setLocale(locale)
+    for (const [boardId, name, path] of [['m5nanoc6', 'M5NanoC6', 'nanoc6'], ['atoms3lite', 'AtomS3Lite', 'atoms3-lite']] as const) {
+      const selectedProfile = { ...profile, boardId, firmwareVersion: null }
+      const prep = { ...preparation(), selectedProfile, prompt: '' }
+      const panel = render(prep)
+      const guide = find(panel, element => element.type === 'section' && element.props['aria-labelledby'] === 'ai-firmware-heading')
+      const link = find(guide, element => element.type === 'a')
+      expect(link.props.href).toBe(`https://burner.m5stack.com/device/${path}`)
+      expect(content(link)).toContain(name)
+      expect(link.props.target).toBe('_blank')
+      expect(link.props.rel).toBe('noopener noreferrer')
+      expect(link.props.onClick).toBeUndefined()
+      expect(content(guide)).toContain('UIFlow2.0')
+      expect(all(guide, element => element.type === 'li')).toHaveLength(3)
+      expect(content(guide)).toContain(locale === 'ja' ? '飛ばせます' : locale === 'en' ? 'skip this step' : '跳过此步骤')
+      expect(content(guide)).toContain(locale === 'ja' ? '消える場合' : locale === 'en' ? 'may erase' : '可能会清除')
+      if (locale !== 'ja') expect(content(guide)).not.toMatch(/[ぁ-んァ-ヶ]/u)
+      expect(prep.selectedProfile.firmwareVersion).toBeNull()
+      expect(prep.editLedSettings).not.toHaveBeenCalled()
+      expect(prep.editDraft).not.toHaveBeenCalled()
+    }
+  })
+
+  it('機種を選ぶまでは書き込みページのリンクを表示しない', () => {
+    const node = render({ ...preparation(), selectedProfile: null })
+    expect(all(node, element => element.type === 'a' && String(element.props.href).includes('burner.m5stack.com'))).toHaveLength(0)
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s ではLED_BPPの設定欄を表示せず、準備文はRGBの3固定を維持する', locale => {
+    setLocale(locale)
+    const prep = preparation()
+    const context = createWorkshopContext(profile, locale)
+    prep.context = context
+    prep.prompt = buildStartPrompt(context)
+    const panel = render(prep)
+    const advancedComponent = find(panel, element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const advanced = (advancedComponent.type as (props: typeof advancedComponent.props) => ReactNode)(advancedComponent.props)
+    for (const node of [panel, advanced]) {
+      expect(all(node, element => element.type === 'label' && content(element).includes('LED_BPP'))).toHaveLength(0)
+    }
+    expect(all(advanced, element => element.type === 'input' && element.props.type === 'number')).toHaveLength(0)
+    expect(prep.prompt).toContain('LED_BPP: 3')
+    expect(prep.editDraft).not.toHaveBeenCalled()
+  })
+
   it('3つのLED設定は詳細設定を開かず編集できる', () => {
     const prep = preparation()
     const node = render(prep)
@@ -249,7 +296,8 @@ describe('AIの準備パネル', () => {
   })
   it('通常リンクはコードや準備文をURLへ含まずコピーと別操作', () => {
     const node = render(preparation())
-    const links = all(node, element => element.type === 'a')
+    const aiLinks = find(node, element => element.props['aria-label'] === '好きなAIを開く')
+    const links = all(aiLinks, element => element.type === 'a')
     expect(links).toHaveLength(4)
     expect(links.map(link => link.props.href)).toEqual(['https://chatgpt.com/', 'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.deepseek.com/'])
     for (const link of links) {

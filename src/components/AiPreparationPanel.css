@@ -11,6 +11,11 @@
 .ai-kit-summary p span { margin-top: 4px; font-size: .85rem; color: #526b84; }
 .ai-feature-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-feature-list span { border-radius: 20px; background: #e8f4ff; color: #16578e; padding: 5px 9px; font-size: .8rem; font-weight: 650; }
+.ai-firmware-setup { margin-top: 18px; font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
+.ai-firmware-setup h3 { margin: 0 0 6px; font-size: 1rem; }
+.ai-firmware-setup p { margin: 6px 0; }
+.ai-firmware-setup ol { margin: 10px 0; padding-left: 1.5em; }
+.ai-firmware-setup li + li { margin-top: 5px; }
 .ai-simple-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 0; margin: 25px 0 20px; list-style: none; counter-reset: ai-step; }
 .ai-simple-steps li { border-top: 2px solid #d4e4f1; padding: 12px 0; counter-increment: ai-step; }
 .ai-simple-steps strong { display: block; font-size: .95rem; }
