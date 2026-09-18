@@ -84,13 +84,13 @@ export function useWorkshopPreparation() {
     setNotice(failure || (persistBaseline ? '設定と基準コードを、このブラウザに保存しました。' : '設定をこのブラウザに保存しました。基準コードは保存していません。'))
   }
 
-  function confirmBaseline(confirmedBy: string, nanoLedV1: boolean) {
+  function confirmBaseline(confirmedBy: string, nanoLedV1: boolean, nanoLedV2 = false) {
     if (isImporting) { setNotice('基準コードを読み込み中です。完了してから確認してください。'); return }
     if (!draft?.baseline.code.trim() || !draft.firmwareVersion?.trim() || !confirmedBy.trim() || confirmedBy.trim().length > 200 || /\{\{|\}\}/.test(confirmedBy + draft.firmwareVersion)) {
       setNotice('基準コード・対象UIFlow2版・確認した人の名前を入力してください。')
       return
     }
-    editDraft({ baseline: { code: draft.baseline.code, verification: { code: draft.baseline.code, firmwareVersion: draft.firmwareVersion, boardId: draft.boardId, confirmedBy: confirmedBy.trim(), confirmedAt: new Date().toISOString(), nanoLedV1 } } })
+    editDraft({ baseline: { code: draft.baseline.code, verification: { code: draft.baseline.code, firmwareVersion: draft.firmwareVersion, boardId: draft.boardId, confirmedBy: confirmedBy.trim(), confirmedAt: new Date().toISOString(), nanoLedV1, nanoLedV2 } } })
   }
 
   async function importBaseline(file: Pick<File, 'name' | 'size' | 'text'>) {

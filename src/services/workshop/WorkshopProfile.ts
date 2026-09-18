@@ -7,6 +7,7 @@ export interface WorkshopVerification {
   confirmedBy: string
   confirmedAt: string
   nanoLedV1: boolean
+  nanoLedV2?: boolean
 }
 
 export interface WorkshopProfile {
@@ -54,11 +55,12 @@ export function isWorkshopProfile(value: unknown): value is WorkshopProfile {
   if (!record(value.baseline) || !exactKeys(value.baseline, ['code', 'verification']) || typeof value.baseline.code !== 'string' || value.baseline.code.length > MAX_BASELINE_CODE_LENGTH) return false
   const verification = value.baseline.verification
   if (verification === null) return true
-  return record(verification) && exactKeys(verification, ['code', 'firmwareVersion', 'confirmedBy', 'confirmedAt', 'nanoLedV1', ...(Object.hasOwn(verification, 'boardId') ? ['boardId'] : [])])
+  return record(verification) && exactKeys(verification, ['code', 'firmwareVersion', 'confirmedBy', 'confirmedAt', 'nanoLedV1', ...(Object.hasOwn(verification, 'boardId') ? ['boardId'] : []), ...(Object.hasOwn(verification, 'nanoLedV2') ? ['nanoLedV2'] : [])])
     && (!Object.hasOwn(verification, 'boardId') || isBoardId(verification.boardId))
     && typeof verification.code === 'string' && verification.code.length <= MAX_BASELINE_CODE_LENGTH
     && [verification.firmwareVersion, verification.confirmedBy, verification.confirmedAt].every(item => typeof item === 'string' && item.length <= MAX_PROFILE_TEXT_LENGTH)
     && typeof verification.nanoLedV1 === 'boolean'
+    && (!Object.hasOwn(verification, 'nanoLedV2') || typeof verification.nanoLedV2 === 'boolean')
 }
 
 export function cloneWorkshopProfile(profile: WorkshopProfile): WorkshopProfile {
@@ -108,8 +110,8 @@ export function getBlePreparationReasons(profile: WorkshopProfile): string[] {
     if (verification.code !== code) reasons.push('基準コードが確認時から変更されています。実機で再確認してください。')
     if (verification.firmwareVersion !== profile.firmwareVersion) reasons.push('BLEの確認対象UIFlow2版が設定と一致しません。実機で再確認してください。')
     if (!validProfileText(verification.confirmedBy) || !validProfileText(verification.confirmedAt) || !Number.isFinite(Date.parse(verification.confirmedAt))) reasons.push('BLEを確認した人の名前と確認日時を設定してください。')
-    if (profile.features.controller && !verification.nanoLedV1) reasons.push('NanoLED v1対応の実機確認が必要です。対象機器で操作・状態通知を確認してください。')
+    if (profile.features.controller && !verification.nanoLedV1 && !verification.nanoLedV2) reasons.push('NanoLED v1またはv2対応の実機確認が必要です。再生・停止・アクションにはv2の確認が必要です。')
   }
-  if ((profile.features.controller || verification?.nanoLedV1) && (profile.ledBpp !== 3 || profile.ledCount === null || !Number.isInteger(profile.ledCount) || profile.ledCount < 1 || profile.ledCount > 300)) reasons.push('NanoLED v1はRGB・1〜300個のLEDに対応します。使用するLED数や形式が対応しているか確認してください。')
+  if ((profile.features.controller || verification?.nanoLedV1 || verification?.nanoLedV2) && (profile.ledBpp !== 3 || profile.ledCount === null || !Number.isInteger(profile.ledCount) || profile.ledCount < 1 || profile.ledCount > 300)) reasons.push('NanoLED v1/v2はRGB・1〜300個のLEDに対応します。使用するLED数や形式が対応しているか確認してください。')
   return reasons
 }

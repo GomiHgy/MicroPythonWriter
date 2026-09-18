@@ -71,7 +71,7 @@ export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
       </fieldset>}
       {context?.errors.length ? <div className="notice warn"><strong>{t('設定を確認してください')}</strong><p>{t('下の項目を入力・確認すると、AIに渡す準備文を作れます。')}</p><details><summary>{t('確認する項目（{count}件）', { count: context.errors.length })}</summary><ul>{context.errors.map(error => <li key={error}>{t(error)}</li>)}</ul></details></div> : null}
       {profile && (profile.features.ble || profile.features.controller) && !context?.bleEnabled && <p className="ai-help">{t('Bluetoothを使う場合は、基準コードの実機確認が必要です。')} {context?.bleReasons.map(reason => t(reason)).join(' ')} {t('LEDと本体ボタンの準備は続けられます。')}</p>}
-      {profile && context?.bleEnabled && profile.features.controller && !context.controllerEnabled && <p className="ai-help">{t('Webコントローラを使う場合は、NanoLED v1対応の実機確認が必要です。')} {context.bleReasons.map(reason => t(reason)).join(' ')}</p>}
+      {profile && context?.bleEnabled && profile.features.controller && !context.controllerEnabled && <p className="ai-help">{t('Webコントローラを使う場合は、NanoLED v1またはv2対応の実機確認が必要です。')} {context.bleReasons.map(reason => t(reason)).join(' ')}</p>}
       <ol className="ai-simple-steps"><li><strong>{t('準備文をコピー')}</strong><span>{t('入力した設定は自動で入ります')}</span></li><li><strong>{t('好きなAIへ貼って送信')}</strong><span>{t('新しい会話で、質問に答えよう')}</span></li><li><strong>{t('コードを貼って「実行」')}</strong><span>{t('できた main.py をプログラム画面へ')}</span></li></ol>
       {preparation.hasPendingChanges && <p className="notice warn">{t('詳細設定に未適用の変更があります。先に「設定を適用」を押してください。適用するまでコピー・ファイル保存はできません。')}</p>}
       {preparation.isImporting && <p role="status" className="notice">{t('基準コードを読み込み中です。完了するまでコピー・ファイル保存を待ってください。')}</p>}
@@ -95,11 +95,12 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
   const [confirmedBy, setConfirmedBy] = useState('')
   const [testedOnDevice, setTestedOnDevice] = useState(false)
   const [nanoLedV1, setNanoLedV1] = useState(false)
+  const [nanoLedV2, setNanoLedV2] = useState(false)
   const [confirmedCode, setConfirmedCode] = useState({ code: draft?.baseline.code, firmware: draft?.firmwareVersion, boardId: draft?.boardId, ledModel: draft?.ledModel, ledCount: draft?.ledCount, ledPin: draft?.ledPin, brightness: draft?.maxBrightnessPercent })
   const verificationMatches = confirmedCode.ledModel === draft?.ledModel && confirmedCode.ledCount === draft?.ledCount && confirmedCode.ledPin === draft?.ledPin && confirmedCode.brightness === draft?.maxBrightnessPercent && confirmedCode.code === draft?.baseline.code && confirmedCode.firmware === draft?.firmwareVersion && confirmedCode.boardId === draft?.boardId
   const board = draft ? getBoardDefinition(draft.boardId) : null
   const setField = <Key extends keyof WorkshopProfile,>(key: Key, value: WorkshopProfile[Key]) => {
-    if (key === 'baseline' || key === 'firmwareVersion') { setTestedOnDevice(false); setNanoLedV1(false) }
+    if (key === 'baseline' || key === 'firmwareVersion') { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false) }
     preparation.editDraft({ [key]: value })
   }
 
@@ -111,16 +112,18 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
         <label>{t('設定の表示名')}<input value={draft.displayName} maxLength={200} onChange={event => setField('displayName', event.target.value)} /></label>
       </div>
       <p className="ai-help">{t('最大輝度が範囲内でも電源の安全性は保証されません。LED数と電源に合わせて確認してください。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。')}</p>
-      <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={draft.features[key]} onChange={event => setField('features', { ...draft.features, [key]: event.target.checked })} />{t(label)}</label>)}</fieldset>
+      <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1/v2）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={draft.features[key]} onChange={event => setField('features', { ...draft.features, [key]: event.target.checked })} />{t(label)}</label>)}</fieldset>
       <details className="ai-baseline"><summary>{t('基準コードと実機確認')}</summary><p className="ai-help">{t('任意の基準コードです。Bluetoothには対象UIFlow2版の実機で動作を確認したコードが必要です。入力・読込だけでは確認済みになりません。コードは実行されません。')}</p>
-        <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setTestedOnDevice(false); setNanoLedV1(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
+        <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
         <label className="ai-baseline-code">{t('基準コード（全文）')}<textarea value={draft.baseline.code} spellCheck={false} onChange={event => { setField('baseline', { code: event.target.value, verification: null }); setTestedOnDevice(false) }} /></label>
         {draft.baseline.code.length > MAX_BASELINE_CODE_LENGTH && <p className="notice warn">{t('基準コードが100,000文字を超えています。内容は省略していません。Bluetoothの準備とブラウザ保存には使えないため、登録内容を確認してください。')}</p>}
-        {draft.baseline.verification ? <p className="ai-help">{t('実機確認の登録: {name} ／ {date} ／ 対象版 {firmware}', { name: draft.baseline.verification.confirmedBy, date: draft.baseline.verification.confirmedAt, firmware: draft.baseline.verification.firmwareVersion })}{draft.baseline.verification.nanoLedV1 ? ` ／ ${t('NanoLED v1対応確認あり')}` : ''} <button className="quiet-button" onClick={() => setField('baseline', { ...draft.baseline, verification: null })}>{t('確認登録を取り消す')}</button></p> : <p className="ai-help">{t('実機確認は未登録です。基準コードや対象版を変えたら、再確認が必要です。')}</p>}
+        {draft.baseline.verification ? <p className="ai-help">{t('実機確認の登録: {name} ／ {date} ／ 対象版 {firmware}', { name: draft.baseline.verification.confirmedBy, date: draft.baseline.verification.confirmedAt, firmware: draft.baseline.verification.firmwareVersion })}{draft.baseline.verification.nanoLedV1 ? ` ／ ${t('NanoLED v1対応確認あり')}` : ''}{draft.baseline.verification.nanoLedV2 ? ` ／ ${t('NanoLED v2対応確認あり')}` : ''} <button className="quiet-button" onClick={() => setField('baseline', { ...draft.baseline, verification: null })}>{t('確認登録を取り消す')}</button></p> : <p className="ai-help">{t('実機確認は未登録です。基準コードや対象版を変えたら、再確認が必要です。')}</p>}
         <label className="ai-confirm-name">{t('確認した人の名前')}<input value={confirmedBy} maxLength={200} onChange={event => setConfirmedBy(event.target.value)} /></label>
-        <label className="ai-check"><input type="checkbox" checked={testedOnDevice && verificationMatches} onChange={event => { setConfirmedCode({ code: draft.baseline.code, firmware: draft.firmwareVersion, boardId: draft.boardId, ledModel: draft.ledModel, ledCount: draft.ledCount, ledPin: draft.ledPin, brightness: draft.maxBrightnessPercent }); setTestedOnDevice(event.target.checked) }} />{t('この基準コードを、指定の対象機器・UIFlow2版の実機で確認した')}</label>
-        <label className="ai-check"><input type="checkbox" checked={nanoLedV1} onChange={event => setNanoLedV1(event.target.checked)} />{t('NanoLED v1の操作・状態通知・再接続も実機で確認した')}</label>
-        <button className="quiet-button" disabled={preparation.isImporting || !testedOnDevice || !verificationMatches || !confirmedBy.trim() || !draft.baseline.code.trim() || !draft.firmwareVersion?.trim()} onClick={() => preparation.confirmBaseline(confirmedBy, nanoLedV1)}>{t('実機確認を登録')}</button>
+        <label className="ai-check"><input type="checkbox" checked={testedOnDevice && verificationMatches} onChange={event => { if (!verificationMatches || !event.target.checked) { setNanoLedV1(false); setNanoLedV2(false) } setConfirmedCode({ code: draft.baseline.code, firmware: draft.firmwareVersion, boardId: draft.boardId, ledModel: draft.ledModel, ledCount: draft.ledCount, ledPin: draft.ledPin, brightness: draft.maxBrightnessPercent }); setTestedOnDevice(event.target.checked) }} />{t('この基準コードを、指定の対象機器・UIFlow2版の実機で確認した')}</label>
+        <label className="ai-check"><input type="checkbox" checked={nanoLedV1 && verificationMatches} onChange={event => setNanoLedV1(event.target.checked)} />{t('NanoLED v1の操作・状態通知・再接続も実機で確認した')}</label>
+        <label className="ai-check"><input type="checkbox" checked={nanoLedV2 && verificationMatches} onChange={event => setNanoLedV2(event.target.checked)} />{t('NanoLED v2の再生・停止・モード・アクション・状態通知・再接続を実機で確認した')}</label>
+        <p className="ai-help">{t('再生・停止と作品専用ボタンにはv2が必要です。v1の確認をv2へ自動で引き継ぐことはありません。')}</p>
+        <button className="quiet-button" disabled={preparation.isImporting || !testedOnDevice || !verificationMatches || !confirmedBy.trim() || !draft.baseline.code.trim() || !draft.firmwareVersion?.trim()} onClick={() => preparation.confirmBaseline(confirmedBy, nanoLedV1, nanoLedV2)}>{t('実機確認を登録')}</button>
         <p className="ai-help">{t('利用者が入力した確認情報です。Writerがコードを検証したり、実機の動作確認を代行した結果ではありません。')}</p>
       </details>
       {preparation.draftErrors.length > 0 && <div className="notice warn"><strong>{t('設定の確認項目')}</strong><ul>{preparation.draftErrors.map(error => <li key={error}>{t(error)}</li>)}</ul></div>}

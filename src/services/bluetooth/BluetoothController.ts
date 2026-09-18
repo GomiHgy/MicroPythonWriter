@@ -1,4 +1,4 @@
-import { encodeCommand, LedStatusParser, NANO_LED_RX_UUID, NANO_LED_SERVICE_UUID, NANO_LED_TX_UUID, type LedStatus } from './protocol'
+import { encodeCommand, LedStatusParser, MAX_STATUS_AGE_MS, NANO_LED_RX_UUID, NANO_LED_SERVICE_UUID, NANO_LED_TX_UUID, type LedStatus } from './protocol'
 
 export interface BluetoothCharacteristic {
   value?: DataView | null
@@ -32,6 +32,7 @@ export interface BluetoothApi {
 export interface BluetoothSnapshot {
   readonly phase: 'unsupported' | 'disconnected' | 'connecting' | 'connected'
   readonly deviceName: string | null
+  readonly connectedAt: number | null
   readonly status: LedStatus | null
   readonly receivedAt: number | null
   readonly error: string | null
@@ -56,7 +57,7 @@ class SessionCancelledError extends Error {}
 class BluetoothTimeoutError extends Error {}
 class IncompatibleDeviceError extends Error {}
 
-const EMPTY_STATE = { deviceName: null, status: null, receivedAt: null, sending: false }
+const EMPTY_STATE = { deviceName: null, connectedAt: null, status: null, receivedAt: null, sending: false }
 const defaultBluetooth = (): BluetoothApi | undefined => typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { bluetooth?: BluetoothApi }).bluetooth
 
 export class BluetoothController {
@@ -141,7 +142,7 @@ export class BluetoothController {
       tx.addEventListener('characteristicvaluechanged', this.notificationListener)
       await this.guard(tx.startNotifications(), generation)
       this.assertCurrent(generation)
-      this.update({ phase: 'connected' })
+      this.update({ phase: 'connected', connectedAt: Date.now() })
       if (this.pollMs > 0) this.pollTimer = setInterval(() => {
         if (!this.isCurrent(generation) || this.snapshot.phase !== 'connected') return
         if (this.snapshot.receivedAt !== null && Date.now() - this.snapshot.receivedAt < this.pollMs) return
@@ -165,6 +166,7 @@ export class BluetoothController {
     this.listeners.clear()
   }
 
+  /** trueはGATTへの書き込み完了のみを示す。機器への反映や実際の発光を保証しない。 */
   send(input: string): Promise<boolean> {
     if (this.snapshot.phase !== 'connected' || !this.rx) {
       if (this.supported) this.update({ error: '先にBluetoothで機器をつないでください。' })
@@ -176,6 +178,11 @@ export class BluetoothController {
       return Promise.resolve(false)
     }
     const command = new TextDecoder().decode(bytes).trim()
+    const unavailable = this.commandUnavailable(command)
+    if (unavailable) {
+      this.update({ error: unavailable })
+      return Promise.resolve(false)
+    }
     const token = command.split(' ')[0]
     const key = token === 'BRIGHTNESS' || token === 'SPEED' || token === 'STATUS' ? token : null
     if (token === 'OFF') {
@@ -202,6 +209,13 @@ export class BluetoothController {
     try {
       while (this.isCurrent(generation) && this.rx && this.queue.length) {
         const item = this.queue.shift()!
+        // 待ち行列の間に状態や作品の操作一覧が変わることもあるため、送信直前にも確認する。
+        const unavailable = this.commandUnavailable(item.command)
+        if (unavailable) {
+          this.update({ error: unavailable })
+          item.resolve(false)
+          continue
+        }
         this.currentCommand = item
         this.update({ sending: true })
         try {
@@ -220,6 +234,22 @@ export class BluetoothController {
       if (this.processingGeneration === generation) this.processingGeneration = null
       if (this.isCurrent(generation)) this.update({ sending: false })
     }
+  }
+
+  private commandUnavailable(command: string): string | null {
+    const [token, id] = command.split(' ')
+    const status = this.snapshot.status
+    if (token === 'SPEED' && status?.v === 2 && !status.controls.speed) return 'この作品は速さの調整に対応していません。'
+    const version2Operation = ['PLAY', 'PAUSE', 'MODE', 'ACTION'].includes(token)
+    const version2Slider = status?.v === 2 && (token === 'BRIGHTNESS' || token === 'SPEED')
+    if (!version2Operation && !version2Slider) return null
+    if (status?.v !== 2) return '再生・停止・作品の操作には、新しい通信仕様に対応した機器の状態確認が必要です。'
+    const age = this.snapshot.receivedAt === null ? Infinity : Date.now() - this.snapshot.receivedAt
+    if (age < 0 || age > MAX_STATUS_AGE_MS) return '機器の状態を確認できていません。「状態をもう一度受け取る」を押してから、もう一度操作してください。'
+    if (token === 'MODE' && !status.controls.modes.some(choice => choice.id === id)) return 'このモードは機器に登録されていません。「状態をもう一度受け取る」を押してください。'
+    if (token === 'ACTION' && !status.controls.actions.some(choice => choice.id === id)) return 'このアクションは機器に登録されていません。「状態をもう一度受け取る」を押してください。'
+    if (token === 'ACTION' && (status.action !== null || this.currentCommand?.command.startsWith('ACTION ') || this.queue.some(item => item.command.startsWith('ACTION ')))) return 'アクションの送信・実行中です。完了してから、もう一度操作してください。'
+    return null
   }
 
   private guard<T>(promise: Promise<T>, generation: number, timed = true): Promise<T> {
@@ -269,7 +299,7 @@ export class BluetoothController {
 
   private errorMessage(error: unknown, stage: 'selection' | 'connection' | 'service' | 'write'): string {
     if (error instanceof BluetoothTimeoutError) return 'Bluetoothの応答がありません。機器の電源と距離を確認して、もう一度つないでください。'
-    if (error instanceof IncompatibleDeviceError || (stage === 'service' && error instanceof Error && error.name === 'NotFoundError')) return 'この機器はコントローラ用の通信に対応していません。prompt.mdのBLE対応プログラムを実行してください。'
+    if (error instanceof IncompatibleDeviceError || (stage === 'service' && error instanceof Error && error.name === 'NotFoundError')) return 'この機器はコントローラ用の通信に対応していません。プログラム画面で、リモコン対応のプログラムを「実行」してからつなぎ直してください。'
     if (error instanceof Error && (error.name === 'SecurityError' || error.name === 'NotAllowedError')) return 'Bluetooth接続が許可されませんでした。ブラウザの設定と機器の電源を確認して、もう一度試してください。'
     if (stage === 'write') return 'Bluetoothで操作を送れませんでした。機器の電源を確認して、つなぎ直してください。'
     return 'Bluetoothにつなげませんでした。機器の電源とBLE対応プログラムを確認して、もう一度試してください。'

@@ -37,6 +37,18 @@ beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubG
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('AI準備用hookは講師設定だけを扱う', () => {
+  it('v2を明示確認して適用した場合だけv2準備文を生成し、コード変更で失効する', () => {
+    verifyBaseline()
+    render().applyDraft()
+    expect(render().selectedProfile?.baseline.verification?.nanoLedV2).toBe(false)
+    expect(render().prompt).not.toContain('"v":2')
+    render().confirmBaseline('テスト講師', false, true)
+    render().applyDraft()
+    expect(render().context?.controllerEnabled).toBe(true)
+    expect(render().prompt).toContain('"v":2')
+    render().editDraft({ baseline: { ...render().draft!.baseline, code: 'print("new code")' } })
+    expect(render().draft?.baseline.verification).toBeNull()
+  })
   it.each(['firmwareVersion', 'ledModel'] as const)('%s をA→B→Aへ戻して再読込しても古いBLE確認は復活せず、再確認して明示保存した場合のみ復帰する', field => {
     const values = new Map<string, string>()
     vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) })

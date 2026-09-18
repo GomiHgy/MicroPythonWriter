@@ -1,6 +1,11 @@
 import type { MessageCatalog } from './types'
 
 export const preparationMessages: MessageCatalog = {
+  'Webコントローラを使う場合は、NanoLED v1またはv2対応の実機確認が必要です。': { en: 'The web controller requires hardware-verified NanoLED v1 or v2 support.', zh: '网页控制器需要经过实机验证的 NanoLED v1 或 v2 支持。' },
+  'Webコントローラ（NanoLED v1/v2）': { en: 'Web controller (NanoLED v1/v2)', zh: '网页控制器（NanoLED v1/v2）' },
+  'NanoLED v2対応確認あり': { en: 'NanoLED v2 compatibility confirmed', zh: '已验证 NanoLED v2 兼容性' },
+  'NanoLED v2の再生・停止・モード・アクション・状態通知・再接続を実機で確認した': { en: 'I tested NanoLED v2 playback, pause, modes, actions, state notifications and reconnection on the device', zh: '我已在实机验证 NanoLED v2 播放、暂停、模式、动作、状态通知及重新连接' },
+  '再生・停止と作品専用ボタンにはv2が必要です。v1の確認をv2へ自動で引き継ぐことはありません。': { en: 'Playback, pause and project-specific buttons require v2. A v1 verification is never upgraded to v2 automatically.', zh: '播放、暂停和作品专用按钮需要 v2。v1 验证不会自动升级为 v2 验证。' },
   'はじめて使うとき：UIFlow2を書き込む': { en: 'First-time setup: install UIFlow2', zh: '首次使用：烧录 UIFlow2' },
   'すでにUIFlow2を書き込んでいる人は、この手順を飛ばせます。': { en: 'If UIFlow2 is already installed, you can skip this step.', zh: '如果已经烧录 UIFlow2，可以跳过此步骤。' },
   '書き込みで機器内のプログラムが消える場合があります。必要なコードは先にPCへ保存してください。': { en: 'Installing firmware may erase programs on the device. Save any code you need to your computer first.', zh: '烧录固件可能会清除设备内的程序。请先将需要保留的代码保存到电脑。' },

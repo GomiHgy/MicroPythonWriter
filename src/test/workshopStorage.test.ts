@@ -8,6 +8,18 @@ const preset: WorkshopPreset = { id: 'test-preset', profile: { ...cloneWorkshopP
 function storage() { const values = new Map<string, string>(); return { values, getItem: vi.fn((key: string) => values.get(key) ?? null), setItem: vi.fn((key: string, value: string) => { values.set(key, value) }), removeItem: vi.fn((key: string) => { values.delete(key) }) } }
 
 describe('ワークショップ設定の安全なブラウザ保存', () => {
+  it('旧v1データをv2確認へ昇格させず、明示v2確認だけを保存復元する', () => {
+    const target = storage()
+    expect(storeWorkshopProfile(preset, profile, true, () => target)).toBe('')
+    expect(restoreWorkshopProfile(preset, () => target).profile.baseline.verification).not.toHaveProperty('nanoLedV2')
+    const v2 = cloneWorkshopProfile(profile)
+    v2.baseline.verification!.nanoLedV1 = false
+    v2.baseline.verification!.nanoLedV2 = true
+    expect(storeWorkshopProfile(preset, v2, true, () => target)).toBe('')
+    expect(restoreWorkshopProfile(preset, () => target).profile).toEqual(v2)
+    expect(storeWorkshopProfile(preset, v2, false, () => target)).toBe('')
+    expect(restoreWorkshopProfile(preset, () => target).profile.baseline.verification).toBeNull()
+  })
   it('廃止したキットIDだけを除き、旧設定の入力値と明示保存した基準コードを維持する', () => {
     const target = storage()
     storeWorkshopProfile(preset, profile, true, () => target)

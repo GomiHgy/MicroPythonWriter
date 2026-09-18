@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import type { BluetoothSnapshot } from '../services/bluetooth/BluetoothController'
+import type { LedStatus } from '../services/bluetooth/protocol'
 import { bluetoothMessages } from '../i18n/bluetoothMessages'
 import type { Locale } from '../i18n/types'
 import panelSource from '../components/BluetoothPanel.tsx?raw'
@@ -124,10 +125,25 @@ function slider(command: 'BRIGHTNESS' | 'SPEED') {
 
 function connected(patch: Partial<BluetoothSnapshot> = {}) {
   harness.snapshot = {
-    phase: 'connected', deviceName: 'NanoLED-07', receivedAt: Date.now(), error: null, sending: false,
+    phase: 'connected', deviceName: 'NanoLED-07', connectedAt: Date.now(), receivedAt: Date.now(), error: null, sending: false,
     status: { v: 1, mode: 'PINK', brightness: 80, speed: 20, pixels: '800020000000001040' },
     ...patch,
   }
+}
+
+type ModernStatus = Extract<LedStatus, { v: 2 }>
+
+function modern(patch: Partial<ModernStatus> = {}) {
+  connected({ status: {
+    v: 2, mode: 'RAINBOW', brightness: 50, speed: 30, pixels: '330000001a00000000',
+    playback: 'playing', action: null,
+    controls: {
+      speed: true,
+      modes: [{ id: 'RAINBOW', label: 'にじいろ散歩' }, { id: 'CALM', label: '落ち着いた光' }],
+      actions: [{ id: 'SPARK', label: '一度だけ光る' }],
+    },
+    ...patch,
+  } })
 }
 
 beforeEach(() => {
@@ -136,7 +152,7 @@ beforeEach(() => {
   harness.scopes.clear(); harness.sliderKeys.clear(); harness.effects = []; harness.instances = 0
   harness.locale = 'ja'
   harness.connect.mockReset(); harness.disconnect.mockReset(); harness.send.mockReset().mockResolvedValue(true)
-  harness.snapshot = { phase: 'disconnected', deviceName: null, receivedAt: null, status: null, error: null, sending: false }
+  harness.snapshot = { phase: 'disconnected', deviceName: null, connectedAt: null, receivedAt: null, status: null, error: null, sending: false }
 })
 
 afterEach(() => {
@@ -262,6 +278,186 @@ describe('Bluetoothコントローラの接続と受信状態', () => {
   })
 })
 
+describe('作品専用の無線リモコン v2', () => {
+  it('機器が知らせたモードとアクションだけを名前付きで表示する', () => {
+    modern()
+    const view = panel()
+    expect(button(view, 'にじいろ散歩').props['aria-pressed']).toBe(true)
+    expect(button(view, '落ち着いた光').props['aria-pressed']).toBe(false)
+    expect(button(view, '一度だけ光る').props.disabled).toBe(false)
+    expect(all(view, element => element.type === 'button' && content(element.props.children as ReactNode).includes('ピンク'))).toHaveLength(0)
+    expect(all(view, element => element.props.id === 'ble-custom-command')).toHaveLength(0)
+    expect(content(view)).toContain('にじいろ散歩')
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it.each([['落ち着いた光', 'MODE CALM'], ['一度だけ光る', 'ACTION SPARK']] as const)('%sは表示名ではなく登録IDを送る', (label, command) => {
+    modern()
+    event(button(panel(), label), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith(command)
+  })
+
+  it('停止はPAUSEで現在色を維持し、消灯は別のOFF命令にする', () => {
+    modern()
+    const view = panel()
+    expect(button(view, '再生').props.disabled).toBe(true)
+    expect(button(view, '停止').props.disabled).toBe(false)
+    event(button(view, '停止'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('PAUSE')
+    expect(button(panel(), '再生').props.disabled).toBe(true)
+    expect(button(panel(), '停止').props.disabled).toBe(false)
+    expect(find(panel(), element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+    event(button(panel(), 'ライトを消す'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('OFF')
+    expect(find(panel(), element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+  })
+
+  it.each(['paused', 'off'] as const)('%sの受信後は再生でき、停止を重ねて送れない', playback => {
+    modern({ playback, pixels: playback === 'off' ? '000000000000000000' : '330000001a00000000' })
+    const view = panel()
+    expect(button(view, '再生').props.disabled).toBe(false)
+    expect(button(view, '停止').props.disabled).toBe(true)
+    event(button(view, '再生'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('PLAY')
+    expect(button(panel(), '再生').props.disabled).toBe(false)
+    modern({ playback: 'playing' })
+    expect(button(panel(), '再生').props.disabled).toBe(true)
+    expect(button(panel(), '停止').props.disabled).toBe(false)
+  })
+
+  it('モードの選択表示・明るさ・LEDは送信だけでは変更せず、機器の返信で更新する', () => {
+    modern()
+    event(button(panel(), '落ち着いた光'), 'onClick')
+    expect(button(panel(), 'にじいろ散歩').props['aria-pressed']).toBe(true)
+    expect(button(panel(), '落ち着いた光').props['aria-pressed']).toBe(false)
+    event(slider('BRIGHTNESS'), 'onChange', { target: { value: '12' } })
+    event(slider('BRIGHTNESS'), 'onPointerUp')
+    expect(harness.send).toHaveBeenLastCalledWith('BRIGHTNESS 12')
+    expect(slider('BRIGHTNESS').props.value).toBe(50)
+    expect(find(panel(), element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+    modern({ mode: 'CALM', brightness: 12, pixels: '000306000306000306' })
+    expect(button(panel(), '落ち着いた光').props['aria-pressed']).toBe(true)
+    expect(slider('BRIGHTNESS').props.value).toBe(12)
+    expect(find(panel(), element => element.props.title === 'LED 1: #000306').props.style).toMatchObject({ backgroundColor: '#000306' })
+  })
+
+  it('アクション実行中は連打を防ぎ、モード変更・停止・消灯は使える', () => {
+    modern({ action: 'SPARK' })
+    const view = panel()
+    expect(button(view, '一度だけ光る').props.disabled).toBe(true)
+    expect(button(view, '落ち着いた光').props.disabled).toBe(false)
+    expect(button(view, '停止').props.disabled).toBe(false)
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    event(button(view, '落ち着いた光'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('MODE CALM')
+    modern({ action: null })
+    expect(button(panel(), '一度だけ光る').props.disabled).toBe(false)
+  })
+
+  it('送信処理中はアクションの追加送信を無効にする', () => {
+    modern()
+    harness.snapshot = { ...harness.snapshot, sending: true }
+    const view = panel()
+    expect(button(view, '一度だけ光る').props.disabled).toBe(true)
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+  })
+
+  it('スピード非対応の作品ではスピードスライダーを表示しない', () => {
+    modern({ controls: { speed: false, modes: [{ id: 'RAINBOW', label: 'にじいろ散歩' }], actions: [] } })
+    const view = panel()
+    expect(all(view, element => typeof element.type === 'function' && element.props.command === 'SPEED')).toHaveLength(0)
+    expect(slider('BRIGHTNESS').props.disabled).toBe(false)
+    expect(all(view, element => element.type === 'button' && content(element.props.children as ReactNode).includes('一度だけ光る'))).toHaveLength(0)
+  })
+
+  it('受信が途絶えたら作品専用操作も無効にするが消灯と再受信は残す', () => {
+    modern({ playback: 'paused' })
+    panel()
+    vi.advanceTimersByTime(6000)
+    const view = panel()
+    for (const label of ['にじいろ散歩', '落ち着いた光', '一度だけ光る', '再生', '停止']) {
+      expect(button(view, label).props.disabled, label).toBe(true)
+    }
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    expect(button(view, '状態をもう一度受け取る').props.disabled).toBe(false)
+  })
+
+  it('接続後に一度も状態が来ない場合も5秒を超えたら復旧を案内する', () => {
+    connected({ status: null, receivedAt: null })
+    panel()
+    vi.advanceTimersByTime(5000)
+    expect(all(panel(), element => element.props.role === 'status' && content(element.props.children as ReactNode).includes('5秒'))).toHaveLength(0)
+    vi.advanceTimersByTime(1000)
+    const view = panel()
+    expect(content(view)).toContain('5秒')
+    expect(content(view)).toContain('プログラム')
+    expect(button(view, '状態をもう一度受け取る').props.disabled).toBe(false)
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    event(button(view, '状態をもう一度受け取る'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('STATUS')
+    modern()
+    expect(content(panel())).not.toContain('5秒以上LEDの状態が届いていません')
+    expect(button(panel(), '一度だけ光る').props.disabled).toBe(false)
+  })
+
+  it('v1では既存操作を残し、再生・停止・作品専用操作に更新が必要なことを案内する', () => {
+    connected()
+    const view = panel()
+    expect(button(view, 'ピンク').props.disabled).toBe(false)
+    expect(all(view, element => element.props.id === 'ble-custom-command')).toHaveLength(1)
+    expect(content(view)).toContain('従来のリモコン')
+    expect(content(view)).toContain('対応プログラムへの更新が必要')
+    expect(all(view, element => element.type === 'button' && content(element.props.children as ReactNode).includes('一度だけ光る'))).toHaveLength(0)
+    expect(all(view, element => element.type === 'button' && /再生|停止/u.test(content(element.props.children as ReactNode)))).toHaveLength(0)
+  })
+
+  it.each(['en', 'zh'] as const)('%sへ表示を切り替えても作品の名前・操作ID・受信状態は変えない', locale => {
+    modern()
+    panel()
+    harness.locale = locale
+    const view = panel()
+    expect(button(view, 'にじいろ散歩').props['aria-pressed']).toBe(true)
+    event(button(view, '落ち着いた光'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('MODE CALM')
+    event(button(view, '一度だけ光る'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('ACTION SPARK')
+    expect(harness.instances).toBe(1)
+    expect(harness.disconnect).not.toHaveBeenCalled()
+    expect(find(view, element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+  })
+
+  it('送信成功は操作送信の通知だけを出し、演出完了や状態変化とは扱わない', async () => {
+    modern()
+    event(button(panel(), '一度だけ光る'), 'onClick')
+    await Promise.resolve()
+    const view = panel()
+    expect(content(view)).toContain('操作を送信しました。実行完了の確認ではありません。')
+    expect(content(view)).not.toContain('「一度だけ光る」を実行中')
+    expect(button(view, 'にじいろ散歩').props['aria-pressed']).toBe(true)
+    vi.advanceTimersByTime(5000)
+    expect(content(panel())).not.toContain('操作を送信しました。')
+  })
+
+  it.each(['失敗', '再受信'] as const)('%sでは操作送信済み通知を出さない', async scenario => {
+    modern()
+    if (scenario === '失敗') harness.send.mockResolvedValueOnce(false)
+    event(button(panel(), scenario === '再受信' ? '状態をもう一度受け取る' : '一度だけ光る'), 'onClick')
+    await Promise.resolve()
+    expect(content(panel())).not.toContain('操作を送信しました。')
+  })
+
+  it('古い接続の送信完了で再接続後の画面に成功通知を出さない', async () => {
+    modern()
+    let complete!: (value: boolean) => void
+    harness.send.mockReturnValueOnce(new Promise<boolean>(resolve => { complete = resolve }))
+    event(button(panel(), '一度だけ光る'), 'onClick')
+    harness.snapshot = { ...harness.snapshot, connectedAt: Date.now() + 1 }
+    complete(true)
+    await Promise.resolve()
+    expect(content(panel())).not.toContain('操作を送信しました。')
+  })
+})
+
 describe('スライダーと追加コマンド', () => {
   it.each(['disconnected', 'connected'] as const)('%sでも状態未受信ならスライダー初期値を機器の設定と表示しない', phase => {
     harness.snapshot = { ...harness.snapshot, phase }
@@ -322,7 +518,7 @@ describe('スライダーと追加コマンド', () => {
     expect(harness.send).not.toHaveBeenCalled()
   })
 
-  it.each(['', '1STAR', 'STAR RED', 'STAR\nOFF', '光', 'ABCDEFGHIJKLMNOPQ', 'BRIGHTNESS', 'speed'])('不正な合言葉 %j は送信できない', command => {
+  it.each(['', '1STAR', 'STAR RED', 'STAR\nOFF', '光', 'ABCDEFGHIJKLMNOPQ', 'BRIGHTNESS', 'speed', 'PLAY', 'PAUSE', 'MODE', 'ACTION'])('不正な合言葉 %j は送信できない', command => {
     connected()
     event(find(panel(), element => element.props.id === 'ble-custom-command'), 'onChange', { target: { value: command } })
     const view = panel()

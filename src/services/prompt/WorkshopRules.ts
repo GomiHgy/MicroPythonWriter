@@ -2,7 +2,7 @@ import { cloneWorkshopProfile, getBlePreparationReasons, validProfileText, valid
 import type { WorkshopProfile } from '../workshop/WorkshopProfile'
 import { boardDefinitions, isBoardId } from '../../config/boards'
 import type { Locale } from '../../i18n/types'
-import { interpolatePrompt, localizedPromptBlocks } from '../../i18n/promptMessages'
+import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules } from '../../i18n/promptMessages'
 import { translateWorkshop } from '../../i18n/workshopMessages'
 
 export interface WorkshopContext {
@@ -57,6 +57,7 @@ const bleRules = `## BLE基準コードの維持
 - 本体ボタンとBLEを両方使う場合は共通のモード変更処理を使い、同じ演出を重複実装しない。`
 
 const nanoLedRules = `## NanoLED v1通信仕様
+- これは旧版の確認済み仕様。PLAY/PAUSEやACTION、作品別カタログを提供しない。v2へ自動変更せず、再生・停止・一回限りのアクションをWebコントローラで使えると案内しない。必要な場合は実装者によるv2移行と別の実機確認が必要。
 - 機器はPeripheral、ブラウザはCentral。完全なデバイス名を対象ファームウェアの確認済みAPIで広告またはscan responseに含める。サービスUUIDの広告は任意。完全名と128-bit UUIDを同じ広告パケットへ無理に詰めず、未知の広告APIを推測しない。
 - Primary service UUID: 6e400001-b5a3-f393-e0a9-e50e24dcca9e
 - RX UUID: 6e400002-b5a3-f393-e0a9-e50e24dcca9e。ブラウザから機器へ応答ありWriteが必須。Write Without Responseだけでは対応しない。
@@ -69,7 +70,7 @@ const nanoLedRules = `## NanoLED v1通信仕様
 - nは0〜100の整数。引数不足・小数・範囲外・未知コマンドでは状態を変更しない。BRIGHTNESS 100は準備画面で設定した最大輝度の100%であり安全上限自体を変えない。BRIGHTNESS 0は現在モードを保持する。OFF中の明るさ・速さ変更では点灯しない。
 - SPEED 0は停止ではなく最も遅い、100は最も速い。標準MAGIC/RAINBOWの周期はperiod_ms = 3000 - 29 * n。LED数で1周期が変わらない。追加演出でも0は停止にせず同じ向きで速さを反映する。
 - 指定省略時の起動状態はmode=OFF、brightness=100、speed=0。利用者の明示した起動演出は安全上限とOFF→ONフェードを守って適用できる。通知は実際の適用状態を返す。
-- 追加モード名は^[A-Z][A-Z0-9_]{0,15}$、最大16文字。STATUS、BRIGHTNESS、SPEEDは予約語でモード名にしない。追加演出は機器側への実装が必要。
+- 追加モード名は^[A-Z][A-Z0-9_]{0,15}$、最大16文字。STATUS、BRIGHTNESS、SPEED、PLAY、PAUSE、MODE、ACTIONは予約語でモード名にしない。標準4モードと従来の明るさ・速度は互換。旧カスタム名PLAY/PAUSE/MODE/ACTIONは新画面から送信できないため実装者へ名称変更を確認する。基準コードを自動変更しない。追加演出は機器側への実装が必要。
 - TXはASCIIだけのJSONを1行、LFで終端する。v（数値1）、mode（適用中モード）、brightness（適用した0〜100整数）、speed（適用した0〜100整数）、pixels（全LEDのRGB値）を全て必須とする。ログはTXへ混ぜずUSB側へ出す。
 - pixelsはLED1から順に各LEDのRRGGBB・6桁HEXを連結する。大小文字は任意。全消灯は全桁0。RGBのLED1〜300個、LED数はpixels.length / 6。固定LED数を省略・間引き・変更しない。1行はLFを除いて4096バイト以下。
 - pixelsは最大輝度・明るさ設定・フェード適用後に最後に実際に送信した値をRGB順で報告する。LED用GRBバッファからRGB順へ戻す。目標色ではなく送信済み出力のスナップショットであり、物理的な発光をセンサーで測定した結果ではない。
@@ -109,7 +110,7 @@ MAX_BRIGHTNESS_PERCENT: ${setting(profile.maxBrightnessPercent)}
 対象UIFlow2版は利用者の入力値であり、USBのMicroPython版・firmwareInfoとは別物。取得情報から推測・上書きしない。
 入力した数値が範囲内であることは電源安全性や実機動作の証明ではない。AI向け固定仕様はコードを強制するサンドボックスではなく、実機確認を代替しない。`
   const availability = bleEnabled
-    ? `BLEデバイス名: 確認済み基準コードのNanoLED-で始まる名前を維持する。キットIDは不要。新しい名前を明示的に設定する場合の例はNanoLED-${board?.name ?? 'Device'}。同名の機器を一意に識別できるとは説明しない。基準コードが対応する名前でなければ確認を求め、黙って変更しない。\n${bleRules}${profile.baseline.verification?.nanoLedV1 ? `\n\n${nanoLedRules}` : '\nこのキットはWebコントローラ未対応。NanoLED v1への変更を推測せず、確認済み基準コードの通信仕様を維持する。'}\n\n## 登録された基準コード全文\n実機確認の登録情報: ${profile.baseline.verification?.confirmedBy} / ${profile.baseline.verification?.confirmedAt}\n確認対象UIFlow2: ${profile.baseline.verification?.firmwareVersion}\nNanoLED v1確認: ${profile.baseline.verification?.nanoLedV1 ? '利用者が確認と登録' : '未確認'}\n${codeBlock(profile.baseline.code)}`
+    ? `BLEデバイス名: 確認済み基準コードのNanoLED-で始まる名前を維持する。キットIDは不要。新しい名前を明示的に設定する場合の例はNanoLED-${board?.name ?? 'Device'}。同名の機器を一意に識別できるとは説明しない。基準コードが対応する名前でなければ確認を求め、黙って変更しない。\n${bleRules}${profile.baseline.verification?.nanoLedV2 ? `\n\n${nanoLedV2Rules.ja}` : profile.baseline.verification?.nanoLedV1 ? `\n\n${nanoLedRules}` : '\nこのキットはWebコントローラ未対応。NanoLEDへの変更を推測せず、確認済み基準コードの通信仕様を維持する。'}\n\n## 登録された基準コード全文\n実機確認の登録情報: ${profile.baseline.verification?.confirmedBy} / ${profile.baseline.verification?.confirmedAt}\n確認対象UIFlow2: ${profile.baseline.verification?.firmwareVersion}\nNanoLED v1確認: ${profile.baseline.verification?.nanoLedV1 ? '利用者が確認と登録' : '未確認'}\nNanoLED v2確認: ${profile.baseline.verification?.nanoLedV2 ? '利用者が確認と登録' : '未確認（v1からの自動移行は行わない）'}\n${codeBlock(profile.baseline.code)}`
     : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。利用者にAPIや通信仕様を質問せず、必要なら「対象機器で確認した基準コードの登録が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
   const invalid = errors.length ? `\n\n## 設定が未完成または不正です\n${errors.map(error => `- ${error}`).join('\n')}\n設定値を推測せず、利用者が上記を直すまで、このキットの完成コード生成・設定に依存する修正は保留する。汎用設定へ黙って切り替えない。` : ''
   const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${availability}\n\n## 情報の扱い\n固定仕様、実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、実機と対象環境での確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
@@ -163,7 +164,7 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
   const led = interpolatePrompt(block.led, { ledPin: value(profile.ledPin), buttonPin, onboardRule })
   const verification = profile.baseline.verification
   const availability = bleEnabled
-    ? `${en ? 'BLE device name' : 'BLE 设备名称'}: ${en ? `Preserve the verified baseline name starting with NanoLED-. No kit ID is required. Only if explicitly setting a new name, an example is NanoLED-${board?.name ?? 'Device'}. Names are not unique identifiers. If the baseline name is incompatible, ask for confirmation rather than silently renaming.` : `保持已验证基准代码中以 NanoLED- 开头的名称，不需要套件编号。只有明确设置新名称时，示例为 NanoLED-${board?.name ?? 'Device'}。名称不保证唯一；如果基准代码名称不兼容，请要求确认，不要擅自更改。`}\n${block.ble}\n\n${verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED v1 conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED v1。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'User registration' : '用户登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified' : '未验证')}\n${codeBlock(profile.baseline.code)}`
+    ? `${en ? 'BLE device name' : 'BLE 设备名称'}: ${en ? `Preserve the verified baseline name starting with NanoLED-. No kit ID is required. Only if explicitly setting a new name, an example is NanoLED-${board?.name ?? 'Device'}. Names are not unique identifiers. If the baseline name is incompatible, ask for confirmation rather than silently renaming.` : `保持已验证基准代码中以 NanoLED- 开头的名称，不需要套件编号。只有明确设置新名称时，示例为 NanoLED-${board?.name ?? 'Device'}。名称不保证唯一；如果基准代码名称不兼容，请要求确认，不要擅自更改。`}\n${block.ble}\n\n${verification?.nanoLedV2 ? nanoLedV2Rules[locale] : verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'User registration' : '用户登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified' : '未验证')}\nNanoLED v2: ${verification?.nanoLedV2 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified; never auto-upgrade v1' : '未验证；不会自动升级 v1')}\n${codeBlock(profile.baseline.code)}`
     : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask users about APIs or protocols; say a baseline verified on the target device must be registered. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向用户询问 API 或协议，需要时说明必须登记经目标设备验证的基准代码。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
   const invalid = errors.length ? `\n\n## ${en ? 'Settings are incomplete or invalid' : '设置不完整或无效'}\n${errors.map(error => `- ${error}`).join('\n')}\n${en ? 'Do not guess values. Defer complete code generation and setting-dependent repairs until the user fixes these settings. Do not silently switch to generic settings.' : '不要猜测设置值。在用户修正上述设置前，暂缓生成完整代码和依赖设置的修复，不能擅自切换为通用设置。'}` : ''
   return `${header}${invalid}\n\n${led}\n\n${availability}\n\n${block.information}`

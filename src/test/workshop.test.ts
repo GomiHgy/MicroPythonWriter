@@ -150,6 +150,32 @@ describe('WorkshopProfileの設定検証', () => {
 })
 
 describe('BLEの準備状態', () => {
+  it.each(['ja', 'en', 'zh'] as const)('%s は明示v2確認がある場合だけ作品カタログと再生・アクション仕様を含める', locale => {
+    const value = bleProfile()
+    const legacy = buildStartPrompt(createWorkshopContext(value, locale))
+    expect(legacy).not.toContain('"v":2')
+    value.baseline.verification!.nanoLedV1 = false
+    value.baseline.verification!.nanoLedV2 = true
+    expect(isWorkshopProfile(value)).toBe(true)
+    const context = createWorkshopContext(value, locale)
+    expect(context.bleEnabled).toBe(true)
+    expect(context.controllerEnabled).toBe(true)
+    const prompt = buildStartPrompt(context)
+    for (const text of ['"v":2', '"controls"', '"playback"', '"action"', 'MODE <id>', 'ACTION <id>', 'PLAY / PAUSE / OFF', '4096', 'UTF-8', 'Unicode', 'MIN_OFF_TO_ON_FADE_MS = 200', 'WS2812_TIMING_NS = (400, 850, 800, 450)', '6e400003-b5a3-f393-e0a9-e50e24dcca9e', value.baseline.code]) expect(prompt).toContain(text)
+    expect(prompt).not.toContain('"v":1')
+    if (locale !== 'ja') expect(prompt.replace(value.baseline.code, '').replace(value.displayName, '').replace(value.baseline.verification!.confirmedBy, '')).not.toMatch(/[\u3040-\u30ff]/u)
+    value.baseline.code += '# modified'
+    expect(createWorkshopContext(value, locale).bleEnabled).toBe(false)
+  })
+  it('v2フラグはbooleanだけを受け付け、v1から確認を推測しない', () => {
+    const value = bleProfile()
+    expect(isWorkshopProfile(value)).toBe(true)
+    expect(cloneWorkshopProfile(value).baseline.verification).not.toHaveProperty('nanoLedV2')
+    for (const nanoLedV2 of ['true', 1, null]) expect(isWorkshopProfile({ ...value, baseline: { ...value.baseline, verification: { ...value.baseline.verification, nanoLedV2 } } })).toBe(false)
+    value.baseline.verification!.nanoLedV1 = false
+    value.baseline.verification!.nanoLedV2 = false
+    expect(createWorkshopContext(value).controllerEnabled).toBe(false)
+  })
   it('旧NanoC6確認をAtomS3Liteへ流用せず、確認機種を一致させる', () => {
     const value = bleProfile()
     expect(createWorkshopContext(value).bleEnabled).toBe(true)

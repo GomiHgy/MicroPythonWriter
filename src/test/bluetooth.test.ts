@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BluetoothController, type BluetoothApi, type BluetoothCharacteristic, type BluetoothDevice, type BluetoothServer, type BluetoothService } from '../services/bluetooth/BluetoothController'
-import { encodeCommand, LedStatusParser, MAX_LED_COUNT, MAX_STATUS_BYTES, NANO_LED_RX_UUID, NANO_LED_SERVICE_UUID, NANO_LED_TX_UUID, parseLedStatus } from '../services/bluetooth/protocol'
+import { encodeCommand, LedStatusParser, MAX_LED_COUNT, MAX_STATUS_AGE_MS, MAX_STATUS_BYTES, NANO_LED_RX_UUID, NANO_LED_SERVICE_UUID, NANO_LED_TX_UUID, parseLedStatus } from '../services/bluetooth/protocol'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const state = { v: 1, mode: 'PINK', brightness: 50, speed: 20, pixels: '7f0040000000' }
+const stateV2 = {
+  ...state, v: 2, playback: 'playing', action: null,
+  controls: { speed: true, modes: [{ id: 'PINK', label: 'ピンク' }, { id: 'RAINBOW', label: '虹色🌈' }], actions: [{ id: 'SPARKLE', label: 'キラッと光る✨' }] },
+}
 const line = (value: unknown = state) => `${JSON.stringify(value)}\n`
 
 function deferred<T>() {
@@ -94,16 +98,17 @@ afterEach(() => {
 
 describe('NanoLED commands', () => {
   it('標準操作・追加の合図を改行付きASCIIで符号化する', () => {
-    for (const command of ['OFF', 'PINK', 'BLUE', 'MAGIC', 'RAINBOW', 'STATUS', 'BRIGHTNESS 0', 'BRIGHTNESS 100', 'SPEED 100', 'MAGIC_2']) {
+    for (const command of ['OFF', 'PINK', 'BLUE', 'MAGIC', 'RAINBOW', 'STATUS', 'BRIGHTNESS 0', 'BRIGHTNESS 100', 'SPEED 100', 'MAGIC_2', 'PLAY', 'PAUSE', 'MODE RAINBOW', 'ACTION SPARKLE', 'ACTION A12345678901']) {
       const bytes = encodeCommand(command)
       expect(decoder.decode(bytes)).toBe(`${command}\n`)
       expect(bytes.length).toBeLessThanOrEqual(20)
     }
     expect(decoder.decode(encodeCommand(' pink '))).toBe('PINK\n')
     expect(decoder.decode(encodeCommand('BRIGHTNESS 050'))).toBe('BRIGHTNESS 50\n')
+    expect(decoder.decode(encodeCommand(' action sparkle '))).toBe('ACTION SPARKLE\n')
   })
 
-  it.each(['', '0BLUE', 'A'.repeat(17), 'PINK\nOFF', 'SPEED -1', 'SPEED 101', 'BRIGHTNESS 0.5', 'BRIGHTNESS NaN', 'SPEED', 'BRIGHTNESS', 'BRIGHTNESS 1000', 'LED ON', 'ピンク'])('不正な送信を拒否する: %s', command => {
+  it.each(['', '0BLUE', 'A'.repeat(17), 'PINK\nOFF', 'SPEED -1', 'SPEED 101', 'BRIGHTNESS 0.5', 'BRIGHTNESS NaN', 'SPEED', 'BRIGHTNESS', 'BRIGHTNESS 1000', 'LED ON', 'ピンク', 'MODE', 'ACTION', 'MODE OFF', 'ACTION PLAY', 'MODE STATUS', 'ACTION MODE', 'MODE A123456789012', 'ACTION 1SPARKLE', 'ACTION SPARKLE\nOFF', 'MODE  PINK'])('不正な送信を拒否する: %s', command => {
     expect(() => encodeCommand(command)).toThrow()
   })
 })
@@ -162,6 +167,88 @@ describe('NanoLED telemetry', () => {
   })
 })
 
+describe('NanoLED v2 telemetry', () => {
+  it('作品の状態と名前付き操作を受け入れ、一覧の内部まで不変にする', () => {
+    const parsed = parseLedStatus(JSON.stringify(stateV2))
+    expect(parsed).toEqual(stateV2)
+    expect(Object.isFrozen(parsed)).toBe(true)
+    if (parsed?.v !== 2) throw new Error('v2 expected')
+    expect(Object.isFrozen(parsed.controls)).toBe(true)
+    expect(Object.isFrozen(parsed.controls.modes)).toBe(true)
+    expect(Object.isFrozen(parsed.controls.actions)).toBe(true)
+    expect(parsed.controls.modes.every(Object.isFrozen)).toBe(true)
+    expect(parsed.controls.actions.every(Object.isFrozen)).toBe(true)
+  })
+
+  it('日本語・中国語・絵文字がUTF-8の途中で分割されても復元する', () => {
+    const parser = new LedStatusParser()
+    const unicode = { ...stateV2, controls: { ...stateV2.controls, actions: [{ id: 'SPARKLE', label: 'お祝い🎉闪光' }] } }
+    const bytes = encoder.encode(line(unicode))
+    for (const byte of bytes.slice(0, -1)) expect(parser.push(new Uint8Array([byte]))).toEqual({ statuses: [], rejected: 0 })
+    expect(parser.push(bytes.slice(-1))).toEqual({ statuses: [unicode], rejected: 0 })
+  })
+
+  it('表示名は前後の空白を除き、絵文字も1コードポイントとして数える', () => {
+    const status = { ...stateV2, controls: { ...stateV2.controls, modes: [{ id: 'PINK', label: `  ${'🌈'.repeat(24)}  ` }] } }
+    const parsed = parseLedStatus(JSON.stringify(status))
+    expect(parsed?.v === 2 && parsed.controls.modes[0].label).toBe('🌈'.repeat(24))
+  })
+
+  it('モード保持の消灯、一時停止、実行中アクション、アクションなしに対応する', () => {
+    for (const changed of [
+      { playback: 'off', pixels: '000000000000' },
+      { playback: 'paused' },
+      { action: 'SPARKLE' },
+      { controls: { ...stateV2.controls, speed: false, actions: [] } },
+    ]) expect(parseLedStatus(JSON.stringify({ ...stateV2, ...changed }))).not.toBeNull()
+  })
+
+  it.each([
+    { playback: 'stopped' }, { playback: null }, { action: undefined }, { action: 'UNKNOWN' }, { action: 1 },
+    { mode: 'OFF', playback: 'off', pixels: '000000' }, { mode: 'BLUE' },
+    { playback: 'off' }, { playback: 'paused', action: 'SPARKLE' }, { playback: 'off', pixels: '000000', action: 'SPARKLE' },
+    { controls: null }, { controls: [] }, { controls: {} },
+    { controls: { ...stateV2.controls, speed: 1 } }, { controls: { ...stateV2.controls, modes: [] } },
+    { controls: { ...stateV2.controls, modes: {} } }, { controls: { ...stateV2.controls, actions: null } },
+    { controls: { ...stateV2.controls, modes: [...stateV2.controls.modes, stateV2.controls.modes[0]] } },
+    { controls: { ...stateV2.controls, actions: [stateV2.controls.actions[0], stateV2.controls.actions[0]] } },
+    { controls: { ...stateV2.controls, modes: Array.from({ length: 9 }, (_, index) => ({ id: index ? `MODE_${index}` : 'PINK', label: 'モード' })) } },
+    { controls: { ...stateV2.controls, actions: Array.from({ length: 9 }, (_, index) => ({ id: `ACT_${index}`, label: '合図' })) } },
+  ])('不整合なv2の状態・一覧を拒否する: %j', changed => {
+    expect(parseLedStatus(JSON.stringify({ ...stateV2, ...changed }))).toBeNull()
+  })
+
+  it.each(['', 'pink', '0PINK', 'A'.repeat(13), 'PINK\nOFF', 'OFF', 'PLAY', 'PAUSE', 'STATUS', 'BRIGHTNESS', 'SPEED', 'MODE', 'ACTION'])('不正または予約された操作IDを拒否する: %s', id => {
+    for (const kind of ['modes', 'actions']) {
+      const value = { ...stateV2, controls: { ...stateV2.controls, [kind]: [{ id, label: '名前' }] } }
+      expect(parseLedStatus(JSON.stringify(value))).toBeNull()
+    }
+  })
+
+  it.each(['', '  ', '虹'.repeat(25), '🌈'.repeat(25), '\n名前', '名\t前', '名\u0000前', '名\u007f前', '名\u202e前', '名\u2066前', '名\u2028前', '名\ud800前', '名\udc00前'])('長過ぎる・空欄・制御文字を含む名前を拒否する: %j', label => {
+    expect(parseLedStatus(JSON.stringify({ ...stateV2, controls: { ...stateV2.controls, actions: [{ id: 'SPARKLE', label }] } }))).toBeNull()
+  })
+
+  it('12文字ID、8件ずつの操作と300個のLEDを受け入れる', () => {
+    const value = {
+      ...stateV2, mode: 'A12345678901', pixels: '0f0f0f'.repeat(MAX_LED_COUNT),
+      controls: { speed: false, modes: Array.from({ length: 8 }, (_, index) => ({ id: index ? `M_${index}` : 'A12345678901', label: `Mode ${index}` })), actions: Array.from({ length: 8 }, (_, index) => ({ id: `A_${index}`, label: `Action ${index}` })) },
+    }
+    expect(parseLedStatus(JSON.stringify(value))).toEqual(value)
+  })
+
+  it('直接パースでも4096バイト上限を守り、UTF-8のバイト数で判定する', () => {
+    const text = JSON.stringify(stateV2)
+    const padding = MAX_STATUS_BYTES - encoder.encode(text).length
+    expect(parseLedStatus(text + ' '.repeat(padding))).not.toBeNull()
+    expect(parseLedStatus(text + ' '.repeat(padding + 1))).toBeNull()
+    const tooBig = JSON.stringify({ ...stateV2, ignored: '虹'.repeat(1400) })
+    expect(tooBig.length).toBeLessThan(MAX_STATUS_BYTES)
+    expect(parseLedStatus(tooBig)).toBeNull()
+    expect(new LedStatusParser().push(encoder.encode(`${tooBig}\n${line(stateV2)}`))).toEqual({ statuses: [stateV2], rejected: 1 })
+  })
+})
+
 describe('Web Bluetooth controller', () => {
   it('API非対応と安全でないページを区別する', () => {
     const unsupported = new BluetoothController({ secureContext: true })
@@ -179,7 +266,168 @@ describe('Web Bluetooth controller', () => {
     expect(device.gatt.service.requests).toEqual([NANO_LED_RX_UUID, NANO_LED_TX_UUID])
     expect(tx.notificationsStarted).toBe(1)
     expect(rx.writes).toEqual(['STATUS\n'])
-    expect(client.getSnapshot()).toMatchObject({ phase: 'connected', deviceName: 'NanoLED-01', status: null, receivedAt: null, sending: false })
+    expect(client.getSnapshot()).toMatchObject({ phase: 'connected', deviceName: 'NanoLED-01', connectedAt: expect.any(Number), status: null, receivedAt: null, sending: false })
+  })
+
+  it('初回受信待ちの開始時刻は接続完了時のみ更新し、切断で消す', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1000)
+    const { client, tx, device } = setup({ timeoutMs: 20000 })
+    const pending = deferred<void>()
+    tx.start = () => pending.promise
+    expect(client.getSnapshot().connectedAt).toBeNull()
+    const connecting = client.connect()
+    await flush()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(client.getSnapshot()).toMatchObject({ phase: 'connecting', connectedAt: null })
+    pending.resolve(undefined)
+    await connecting
+    expect(client.getSnapshot().connectedAt).toBe(4000)
+    await vi.advanceTimersByTimeAsync(1000)
+    tx.notify(line())
+    expect(client.getSnapshot()).toMatchObject({ connectedAt: 4000, receivedAt: 5000 })
+    device.loseConnection()
+    expect(client.getSnapshot()).toMatchObject({ connectedAt: null, receivedAt: null })
+    await client.connect()
+    expect(client.getSnapshot()).toMatchObject({ connectedAt: 5000, receivedAt: null })
+  })
+
+  it('v2専用操作は状態未確認・v1の機器には送らず、従来の操作は保つ', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    for (const command of ['PLAY', 'PAUSE', 'MODE PINK', 'ACTION SPARKLE']) expect(await client.send(command)).toBe(false)
+    tx.notify(line())
+    for (const command of ['PLAY', 'PAUSE', 'MODE PINK', 'ACTION SPARKLE']) expect(await client.send(command)).toBe(false)
+    for (const command of ['PINK', 'BRIGHTNESS 30', 'SPEED 10', 'OFF', 'STATUS']) expect(await client.send(command)).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'PINK\n', 'BRIGHTNESS 30\n', 'SPEED 10\n', 'OFF\n', 'STATUS\n'])
+  })
+
+  it('v2機器が通知した操作だけを送信し、Write完了で受信状態を書き換えない', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    const status = client.getSnapshot().status
+    for (const command of ['PLAY', 'PAUSE', 'MODE RAINBOW', 'ACTION SPARKLE', 'BRIGHTNESS 70', 'SPEED 40']) expect(await client.send(command)).toBe(true)
+    expect(client.getSnapshot().status).toBe(status)
+    expect(await client.send('MODE BLUE')).toBe(false)
+    expect(client.getSnapshot().error).toContain('モードは機器に登録されていません')
+    expect(await client.send('ACTION UNKNOWN')).toBe(false)
+    expect(client.getSnapshot().error).toContain('アクションは機器に登録されていません')
+    expect(rx.writes).toEqual(['STATUS\n', 'PLAY\n', 'PAUSE\n', 'MODE RAINBOW\n', 'ACTION SPARKLE\n', 'BRIGHTNESS 70\n', 'SPEED 40\n'])
+  })
+
+  it('速さ調整に未対応のv2作品にはSPEEDを送らない', async () => {
+    const { client, tx, rx } = setup()
+    await client.connect()
+    tx.notify(line({ ...stateV2, controls: { ...stateV2.controls, speed: false } }))
+    expect(await client.send('SPEED 60')).toBe(false)
+    expect(client.getSnapshot().error).toContain('速さの調整に対応していません')
+    expect(await client.send('BRIGHTNESS 20')).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'BRIGHTNESS 20\n'])
+  })
+
+  it('状態受信から5秒を超えたv2専用操作を止め、状態更新と消灯は許可する', async () => {
+    vi.useFakeTimers()
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    await vi.advanceTimersByTimeAsync(MAX_STATUS_AGE_MS)
+    expect(await client.send('PLAY')).toBe(true)
+    await vi.advanceTimersByTimeAsync(1)
+    for (const command of ['PLAY', 'PAUSE', 'MODE PINK', 'ACTION SPARKLE', 'BRIGHTNESS 70', 'SPEED 40']) expect(await client.send(command)).toBe(false)
+    expect(client.getSnapshot().error).toContain('状態をもう一度受け取る')
+    expect(await client.send('STATUS')).toBe(true)
+    expect(await client.send('OFF')).toBe(true)
+    tx.notify(line(stateV2))
+    expect(await client.send('PAUSE')).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'PLAY\n', 'STATUS\n', 'OFF\n', 'PAUSE\n'])
+  })
+
+  it('待ち行列中に古くなったv2操作も実際に送る直前で中止する', async () => {
+    vi.useFakeTimers()
+    const { client, rx, tx } = setup({ timeoutMs: 10000 })
+    await client.connect()
+    tx.notify(line(stateV2))
+    const blocked = deferred<void>()
+    rx.write = command => command === 'STATUS\n' ? blocked.promise : Promise.resolve()
+    const status = client.send('STATUS')
+    const play = client.send('PLAY')
+    const brightness = client.send('BRIGHTNESS 70')
+    const speed = client.send('SPEED 40')
+    await vi.advanceTimersByTimeAsync(MAX_STATUS_AGE_MS + 1)
+    blocked.resolve(undefined)
+    expect(await Promise.all([status, play, brightness, speed])).toEqual([true, false, false, false])
+    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n'])
+    expect(client.getSnapshot()).toMatchObject({ phase: 'connected', sending: false })
+  })
+
+  it('v2用の鮮度制限で既存v1のサービス送信契約を変更しない', async () => {
+    vi.useFakeTimers()
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line())
+    await vi.advanceTimersByTimeAsync(MAX_STATUS_AGE_MS + 1)
+    for (const command of ['PINK', 'STAR_2', 'BRIGHTNESS 70', 'SPEED 40']) expect(await client.send(command)).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'PINK\n', 'STAR_2\n', 'BRIGHTNESS 70\n', 'SPEED 40\n'])
+  })
+
+  it('待ち行列中に変わったカタログと速さ対応を送信直前に再確認する', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    const blocked = deferred<void>()
+    rx.write = command => command === 'STATUS\n' ? blocked.promise : Promise.resolve()
+    const status = client.send('STATUS')
+    const mode = client.send('MODE RAINBOW')
+    const action = client.send('ACTION SPARKLE')
+    const speed = client.send('SPEED 40')
+    tx.notify(line({ ...stateV2, controls: { speed: false, modes: [{ id: 'PINK', label: 'ピンク' }], actions: [] } }))
+    blocked.resolve(undefined)
+    expect(await Promise.all([status, mode, action, speed])).toEqual([true, false, false, false])
+    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n'])
+  })
+
+  it('アクションの送信待ち・送信中・機器での実行中は追加アクションを積まない', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    const blockingStatus = deferred<void>()
+    const blockingAction = deferred<void>()
+    rx.write = command => command === 'STATUS\n' ? blockingStatus.promise : command === 'ACTION SPARKLE\n' ? blockingAction.promise : Promise.resolve()
+    const status = client.send('STATUS')
+    const action = client.send('ACTION SPARKLE')
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    blockingStatus.resolve(undefined)
+    await status
+    await flush()
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    blockingAction.resolve(undefined)
+    expect(await action).toBe(true)
+    tx.notify(line({ ...stateV2, action: 'SPARKLE' }))
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    expect(client.getSnapshot().error).toContain('アクションの送信・実行中')
+    expect(await client.send('OFF')).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n', 'ACTION SPARKLE\n', 'OFF\n'])
+  })
+
+  it('v2のモード・アクション送信待ちもOFFで破棄し、切断後に持ち越さない', async () => {
+    const { client, rx, tx, device } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    const blocked = deferred<void>()
+    rx.write = command => command === 'BRIGHTNESS 70\n' ? blocked.promise : Promise.resolve()
+    const brightness = client.send('BRIGHTNESS 70')
+    const mode = client.send('MODE RAINBOW')
+    const action = client.send('ACTION SPARKLE')
+    const off = client.send('OFF')
+    expect(await Promise.all([mode, action])).toEqual([false, false])
+    blocked.resolve(undefined)
+    expect(await Promise.all([brightness, off])).toEqual([true, true])
+    device.loseConnection()
+    expect(client.getSnapshot()).toMatchObject({ status: null, receivedAt: null, connectedAt: null })
+    await client.connect()
+    expect(await client.send('PLAY')).toBe(false)
+    expect(rx.writes).toEqual(['STATUS\n', 'BRIGHTNESS 70\n', 'OFF\n', 'STATUS\n'])
   })
 
   it('購読と安定したsnapshotを提供し、購読解除できる', async () => {

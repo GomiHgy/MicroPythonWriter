@@ -210,6 +210,27 @@ describe('AIの準備パネル', () => {
     expect(find(changedConfirmation, element => element.type === 'input').props.checked).toBe(false)
     expect(prep.confirmBaseline).not.toHaveBeenCalled()
   })
+  it('v2確認は独立した明示操作とし、条件変更後の再確認へチェックを流用しない', () => {
+    let prep = { ...preparation(), draft: { ...profile, baseline: { code: 'print("baseline")', verification: null } } }
+    const advanced = find(render(prep), element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const renderAdvanced = () => { harness.cursor = 0; return (advanced.type as (props: typeof advanced.props) => ReactNode)({ ...advanced.props, preparation: prep }) }
+    const checkbox = (text: string) => find(find(renderAdvanced(), element => element.type === 'label' && content(element).includes(text)), element => element.type === 'input')
+    const name = find(renderAdvanced(), element => element.type === 'label' && element.props.className === 'ai-confirm-name')
+    event(find(name, element => element.type === 'input'), 'onChange', { target: { value: 'Device owner' } })
+    expect(checkbox('NanoLED v2の').props.checked).toBe(false)
+    event(checkbox('この基準コードを、'), 'onChange', { target: { checked: true } })
+    event(checkbox('NanoLED v2の'), 'onChange', { target: { checked: true } })
+    event(button(renderAdvanced(), '実機確認を登録'), 'onClick')
+    expect(prep.confirmBaseline).toHaveBeenLastCalledWith('Device owner', false, true)
+    prep = { ...prep, draft: { ...prep.draft, firmwareVersion: 'different-version' } }
+    expect(checkbox('NanoLED v2の').props.checked).toBe(false)
+    expect(button(renderAdvanced(), '実機確認を登録').props.disabled).toBe(true)
+    event(checkbox('この基準コードを、'), 'onChange', { target: { checked: true } })
+    expect(checkbox('NanoLED v2の').props.checked).toBe(false)
+    event(button(renderAdvanced(), '実機確認を登録'), 'onClick')
+    expect(prep.confirmBaseline).toHaveBeenLastCalledWith('Device owner', false, false)
+  })
   it('コピー完了が返らなくても操作を復帰し、遅い完了で成功表示に変えない', async () => {
     vi.useFakeTimers()
     let resolve!: () => void

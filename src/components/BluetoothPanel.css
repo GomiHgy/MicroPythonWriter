@@ -20,7 +20,20 @@
 .mode-button strong { font-size: 1rem; }
 .mode-button small { color: #526b84; font-size: .8rem; text-align: center; }
 .mode-icon { line-height: 1.15; font-size: 1.85rem; }
-.lights-off { width: 100%; min-height: 46px; font-weight: 700; }
+.lights-off { width: 100%; min-height: 46px; font-weight: 700; margin: 14px 0; }
+.playback-controls { padding: 16px; border: 1px solid #d7e4ef; border-radius: 14px; background: #f5f9fd; }
+.playback-status { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; font-size: .85rem; }
+.playback-status strong { color: #075fac; }
+.playback-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.playback-buttons button { min-height: 48px; font-weight: 750; }
+.control-title { font-size: 1rem; margin: 24px 0 10px; }
+.artwork-mode { min-height: 88px; padding: 12px; }
+.artwork-mode strong, .action-button { overflow-wrap: anywhere; }
+.action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.action-button { min-height: 52px; text-align: left; font-weight: 650; color: #654194; border-color: #d6c4ec; background: #f6f0ff; }
+.action-status { color: #654194; font-size: .85rem; overflow-wrap: anywhere; }
+.legacy-controller { font-size: .84rem; line-height: 1.8; }
+.command-notice { border-left: 3px solid #1675ce; padding-left: 10px; }
 .slider-heading { margin: 26px 0 18px; }
 .slider-heading h3 { margin: 0; font-size: 1.07rem; }
 .control-slider { margin: 18px 0; }
@@ -59,6 +72,10 @@
 :root[data-theme=dark] .text-button, :root[data-theme=dark] .control-slider label b { color: #82c2ff; }
 :root[data-theme=dark] .mode-button { color: #eff7ff; background: #203246; border-color: #3c5268; }
 :root[data-theme=dark] .mode-button.selected { background: #143e65; border-color: #63b3ff; box-shadow: 0 0 0 1px #63b3ff; }
+:root[data-theme=dark] .playback-controls { background: #122031; border-color: #3c5268; }
+:root[data-theme=dark] .playback-status strong { color: #82c2ff; }
+:root[data-theme=dark] .action-button { background: #302346; border-color: #765499; color: #e0c5ff; }
+:root[data-theme=dark] .action-status { color: #e0c5ff; }
 :root[data-theme=dark] .small-badge { background: #263a4e; color: #bcd0e5; }
 :root[data-theme=dark] .small-badge.live { background: #163e31; color: #8bebbd; }
 :root[data-theme=dark] .led-placeholder { background: #122031; }

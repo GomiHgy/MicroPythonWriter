@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { BluetoothController } from '../services/bluetooth/BluetoothController'
+import { MAX_STATUS_AGE_MS } from '../services/bluetooth/protocol'
 import { useLocale } from '../i18n'
 import './BluetoothPanel.css'
 
@@ -36,6 +37,7 @@ export function BluetoothPanel({ onOpenProgram }: { onOpenProgram: () => void })
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   const [now, setNow] = useState(() => Date.now())
   const [custom, setCustom] = useState('')
+  const [sentNotice, setSentNotice] = useState<{ connectedAt: number | null; at: number } | null>(null)
   useEffect(() => () => controller.disconnect(), [controller])
   useEffect(() => {
     if (state.phase !== 'connected') return
@@ -45,17 +47,27 @@ export function BluetoothPanel({ onOpenProgram }: { onOpenProgram: () => void })
 
   const connected = state.phase === 'connected'
   const connecting = state.phase === 'connecting'
-  const stale = connected && state.receivedAt !== null && now - state.receivedAt > 5000
+  const stale = connected && state.receivedAt !== null && now - state.receivedAt > MAX_STATUS_AGE_MS
+  const waitingTooLong = connected && state.receivedAt === null && state.connectedAt !== null && now - state.connectedAt > MAX_STATUS_AGE_MS
   const canControl = connected && state.status !== null && !stale
+  const artwork = state.status?.v === 2 ? state.status : null
+  const showSpeed = !artwork || artwork.controls.speed
   const pixels = state.status?.pixels.match(/.{6}/g) ?? []
   const litCount = pixels.filter(pixel => pixel !== '000000').length
   const mode = state.status?.mode
   const knownMode = mode === 'OFF' ? '消灯' : modes.find(item => item.command === mode)?.name
-  const modeName = knownMode ? t(knownMode) : mode
+  const modeName = artwork ? artwork.controls.modes.find(item => item.id === mode)?.label : knownMode ? t(knownMode) : mode
+  const playbackName = artwork ? t(artwork.playback === 'playing' ? '再生中' : artwork.playback === 'paused' ? '停止中（色を保持）' : '消灯') : t('このプログラムでは未対応')
+  const actionName = artwork?.controls.actions.find(item => item.id === artwork.action)?.label
   const title = connected ? t('{name} とつながっています', { name: state.deviceName ?? 'M5NanoC6 / AtomS3Lite' }) : t(connecting ? '機器につないでいます…' : '光を、手元でコントロール')
   const description = t(connected ? 'ボタンやスライダーで光り方を変えてみよう。' : connecting ? '機器を選んだら、このまま少し待ってください。' : 'M5NanoC6／AtomS3Liteの電源を入れて、「Bluetoothでつなぐ」を押してください。')
-  const customValid = /^[A-Z][A-Z0-9_]{0,15}$/.test(custom.trim().toUpperCase()) && !['BRIGHTNESS', 'SPEED'].includes(custom.trim().toUpperCase())
-  const send = (command: string) => controller.send(command)
+  const customValid = /^[A-Z][A-Z0-9_]{0,15}$/.test(custom.trim().toUpperCase()) && !['BRIGHTNESS', 'SPEED', 'MODE', 'ACTION', 'PLAY', 'PAUSE'].includes(custom.trim().toUpperCase())
+  const send = async (command: string) => {
+    const session = state.connectedAt
+    const sent = await controller.send(command)
+    if (sent && command !== 'STATUS' && controller.getSnapshot().phase === 'connected' && controller.getSnapshot().connectedAt === session) setSentNotice({ connectedAt: session, at: Date.now() })
+    return sent
+  }
 
   return <div className="bluetooth-panel">
     <section className={`device-card ${connected ? 'ready' : 'waiting'}`}>
@@ -74,16 +86,34 @@ export function BluetoothPanel({ onOpenProgram }: { onOpenProgram: () => void })
     <div className="controller-grid">
       <section className="panel remote-panel" aria-labelledby="remote-title">
         <div className="section-heading"><div><p className="eyebrow">{t('1. 光り方をえらぶ')}</p><h2 id="remote-title">{t('リモコン')}</h2></div><span className="small-badge">{t(state.sending ? '送信中…' : canControl ? '操作できます' : '接続・受信してから操作')}</span></div>
+        <button className="lights-off quiet-button" disabled={!connected} onClick={() => void send('OFF')}>◯ {t('ライトを消す')}</button>
+        {artwork && <div className="playback-controls">
+          <p className="playback-status"><span>{t('機器の再生状態')}</span><strong>{stale ? t('最後に届いた状態') : playbackName}</strong></p>
+          <div className="playback-buttons">
+            <button className="run-button" disabled={!canControl || (artwork.playback === 'playing' && !artwork.action)} onClick={() => void send('PLAY')}>▶ {t('再生')}</button>
+            <button className="quiet-button" disabled={!canControl || artwork.playback !== 'playing'} onClick={() => void send('PAUSE')}>■ {t('停止')}</button>
+          </div>
+          <p className="controller-note">{t('停止すると、その色のまま動きが止まります。もう一度「再生」で続けられます。')}</p>
+        </div>}
+        {state.status?.v === 1 && <p className="notice legacy-controller">{t('このプログラムは従来のリモコンに対応しています。再生・停止と作品専用アクションを使うには、対応プログラムへの更新が必要です。')}</p>}
+        {artwork && <h3 className="control-title">{t('モードを選ぶ')}</h3>}
         <div className="mode-buttons">
-          {modes.map(item => <button key={item.command} className={`mode-button${canControl && mode === item.command ? ' selected' : ''}`} aria-pressed={canControl && mode === item.command} disabled={!canControl} onClick={() => void send(item.command)}>
+          {artwork ? artwork.controls.modes.map(item => <button key={item.id} className={`mode-button artwork-mode${canControl && mode === item.id ? ' selected' : ''}`} aria-pressed={canControl && mode === item.id} disabled={!canControl} onClick={() => void send(`MODE ${item.id}`)}>
+            <span className="mode-icon" aria-hidden="true">✦</span><strong>{item.label}</strong>
+          </button>) : modes.map(item => <button key={item.command} className={`mode-button${canControl && mode === item.command ? ' selected' : ''}`} aria-pressed={canControl && mode === item.command} disabled={!canControl} onClick={() => void send(item.command)}>
             <span className="mode-icon" style={{ color: item.color }} aria-hidden="true">{item.icon}</span><strong>{t(item.name)}</strong><small>{t(item.description)}</small>
           </button>)}
         </div>
-        <button className="lights-off quiet-button" disabled={!connected} onClick={() => void send('OFF')}>◯ {t('ライトを消す')}</button>
-        <div className="slider-heading"><p className="eyebrow">{t('2. 好みに合わせる')}</p><h3>{t('明るさとスピード')}</h3></div>
+        {artwork && <section className="action-controls" aria-labelledby="action-title">
+          <h3 id="action-title" className="control-title">{t('一度だけ演出する')}</h3>
+          {artwork.controls.actions.length ? <><div className="action-buttons">{artwork.controls.actions.map(item => <button key={item.id} className="action-button" disabled={!canControl || state.sending || artwork.action !== null} onClick={() => void send(`ACTION ${item.id}`)}><span aria-hidden="true">✧</span> {item.label}</button>)}</div><p className="controller-note">{t('終わると元のモードと再生状態に戻ります。途中でモード変更・停止・消灯もできます。')}</p></> : <p className="controller-note">{t('この作品には、一度だけの演出はありません。')}</p>}
+          {actionName && <p className="action-status" role="status">{t(stale ? '最後に届いた演出: {name}' : '機器からの報告: 「{name}」を実行中', { name: actionName })}</p>}
+        </section>}
+        {sentNotice && connected && sentNotice.connectedAt === state.connectedAt && now - sentNotice.at < 5000 && <p className="controller-note command-notice" role="status">{t('操作を送信しました。実行完了の確認ではありません。機器から届く状態と実際の光を確認してください。')}</p>}
+        <div className="slider-heading"><p className="eyebrow">{t('2. 好みに合わせる')}</p><h3>{t(showSpeed ? '明るさとスピード' : '明るさ')}</h3></div>
         <ControlSlider key={`brightness-${canControl}`} command="BRIGHTNESS" label={t('明るさ')} value={state.status?.brightness ?? null} disabled={!canControl} send={send} />
-        <ControlSlider key={`speed-${canControl}`} command="SPEED" label={t('スピード')} value={state.status?.speed ?? null} disabled={!canControl} send={send} />
-        <p className="controller-note">{t('スライダーは指を離すと送信します。明るさ100%でも、プログラムの安全な上限を超えません。スピードは動きのある光り方に使います。')}</p>
+        {showSpeed && <ControlSlider key={`speed-${canControl}`} command="SPEED" label={t('スピード')} value={state.status?.speed ?? null} disabled={!canControl} send={send} />}
+        <p className="controller-note">{t(showSpeed ? 'スライダーは指を離すと送信します。明るさ100%でも、プログラムの安全な上限を超えません。スピードは動きのある光り方に使います。' : '指を離すと明るさを送信します。100%はプログラムで決めた安全上限です。消灯中に動かしても点灯しません。')}</p>
       </section>
 
       <section className={`panel led-panel${!connected || stale ? ' outdated' : ''}`} aria-labelledby="led-title">
@@ -93,20 +123,21 @@ export function BluetoothPanel({ onOpenProgram }: { onOpenProgram: () => void })
           <div className="led-preview" aria-label={t('{count}個のLED。{lit}個が点灯。{mode}', { count: pixels.length, lit: litCount, mode: modeName ?? '' })}>
             {pixels.map((color, index) => <span key={index} className={`led-dot${color === '000000' ? ' off' : ''}`} style={{ backgroundColor: `#${color}`, boxShadow: color === '000000' ? 'none' : `0 0 12px #${color}80` }} title={`LED ${index + 1}: #${color.toUpperCase()}`} />)}
           </div>
-          <dl className="led-values"><div><dt>{t('光り方')}</dt><dd>{modeName}</dd></div><div><dt>{t('明るさの設定')}</dt><dd>{state.status.brightness}%</dd></div><div><dt>{t('スピードの設定')}</dt><dd>{state.status.speed}%</dd></div></dl>
+          <dl className="led-values"><div><dt>{t('光り方')}</dt><dd>{modeName}</dd></div><div><dt>{t('明るさの設定')}</dt><dd>{state.status.brightness}%</dd></div>{showSpeed && <div><dt>{t('スピードの設定')}</dt><dd>{state.status.speed}%</dd></div>}{artwork && <div><dt>{t('機器の再生状態')}</dt><dd>{playbackName}</dd></div>}</dl>
           <p className="received-time">{t('最終受信')} {state.receivedAt === null ? '—' : new Date(state.receivedAt).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : locale === 'en' ? 'en-US' : 'ja-JP')}</p>
         </>}
         {stale && <p className="notice warn" role="status">{t('5秒以上、新しい状態が届いていません。機器の電源とプログラムを確認してください。表示は最後に届いたものです。')}</p>}
+        {waitingTooLong && <p className="notice warn" role="status">{t('接続できましたが、5秒以上LEDの状態が届いていません。「状態をもう一度受け取る」を試し、変わらなければ対応プログラムを実行してつなぎ直してください。')}</p>}
         <button className="quiet-button refresh-status" disabled={!connected || state.sending} onClick={() => void send('STATUS')}>↻ {t('状態をもう一度受け取る')}</button>
         <p className="controller-note">{t('表示は、機器が報告したLEDへの出力色です。実際の光をセンサーで測ったものではありません。動く光は間をあけて表示します。')}</p>
       </section>
     </div>
 
     <details className="advanced-card bluetooth-help"><summary><span aria-hidden="true">?</span><div><strong>{t('うまくつながらないとき')}</strong><small>{t('初回の準備・対応プログラムについて')}</small></div></summary><div className="advanced-body">
-      <ol><li>{t('M5NanoC6／AtomS3Liteで、NanoLED v1に対応したBLEプログラムを実行してください。通常のLEDプログラムだけでは接続できません。')}</li><li>{t('パソコンやスマートフォンのBluetoothをオンにして、使う機器の「NanoLED-」で始まる名前を選んでください。')}</li><li>{t('ほかのBluetoothアプリでつないでいる場合は、そちらの接続を切ってから試してください。')}</li><li>{t('「受信待ち」が続く場合は、prompt.mdの「Webコントローラ対応」の通信仕様と基準コードを確認してください。')}</li></ol>
+      <ol><li>{t('プログラム画面で、リモコン対応のプログラムを「実行」してください。普通のLEDプログラムだけでは接続できません。')}</li><li>{t('パソコンやスマートフォンのBluetoothをオンにして、使う機器の「NanoLED-」で始まる名前を選んでください。')}</li><li>{t('ほかのBluetoothアプリでつないでいる場合は、そちらの接続を切ってから試してください。')}</li><li>{t('状態が届かないときは、再受信を試してください。それでも変わらなければ接続を切り、プログラムが動いていることを確認してつなぎ直してください。')}</li></ol>
       <p>{t('USB側で「実行」「停止」や再起動をすると、Bluetoothが切れることがあります。プログラムが動き始めたら、もう一度つないでください。Bluetoothの接続を切るだけではライトは消えません。')}</p>
     </div></details>
-    <details className="advanced-card bluetooth-custom"><summary><span aria-hidden="true">＋</span><div><strong>{t('自分で追加した光り方を呼び出す')}</strong><small>{t('プログラムにコマンドを追加した人向け')}</small></div></summary><div className="advanced-body"><form onSubmit={event => { event.preventDefault(); if (canControl && customValid) void send(custom.trim().toUpperCase()) }}><label htmlFor="ble-custom-command">{t('合言葉（例: STAR）')}</label><div className="custom-command"><input id="ble-custom-command" value={custom} maxLength={16} placeholder="STAR" autoCapitalize="characters" spellCheck={false} onChange={event => setCustom(event.target.value)} /><button disabled={!canControl || !customValid}>{t('送る')}</button></div><p className="controller-note">{t('英字から始まる半角英数字・_ の16文字まで。プログラムにない合言葉は動作しません。')}</p></form></div></details>
+    {!artwork && <details className="advanced-card bluetooth-custom"><summary><span aria-hidden="true">＋</span><div><strong>{t('自分で追加した光り方を呼び出す')}</strong><small>{t('プログラムにコマンドを追加した人向け')}</small></div></summary><div className="advanced-body"><form onSubmit={event => { event.preventDefault(); if (canControl && customValid) void send(custom.trim().toUpperCase()) }}><label htmlFor="ble-custom-command">{t('合言葉（例: STAR）')}</label><div className="custom-command"><input id="ble-custom-command" value={custom} maxLength={16} placeholder="STAR" autoCapitalize="characters" spellCheck={false} onChange={event => setCustom(event.target.value)} /><button disabled={!canControl || !customValid}>{t('送る')}</button></div><p className="controller-note">{t('英字から始まる半角英数字・_ の16文字まで。プログラムにない合言葉は動作しません。')}</p></form></div></details>}
     <footer>{t('この画面はプログラムを書き換えません。Bluetoothで、自分が選んだM5NanoC6／AtomS3Liteだけに操作を送ります。')}</footer>
   </div>
 }
