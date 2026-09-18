@@ -34,6 +34,19 @@
 .action-status { color: #654194; font-size: .85rem; overflow-wrap: anywhere; }
 .legacy-controller { font-size: .84rem; line-height: 1.8; }
 .command-notice { border-left: 3px solid #1675ce; padding-left: 10px; }
+.remote-availability { margin: 16px 0 0; padding: 14px 16px; border-radius: 12px; background: #edf2f7; color: #344f69; font-size: .86rem; line-height: 1.8; }
+.remote-availability p { margin: 0; }
+.remote-availability p:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
+.remote-availability p:first-child > span:first-child { font-size: .76rem; }
+.remote-availability strong { color: #163d63; }
+.remote-availability.available { background: #eaf6ee; }
+.control-placeholder { width: 100%; grid-column: 1 / -1; border-style: dashed; }
+.bluetooth-panel .control-placeholder:disabled { opacity: .75; }
+.remote-setup { margin-top: 24px; border-top: 1px solid #d7e4ef; padding-top: 18px; }
+.remote-setup h3 { margin: 0; font-size: 1rem; }
+.remote-setup ol { padding-left: 22px; line-height: 1.9; font-size: .85rem; }
+.remote-setup li + li { margin-top: 8px; }
+.remote-setup-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
 .slider-heading { margin: 26px 0 18px; }
 .slider-heading h3 { margin: 0; font-size: 1.07rem; }
 .control-slider { margin: 18px 0; }
@@ -76,6 +89,10 @@
 :root[data-theme=dark] .playback-status strong { color: #82c2ff; }
 :root[data-theme=dark] .action-button { background: #302346; border-color: #765499; color: #e0c5ff; }
 :root[data-theme=dark] .action-status { color: #e0c5ff; }
+:root[data-theme=dark] .remote-availability { background: #243447; color: #d1deed; }
+:root[data-theme=dark] .remote-availability strong { color: #eff7ff; }
+:root[data-theme=dark] .remote-availability.available { background: #183b31; }
+:root[data-theme=dark] .remote-setup { border-color: #3c5268; }
 :root[data-theme=dark] .small-badge { background: #263a4e; color: #bcd0e5; }
 :root[data-theme=dark] .small-badge.live { background: #163e31; color: #8bebbd; }
 :root[data-theme=dark] .led-placeholder { background: #122031; }

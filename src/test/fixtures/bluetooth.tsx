@@ -162,7 +162,7 @@ export function Fixture() {
       <button onClick={() => server.disconnect()}>模擬切断</button>
       <button onClick={() => { const next = !dark; setDark(next); document.documentElement.dataset.theme = next ? 'dark' : 'light' }}>{dark ? 'テストをライト表示' : 'テストをダーク表示'}</button>
     </div></div>
-    <BluetoothPanel onOpenProgram={() => { location.href = '/' }} />
+    <BluetoothPanel onOpenProgram={() => { location.href = '/' }} onOpenPreparation={() => { location.href = '/' }} />
   </main>
 }
 

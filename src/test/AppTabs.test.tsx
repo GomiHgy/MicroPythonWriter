@@ -157,6 +157,24 @@ it('Bluetooth画面の準備リンクからプログラムへ戻り、見出し�
   expect(harness.focus).toHaveBeenCalledTimes(1)
 })
 
+it('Bluetooth画面からAIの準備へ移動しても編集内容と両通信画面を保持し、自動操作しない', () => {
+  event(byId(render(), 'tab-controller'), 'onClick')
+  const before = find(render(), element => element.type === CodeEditor).props
+  event(find(render(), element => element.type === BluetoothPanel), 'onOpenPreparation')
+  const view = render()
+  expect(byId(view, 'panel-preparation').props.hidden).toBe(false)
+  expect(byId(view, 'panel-program').props.hidden).toBe(true)
+  expect(byId(view, 'panel-controller').props.hidden).toBe(true)
+  expect(find(view, element => element.type === CodeEditor).props).toEqual(before)
+  expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
+  expect(all(view, element => element.type === AiPreparationPanel)).toHaveLength(1)
+  expect(harness.getElementById).toHaveBeenLastCalledWith('tab-preparation')
+  expect(harness.focus).toHaveBeenCalledTimes(1)
+  for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'setBoot', 'normalMode', 'load', 'setSource'] as const) {
+    expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
+  }
+})
+
 it('AIの準備へ移動しても3つのパネルと編集内容を保持する', () => {
   const before = find(render(), element => element.type === CodeEditor).props
   event(byId(render(), 'tab-preparation'), 'onClick')

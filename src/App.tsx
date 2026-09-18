@@ -130,7 +130,7 @@ export default function App() {
     <footer>{t("このページはコードとログを外部へ送信しません。実機の動きを確認できた時だけ、「電源を入れたら自動で実行する」を使ってください。")}</footer>
     </div>
     <div id="panel-controller" role="tabpanel" aria-labelledby="tab-controller" hidden={activeTab !== 'controller'}>
-      <BluetoothPanel onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} />
+      <BluetoothPanel onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} onOpenPreparation={() => { setActiveTab('preparation'); document.getElementById('tab-preparation')?.focus() }} />
     </div>
     <footer className="app-version" aria-label={t('アプリのバージョン情報')}>
       <span>MicroPython Writer · {t('バージョン')} <code>{__APP_BUILD__.revision ?? t('取得できませんでした')}</code></span>
