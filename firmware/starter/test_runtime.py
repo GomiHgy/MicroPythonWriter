@@ -1,0 +1,439 @@
+"""CPythonで状態機械を確認する。GPIO波形・UIFlow2・電源・実発光の検証ではない。"""
+import copy
+import importlib.util
+import json
+import os
+import sys
+import types
+import unittest
+
+NOW = 0
+FRAMES = []
+
+
+class Pin:
+    OUT, IN, PULL_UP = 1, 2, 3
+
+    def __init__(self, number, mode, pull=None, value=None):
+        self.number = number
+        self.level = value if value is not None else 1
+
+    def value(self, value=None):
+        if value is not None:
+            self.level = value
+        return self.level
+
+
+class FakeBle:
+    def __init__(self):
+        self.notifications = []
+        self.received = b""
+        self.fail_notify = False
+        self.disconnections = []
+        self.advertisements = []
+
+    def active(self, enabled):
+        self.enabled = enabled
+
+    def gap_advertise(self, interval, **kwargs):
+        self.advertisements.append((interval, kwargs))
+
+    def gatts_register_services(self, services):
+        self.services = services
+        return ((1, 2),)
+
+    def gatts_set_buffer(self, handle, length, append):
+        self.buffer = (handle, length, append)
+
+    def irq(self, callback):
+        self.callback = callback
+
+    def gatts_read(self, handle):
+        data, self.received = self.received, b""
+        return data
+
+    def gatts_notify(self, conn, handle, chunk):
+        if self.fail_notify:
+            raise OSError("busy")
+        self.notifications.append(bytes(chunk))
+
+    def gap_disconnect(self, conn):
+        self.disconnections.append(conn)
+
+    def incoming(self, data):
+        self.received = data
+        self.callback(3, (42, 2))
+
+
+fake_time = types.ModuleType("time")
+fake_time.ticks_ms = lambda: NOW
+fake_time.ticks_diff = lambda a, b: ((a - b + (1 << 29)) % (1 << 30)) - (1 << 29)
+fake_time.sleep_ms = lambda value: None
+fake_time.sleep_us = lambda value: None
+fake_machine = types.ModuleType("machine")
+fake_machine.Pin = Pin
+fake_machine.bitstream = lambda pin, encoding, timing, data: FRAMES.append((encoding, timing, bytes(data)))
+fake_bluetooth = types.ModuleType("bluetooth")
+fake_bluetooth.BLE = FakeBle
+fake_bluetooth.UUID = str
+fake_bluetooth.FLAG_NOTIFY, fake_bluetooth.FLAG_WRITE = 16, 8
+sys.modules["machine"] = fake_machine
+sys.modules["bluetooth"] = fake_bluetooth
+sys.modules["time"] = fake_time
+spec = importlib.util.spec_from_file_location("starter_runtime", os.path.join(os.path.dirname(__file__), "runtime.py"))
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+
+BASE = {"board": "m5nanoc6", "firmware": "TEST ONLY", "led_model": "WS2812B", "led_pin": 2,
+        "button_pin": 9, "led_count": 10, "max_brightness": 20, "name": "NanoLED-M5NanoC6",
+        "short_press": "next", "long_press": "off", "while_held": False, "wireless": True,
+        "modes": [{"id": "WARM", "label": "あたたかい光", "kind": "solid", "color": "ff8000",
+                   "speed": 0, "repeats": 0, "end": "hold"},
+                  {"id": "FLOW", "label": "流れる光", "kind": "chase", "color": "00ffff",
+                   "speed": 50, "repeats": 0, "end": "hold"}]}
+
+
+class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        global NOW
+        NOW = 0
+        FRAMES.clear()
+        self.config = copy.deepcopy(BASE)
+        self.program = runtime.LedProgram(self.config)
+
+    def step(self, duration, radio=None):
+        global NOW
+        remaining = duration
+        while remaining:
+            delta = min(10, remaining)
+            remaining -= delta
+            NOW = (NOW + delta) % (1 << 30)
+            self.program.step(NOW)
+            if radio is not None:
+                radio.step(NOW)
+
+    def press(self, duration=100):
+        self.program.button.level = 0
+        self.step(duration)
+        self.program.button.level = 1
+        self.step(50)
+
+    def radio(self):
+        radio = runtime.NanoBle(self.program)
+        radio.irq(1, (42, None, None))
+        return radio
+
+    def test_startup_off_grb_timing_and_safe_cap(self):
+        self.assertEqual(self.program.status()["playback"], "off")
+        self.assertEqual(FRAMES[-1], (0, (400, 850, 800, 450), bytes(30)))
+        self.program.command("PLAY")
+        self.step(200)
+        self.assertLess(self.program.output[0][0], 51)
+        self.step(10)
+        self.assertEqual(self.program.output[0], (51, 25, 0))
+        self.assertEqual(FRAMES[-1][2][:3], bytes((25, 51, 0)))
+        self.assertEqual(self.program.status()["pixels"][:6], "331900")
+
+    def test_button_cycle_and_long_press_does_not_short_press_on_release(self):
+        self.press()
+        self.assertEqual(self.program.index, 0)
+        self.assertEqual(self.program.playback, "playing")
+        self.press()
+        self.assertEqual(self.program.index, 1)
+        self.press(1000)
+        self.assertEqual(self.program.playback, "off")
+        self.assertEqual(self.program.index, 1)
+
+    def test_debounce_rejects_bounce(self):
+        for _ in range(10):
+            self.program.button.level = 0
+            self.step(10)
+            self.program.button.level = 1
+            self.step(10)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_held_mode_release_and_long_press(self):
+        self.program.config["while_held"] = True
+        self.program.button.level = 0
+        self.step(50)
+        self.assertEqual(self.program.playback, "playing")
+        self.assertEqual(self.program.fade, 0)
+        self.step(190)
+        self.assertLess(self.program.fade, 1)
+        self.step(10)
+        self.assertEqual(self.program.fade, 1)
+        self.step(1000)
+        self.assertEqual(self.program.playback, "playing")
+        self.program.button.level = 1
+        self.step(50)
+        self.assertEqual(self.program.playback, "off")
+        self.press(1000)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_pause_brightness_and_resume_preserve_phase(self):
+        self.program.command("MODE FLOW")
+        self.step(400)
+        self.program.command("PAUSE")
+        phase, frame = self.program.phase, self.program.frame[:]
+        self.step(3000)
+        self.assertEqual(self.program.phase, phase)
+        self.assertEqual(self.program.frame, frame)
+        self.program.command("BRIGHTNESS 50")
+        self.assertEqual(self.program.phase, phase)
+        self.assertLessEqual(max(max(rgb) for rgb in self.program.output), 25)
+        self.program.command("PLAY")
+        self.step(100)
+        self.assertNotEqual(self.program.phase, phase)
+
+    def test_off_brightness_speed_cannot_illuminate(self):
+        self.program.command("BRIGHTNESS 50")
+        self.program.command("SPEED 100")
+        self.step(5000)
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+        self.assertEqual(self.program.status()["mode"], "WARM")
+
+    def test_invalid_commands_do_not_change_state(self):
+        before = self.program.status()
+        for command in ["MODE ABSENT", "ACTION ABSENT", "BRIGHTNESS -1", "BRIGHTNESS 101", "SPEED 1.5", "PLAY EXTRA", "MODE", "PAUSE 0", "SPEED １", "SPEED +2"]:
+            self.assertFalse(self.program.command(command), command)
+            self.assertEqual(self.program.status(), before, command)
+
+    def test_actions_return_to_every_playback_and_ignore_repeat(self):
+        for playback in ("playing", "paused", "off"):
+            self.program.command("PLAY")
+            self.step(400)
+            if playback == "paused":
+                self.program.command("PAUSE")
+            elif playback == "off":
+                self.program.command("OFF")
+            before = (self.program.phase, self.program.frame[:], self.program.playback)
+            self.program.command("ACTION SPARKLE")
+            self.step(400)
+            elapsed = self.program.action_elapsed
+            self.program.command("ACTION SPARKLE")
+            self.assertEqual(self.program.action_elapsed, elapsed)
+            self.step(610)
+            self.assertEqual(self.program.action, None)
+            self.assertEqual((self.program.phase, self.program.frame, self.program.playback), before)
+
+    def test_action_pause_holds_action_frame_and_play_restores_base(self):
+        self.program.command("MODE FLOW")
+        self.step(400)
+        base_phase = self.program.phase
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        action_frame = self.program.frame[:]
+        self.program.command("PAUSE")
+        self.step(2000)
+        self.assertEqual(self.program.frame, action_frame)
+        self.assertEqual(self.program.phase, base_phase)
+        self.program.command("PLAY")
+        self.assertEqual(self.program.frame, self.program.render(self.program.modes[1], base_phase))
+
+    def test_action_interrupts_for_off_mode_and_play(self):
+        for command in ("OFF", "MODE FLOW", "PLAY"):
+            self.program.command("ACTION SPARKLE")
+            self.step(250)
+            self.program.command(command)
+            self.assertIsNone(self.program.action)
+            self.step(1500)
+            self.assertEqual(self.program.playback, "off" if command == "OFF" else "playing")
+
+    def test_off_to_action_has_minimum_fade_and_returns_off(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(200)
+        self.assertLess(self.program.fade, 1)
+        self.step(10)
+        self.assertEqual(self.program.fade, 1)
+        self.step(800)
+        self.assertEqual(self.program.playback, "off")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
+    def test_mode_change_preserves_active_fade_progress(self):
+        self.program.command("PLAY")
+        self.step(110)
+        fade = self.program.fade
+        self.program.command("MODE FLOW")
+        self.assertEqual(self.program.fade, fade)
+        self.step(110)
+        self.assertEqual(self.program.fade, 1)
+
+    def test_toggle_and_no_button_action(self):
+        self.program.config["short_press"] = "toggle"
+        self.press()
+        self.assertEqual(self.program.playback, "playing")
+        self.press()
+        self.assertEqual(self.program.playback, "off")
+        self.program.config["short_press"] = "none"
+        self.press()
+        self.assertEqual(self.program.playback, "off")
+
+    def test_ble_partial_initialization_shuts_down_radio(self):
+        failed = FakeBle()
+        def fail_services(services):
+            raise OSError("unsupported firmware")
+        failed.gatts_register_services = fail_services
+        fake_bluetooth.BLE = lambda: failed
+        try:
+            with self.assertRaises(OSError):
+                runtime.NanoBle(self.program)
+            self.assertFalse(failed.enabled)
+        finally:
+            fake_bluetooth.BLE = FakeBle
+
+    def test_finite_repeat_hold_off_and_restart(self):
+        self.program.modes[0]["repeats"] = 1
+        self.program.command("PLAY")
+        self.step(3010)
+        self.assertEqual(self.program.playback, "paused")
+        self.program.command("PLAY")
+        self.assertEqual(self.program.cycles, 0)
+        self.program.modes[0]["end"] = "off"
+        self.step(3010)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_every_effect_stays_inside_cap_at_all_speeds(self):
+        for effect in ("solid", "rainbow", "chase", "twinkle"):
+            self.program.modes[0]["kind"] = effect
+            for speed in (0, 50, 100):
+                self.program.select(0)
+                self.program.command("SPEED " + str(speed))
+                self.step(4000)
+                self.assertLessEqual(max(FRAMES[-1][2]), 51)
+
+    def test_ticks_wrap(self):
+        global NOW
+        NOW = (1 << 30) - 100
+        self.program.last = NOW
+        self.program.command("PLAY")
+        self.step(400)
+        self.assertEqual(self.program.fade, 1)
+        self.assertGreater(self.program.phase, 0)
+
+    def test_transport_uuid_properties_name_and_wait_for_status(self):
+        radio = self.radio()
+        service = radio.ble.services[0]
+        self.assertEqual(service[0], "6e400001-b5a3-f393-e0a9-e50e24dcca9e")
+        self.assertEqual([item[1] for item in service[1]], [16, 8])
+        self.assertIn(b"NanoLED-M5NanoC6", radio.advertisement)
+        self.assertLessEqual(len(radio.advertisement), 31)
+        self.step(2000, radio)
+        self.assertEqual(radio.ble.notifications, [])
+        radio.ble.incoming(b"STATUS\n")
+        self.step(1000, radio)
+        rows = b"".join(radio.ble.notifications).split(b"\n")
+        self.assertGreater(len(rows), 1)
+        self.assertEqual(json.loads(rows[0])["v"], 2)
+        self.assertTrue(all(len(chunk) <= 20 for chunk in radio.ble.notifications))
+
+    def test_transport_split_multiple_and_malformed_commands(self):
+        radio = self.radio()
+        radio.ble.incoming(b"MO")
+        radio.receive()
+        self.assertEqual(self.program.playback, "off")
+        radio.ble.incoming(b"DE FLOW\nPAUSE\n")
+        radio.receive()
+        self.assertEqual(self.program.index, 1)
+        self.assertEqual(self.program.playback, "paused")
+        radio.ble.incoming(b"\xff\n")
+        radio.receive()
+        self.assertEqual(self.program.playback, "paused")
+        for _ in range(7):
+            radio.ble.incoming(b"x" * 20)
+            radio.receive()
+        radio.ble.incoming(b"PLAY\nOFF\n")
+        radio.receive()
+        self.assertEqual(self.program.playback, "off")
+
+    def test_unicode_chunk_boundaries_and_maximum_led_catalog_snapshot(self):
+        self.config["led_count"] = 300
+        self.config["modes"] = [dict(BASE["modes"][0], id="M%d" % i, label="星🌟" * 12) for i in range(8)]
+        self.program = runtime.LedProgram(self.config)
+        radio = self.radio()
+        original_json = runtime.json
+        runtime.json = types.SimpleNamespace(dumps=lambda value: json.dumps(value, ensure_ascii=False))
+        try:
+            radio.ble.incoming(b"STATUS\n")
+            self.step(4000, radio)
+        finally:
+            runtime.json = original_json
+        rows = b"".join(radio.ble.notifications).split(b"\n")[:-1]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertLessEqual(len(row), 4096)
+            status = json.loads(row.decode("utf-8"))
+            self.assertEqual(len(status["pixels"]), 1800)
+            self.assertEqual(status["controls"]["modes"][0]["label"], "星🌟" * 12)
+        broken_chunks = 0
+        for chunk in radio.ble.notifications:
+            try:
+                chunk.decode("utf-8")
+            except UnicodeError:
+                broken_chunks += 1
+        self.assertGreater(broken_chunks, 0)
+
+    def test_oversized_status_never_sends_partial_fake_snapshot(self):
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        original_json = runtime.json
+        runtime.json = types.SimpleNamespace(dumps=lambda value: "x" * 4097)
+        try:
+            with self.assertRaises(ValueError):
+                self.step(200, radio)
+        finally:
+            runtime.json = original_json
+        self.assertEqual(radio.ble.notifications, [])
+
+    def test_transport_overflow_resync_and_command_limit(self):
+        radio = self.radio()
+        for _ in range(10):
+            radio.ble.incoming(b"PLAY\n")
+        self.assertLessEqual(len(radio.rx), 8)
+        radio.receive()
+        radio.ble.incoming(b"PLAY\nMODE FLOW\n")
+        radio.receive()
+        self.assertEqual(self.program.index, 1)
+        self.assertEqual(self.program.playback, "playing")
+        radio.ble.incoming(b"PAUSE" + b" " * 15 + b"\n")
+        radio.receive()
+        self.assertEqual(self.program.playback, "playing")
+
+    def test_transport_pending_only_latest_and_no_interleaved_rows(self):
+        self.config["led_count"] = 300
+        self.program = runtime.LedProgram(self.config)
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        first_tx = radio.tx
+        self.program.command("PLAY")
+        self.step(200, radio)
+        self.assertEqual(radio.tx, first_tx)
+        self.program.command("BRIGHTNESS 23")
+        self.step(200, radio)
+        self.step(1500, radio)
+        for row in b"".join(radio.ble.notifications).split(b"\n")[:-1]:
+            self.assertEqual(json.loads(row)["v"], 2)
+
+    def test_disconnect_resets_partial_rows_and_readvertises(self):
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        self.assertTrue(radio.tx)
+        radio.irq(2, (42, None, None))
+        self.assertFalse(radio.tx)
+        self.assertFalse(radio.ready)
+        self.step(10, radio)
+        self.assertEqual(radio.ble.advertisements[-1][0], 250000)
+
+    def test_notify_failure_is_bounded_and_requires_fresh_connection(self):
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        radio.ble.fail_notify = True
+        self.step(300, radio)
+        self.assertEqual(radio.ble.disconnections, [42])
+        self.assertEqual(radio.conn, None)
+        self.assertFalse(radio.tx)
+
+
+if __name__ == "__main__":
+    unittest.main()

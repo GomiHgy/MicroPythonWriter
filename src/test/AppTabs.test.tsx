@@ -4,6 +4,9 @@ import App from '../App'
 import { CodeEditor } from '../components/CodeEditor'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
+import { MakerPanel } from '../components/MakerPanel'
+import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
+import type { ArtworkProject } from '../services/projects/types'
 import type { AppError } from '../types'
 import { setLocale, translate } from '../i18n'
 
@@ -11,11 +14,17 @@ type Element = ReactElement<Record<string, unknown>>
 
 const harness = vi.hoisted(() => ({
   slots: [] as unknown[], cursor: 0,
-  preparation: { context: null as unknown },
+  preparation: { context: null as unknown, hasPendingChanges: false, adoptProjectSettings: vi.fn() },
   contexts: [] as unknown[],
+  initialSources: [] as unknown[], sourceAuthorities: [] as unknown[], effects: [] as (() => void)[], runDependentEffects: false,
+  starterVerified: false, starterSource: 'print("starter")\n',
+  values: new Map<string, string>(), getItem: vi.fn(), setItem: vi.fn(), confirm: vi.fn(),
+  anchor: { href: '', download: '', click: vi.fn() },
   programmer: {
     state: 'running', source: 'print("keep this draft")', log: 'existing log', supported: true,
-    info: { bootOption: 1, deviceName: 'NanoC6', nanoC6Confirmed: true, microPythonVersion: 'test' },
+    runningSource: 'print("keep this draft")' as string | null, writtenSource: 'print("keep this draft")' as string | null,
+    bootConfigured: null as { mode: 0 | 1; source: string | null } | null,
+    info: { bootOption: 1, deviceName: 'NanoC6', nanoC6Confirmed: true, microPythonVersion: 'test', boardId: 'm5nanoc6', bootOptionSupported: true, nvsFallbackSupported: false },
     error: undefined as AppError | undefined, baudRate: 115200,
     connect: vi.fn(), disconnect: vi.fn(), stop: vi.fn(), run: vi.fn(), write: vi.fn(),
     setSource: vi.fn(), setLog: vi.fn(), setBaudRate: vi.fn(), load: vi.fn(), setBoot: vi.fn(), normalMode: vi.fn(), reset: vi.fn(), reconnect: vi.fn(),
@@ -32,17 +41,29 @@ vi.mock('react', async () => ({
       harness.slots[index] = typeof next === 'function' ? (next as (previous: Value) => Value)(harness.slots[index] as Value) : next
     }]
   },
-  useEffect: vi.fn(),
+  useRef: <Value,>(initial: Value) => {
+    const index = harness.cursor++
+    if (!(index in harness.slots)) harness.slots[index] = { current: initial }
+    return harness.slots[index]
+  },
+  useEffect: (effect: () => void, dependencies?: unknown[]) => { if (!dependencies || harness.runDependentEffects) harness.effects.push(effect) },
   useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
 }))
-vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown) => { harness.contexts.push(context); return harness.programmer } }))
+vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown, source: unknown, authoritative: unknown) => { harness.contexts.push(context); harness.initialSources.push(source); harness.sourceAuthorities.push(authoritative); return harness.programmer } }))
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
 vi.mock('../components/CodeEditor', () => ({ CodeEditor: () => null }))
 vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
 vi.mock('../components/AiPreparationPanel', () => ({ AiPreparationPanel: () => null }))
+vi.mock('../components/MakerPanel', () => ({ MakerPanel: () => null }))
+vi.mock('../services/projects/StarterProgram', () => ({ buildStarterProgram: () => harness.starterSource, starterAvailability: () => ({ verified: harness.starterVerified, reason: '実機未確認です。' }) }))
 
-function render(): ReactNode { harness.cursor = 0; return App() }
+function render(): ReactNode {
+  harness.cursor = 0; harness.effects = []
+  const view = App()
+  harness.effects.forEach(effect => effect())
+  return view
+}
 
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
   if (Array.isArray(node)) return node.flatMap(child => all(child, predicate))
@@ -57,8 +78,14 @@ function find(node: ReactNode, predicate: (element: Element) => boolean): Elemen
 }
 
 function byId(node: ReactNode, id: string) { return find(node, element => element.props.id === id) }
+function maker() { return find(render(), element => element.type === MakerPanel) }
+function currentProject() { return maker().props.project as ArtworkProject }
+function editorContent(props: Record<string, unknown>) { return { ...props, onRun: undefined } }
+function assertNoUsbOperations() {
+  for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
+}
 
-it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョン欄を表示する', (tab, locale) => {
+it.each((['maker', 'program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョン欄を表示する', (tab, locale) => {
   setLocale(locale)
   let view = render()
   event(byId(view, `tab-${tab}`), 'onClick')
@@ -81,24 +108,43 @@ function event(element: Element, name: string, value?: unknown) {
 
 beforeEach(() => {
   setLocale('ja')
-  harness.slots = []; harness.cursor = 0
-  harness.preparation.context = null; harness.contexts = []; harness.programmer.error = undefined
+  harness.slots = []; harness.cursor = 0; harness.effects = []; harness.runDependentEffects = false
+  harness.preparation.context = null; harness.preparation.hasPendingChanges = false; harness.contexts = []; harness.initialSources = []; harness.sourceAuthorities = []; harness.programmer.error = undefined
   harness.programmer.state = 'running'; harness.programmer.supported = true; harness.programmer.source = 'print("keep this draft")'
+  harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
+  harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
+  harness.programmer.info.boardId = 'm5nanoc6'; harness.programmer.info.bootOptionSupported = true; harness.programmer.info.nvsFallbackSupported = false
+  harness.starterVerified = false; harness.starterSource = 'print("starter")\n'; harness.values = new Map()
   vi.clearAllMocks()
   harness.programmer.setSource.mockImplementation((value: string) => { harness.programmer.source = value })
   harness.getElementById.mockReturnValue({ focus: harness.focus })
-  vi.stubGlobal('localStorage', { getItem: () => null })
-  vi.stubGlobal('document', { getElementById: harness.getElementById })
+  harness.getItem.mockImplementation((key: string) => harness.values.get(key) ?? null)
+  harness.setItem.mockImplementation((key: string, value: string) => { harness.values.set(key, value) })
+  harness.confirm.mockReturnValue(true)
+  vi.stubGlobal('localStorage', { getItem: harness.getItem, setItem: harness.setItem })
+  vi.stubGlobal('confirm', harness.confirm)
+  vi.stubGlobal('document', { getElementById: harness.getElementById, createElement: () => harness.anchor, documentElement: { dataset: {} } })
+  vi.stubGlobal('window', { setTimeout: vi.fn(), clearTimeout: vi.fn() })
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:project-download')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
 })
 
-afterEach(() => { setLocale('ja'); vi.unstubAllGlobals() })
+afterEach(() => { setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-it('最初はプログラムタブを表示し、両タブの見出しとパネルを関連付ける', () => {
+it('既存コードがない初回は作品づくりを入口にし、4つのタブを関連付ける', () => {
   const view = render()
-  expect(byId(view, 'tab-program').props).toMatchObject({ role: 'tab', 'aria-selected': true, 'aria-controls': 'panel-program', tabIndex: 0 })
+  expect(byId(view, 'tab-maker').props).toMatchObject({ role: 'tab', 'aria-selected': true, 'aria-controls': 'panel-maker', tabIndex: 0 })
+  expect(byId(view, 'tab-program').props).toMatchObject({ role: 'tab', 'aria-selected': false, 'aria-controls': 'panel-program', tabIndex: -1 })
   expect(byId(view, 'tab-controller').props).toMatchObject({ role: 'tab', 'aria-selected': false, 'aria-controls': 'panel-controller', tabIndex: -1 })
-  expect(byId(view, 'panel-program').props).toMatchObject({ role: 'tabpanel', hidden: false, 'aria-labelledby': 'tab-program' })
+  expect(byId(view, 'panel-maker').props).toMatchObject({ role: 'tabpanel', hidden: false, 'aria-labelledby': 'tab-maker' })
+  expect(byId(view, 'panel-program').props).toMatchObject({ role: 'tabpanel', hidden: true, 'aria-labelledby': 'tab-program' })
   expect(byId(view, 'panel-controller').props).toMatchObject({ role: 'tabpanel', hidden: true, 'aria-labelledby': 'tab-controller' })
+})
+
+it('既存利用者の保存コードがある場合はプログラム画面から続ける', () => {
+  harness.values.set('mpw-source', 'print("previous")')
+  expect(byId(render(), 'tab-program').props['aria-selected']).toBe(true)
+  assertNoUsbOperations()
 })
 
 it('タブを切り替えても両パネルを保持し、USB切断やプログラム停止を行わない', () => {
@@ -108,7 +154,7 @@ it('タブを切り替えても両パネルを保持し、USB切断やプログ�
   view = render()
   expect(byId(view, 'panel-program').props.hidden).toBe(true)
   expect(byId(view, 'panel-controller').props.hidden).toBe(false)
-  expect(find(view, element => element.type === CodeEditor).props).toEqual(beforeEditor.props)
+  expect(editorContent(find(view, element => element.type === CodeEditor).props)).toEqual(editorContent(beforeEditor.props))
   expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
   event(byId(view, 'tab-program'), 'onClick')
   view = render()
@@ -130,7 +176,7 @@ it('編集した下書きをコントローラ画面への往復後も保持す�
 })
 
 it('キーボードでタブを移動し、選んだ見出しへフォーカスを合わせる', () => {
-  const keys = [['ArrowRight', 'controller'], ['ArrowLeft', 'program'], ['End', 'controller'], ['Home', 'preparation']]
+  const keys = [['ArrowRight', 'preparation'], ['ArrowRight', 'program'], ['ArrowRight', 'controller'], ['ArrowRight', 'maker'], ['ArrowLeft', 'controller'], ['Home', 'maker'], ['End', 'controller']]
   for (const [key, expected] of keys) {
     const preventDefault = vi.fn()
     event(find(render(), element => element.props.role === 'tablist'), 'onKeyDown', { key, preventDefault })
@@ -138,7 +184,7 @@ it('キーボードでタブを移動し、選んだ見出しへフォーカス�
     expect(byId(render(), `tab-${expected}`).props['aria-selected']).toBe(true)
     expect(harness.getElementById).toHaveBeenLastCalledWith(`tab-${expected}`)
   }
-  expect(harness.focus).toHaveBeenCalledTimes(4)
+  expect(harness.focus).toHaveBeenCalledTimes(keys.length)
 })
 
 it('USB非対応環境でもBluetoothコントローラタブへ移動できる', () => {
@@ -165,7 +211,7 @@ it('Bluetooth画面からAIの準備へ移動しても編集内容と両通信�
   expect(byId(view, 'panel-preparation').props.hidden).toBe(false)
   expect(byId(view, 'panel-program').props.hidden).toBe(true)
   expect(byId(view, 'panel-controller').props.hidden).toBe(true)
-  expect(find(view, element => element.type === CodeEditor).props).toEqual(before)
+  expect(editorContent(find(view, element => element.type === CodeEditor).props)).toEqual(editorContent(before))
   expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
   expect(all(view, element => element.type === AiPreparationPanel)).toHaveLength(1)
   expect(harness.getElementById).toHaveBeenLastCalledWith('tab-preparation')
@@ -182,7 +228,7 @@ it('AIの準備へ移動しても3つのパネルと編集内容を保持する'
   expect(byId(view, 'panel-preparation').props).toMatchObject({ role: 'tabpanel', hidden: false, 'aria-labelledby': 'tab-preparation' })
   expect(byId(view, 'panel-program').props.hidden).toBe(true)
   expect(byId(view, 'panel-controller').props.hidden).toBe(true)
-  expect(find(view, element => element.type === CodeEditor).props).toEqual(before)
+  expect(editorContent(find(view, element => element.type === CodeEditor).props)).toEqual(editorContent(before))
   expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
   expect(find(view, element => element.type === AiPreparationPanel).props.preparation).toBe(harness.preparation)
   event(find(view, element => element.type === AiPreparationPanel), 'onOpenProgram')
@@ -240,4 +286,441 @@ it.each([['en', 'Program', 'Language'], ['zh', '程序', '显示语言']])('言�
   expect(find(view, element => element.type === CodeEditor).props.value).toBe(editorBefore)
   expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset'] as const) expect(harness.programmer[operation]).not.toHaveBeenCalled()
+})
+
+it('未確認の入門コードは準備・実行コールバックを直接呼んでも機器へ送らない', () => {
+  harness.programmer.source = harness.starterSource
+  expect(maker().props.verifiedStarter).toBe(false)
+  event(maker(), 'onPrepare'); event(maker(), 'onRun')
+  expect(maker().props.notice).toBe('実機未確認です。')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('入門準備は確認を断ると現在コードを置き換えず、承認時も機器には送信しない', () => {
+  harness.starterVerified = true
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onPrepare')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  harness.confirm.mockReturnValue(true)
+  event(maker(), 'onPrepare')
+  expect(harness.programmer.source).toBe(harness.starterSource)
+  const checkpoint = JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!)
+  expect(checkpoint.draft.source).toBe('print("keep this draft")')
+  expect(maker().props.canUndoReplacement).toBe(true)
+  assertNoUsbOperations()
+})
+
+it.each(['source', 'board', 'state'])('入門実行は %s 不一致時にfail-closedにする', reason => {
+  harness.starterVerified = true
+  harness.programmer.source = harness.starterSource
+  if (reason === 'source') harness.programmer.source = 'manual edit'
+  if (reason === 'board') harness.programmer.info.boardId = 'atoms3lite'
+  if (reason === 'state') harness.programmer.state = 'disconnected'
+  event(maker(), 'onRun')
+  expect(harness.programmer.run).not.toHaveBeenCalled()
+})
+
+it('確認済み条件が一致すると入門実行から既存の安全な実行入口を1回呼ぶ', () => {
+  harness.starterVerified = true
+  harness.programmer.source = harness.starterSource
+  event(maker(), 'onRun')
+  expect(harness.programmer.run).toHaveBeenCalledOnce()
+  expect(harness.programmer.write).not.toHaveBeenCalled()
+  expect(harness.programmer.setBoot).not.toHaveBeenCalled()
+})
+
+it('作品の設定変更・保存ではエディタの最新コードを保持し、通信を行わない', () => {
+  const next = structuredClone(currentProject())
+  next.name = '衣装の袖'; next.draft.source = '古いsourceを持つUIイベント'; next.draft.settings.ledCount = 24
+  event(maker(), 'onChange', next)
+  expect(currentProject().name).toBe('衣装の袖')
+  expect(currentProject().draft.source).toBe('print("keep this draft")')
+  event(maker(), 'onSave')
+  expect(JSON.parse(harness.values.get(PROJECT_STORAGE_KEY)!)).toMatchObject({ name: '衣装の袖', draft: { source: 'print("keep this draft")', settings: { ledCount: 24 } } })
+  expect(maker().props.notice).toContain('作品をこのブラウザに保存しました')
+  assertNoUsbOperations()
+})
+
+it('保存失敗を成功通知にせず、編集中のコードを維持する', () => {
+  harness.setItem.mockImplementation(() => { throw new Error('QuotaExceeded') })
+  event(maker(), 'onSave')
+  expect(maker().props.notice).toContain('保存できませんでした')
+  expect(currentProject().draft.source).toBe(harness.programmer.source)
+  assertNoUsbOperations()
+})
+
+it('作品の書き出しはコード付きJSONをダウンロードし、USBを操作しない', async () => {
+  event(maker(), 'onExport')
+  expect(harness.anchor.click).toHaveBeenCalledOnce()
+  expect(harness.anchor.download).toMatch(/\.mpw\.json$/)
+  const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+  expect(JSON.parse(await blob.text()).draft.source).toBe(harness.programmer.source)
+  expect(maker().props.notice).toContain('書き出しました')
+  assertNoUsbOperations()
+})
+
+it('秘密情報を含む作品の書き出しは確認を断ると中止する', () => {
+  harness.programmer.source = 'password = "do-not-export"'
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onExport')
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  expect(URL.createObjectURL).not.toHaveBeenCalled()
+  expect(harness.anchor.click).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('実機未確認コードのダウンロードは検証用と明示し、確認済み化も送信もしない', async () => {
+  event(maker(), 'onDownloadCandidate')
+  expect(harness.anchor.download).toBe('main-unverified.py')
+  expect(await (vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob).text()).toBe(harness.starterSource)
+  expect(maker().props.notice).toContain('動作保証・検証済みの登録・機器への送信は行っていません')
+  expect(currentProject().working).toBeNull()
+  assertNoUsbOperations()
+})
+
+const projectFile = (project: ArtworkProject) => ({ name: 'artwork.mpw.json', size: serializeProject(project).length, text: async () => serializeProject(project) })
+
+it('作品の読み込み確認を断ると編集・保存・USB状態を変更しない', async () => {
+  harness.confirm.mockReturnValue(false)
+  const next = createProject(); next.name = '持ち込んだ作品'; next.draft.source = 'print("import")'
+  const before = currentProject()
+  await event(maker(), 'onImport', projectFile(next))
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('読み込みでは元の最新コードを一時退避し、持込確認を降格して機器へ送らない', async () => {
+  const next = createProject(); next.name = '持ち込んだ作品'; next.draft.source = 'print("import")'
+  const confirmed = markWorking(next)
+  render()
+  harness.programmer.source = 'print("import直前の編集")'
+  render()
+  await event(maker(), 'onImport', projectFile(confirmed))
+  expect(currentProject().name).toBe('持ち込んだ作品')
+  expect(currentProject().draft.source).toBe(next.draft.source)
+  expect(currentProject().working).toBeNull()
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!).draft.source).toBe('print("import直前の編集")')
+  expect(maker().props.notice).toContain('動作OK記録は引き継がず')
+  expect(harness.values.has(PROJECT_STORAGE_KEY)).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('退避用ストレージが書けなければ読み込みを中止し、元データを置き換えない', async () => {
+  const next = createProject(); next.draft.source = 'print("import")'
+  const before = currentProject()
+  harness.setItem.mockImplementation(() => { throw new Error('退避できません') })
+  await event(maker(), 'onImport', projectFile(next))
+  expect(currentProject()).toEqual(before)
+  expect(maker().props.notice).toContain('退避できません')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each([{ name: 'project.py', size: 10 }, { name: 'project.json', size: 1_000_001 }])('未対応の作品ファイルは内容を読まず拒否する: %j', async metadata => {
+  const text = vi.fn(async () => serializeProject(createProject()))
+  await event(maker(), 'onImport', { ...metadata, text })
+  expect(text).not.toHaveBeenCalled()
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('読み込みの取り消しは直前のコード・設定・ボタンへ戻せるが自動送信しない', async () => {
+  const previous = currentProject()
+  const next = createProject(); next.name = '次'; next.draft.source = 'print("next")'
+  await event(maker(), 'onImport', projectFile(next))
+  event(maker(), 'onUndoReplacement')
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.source).toBe(previous.draft.source)
+  assertNoUsbOperations()
+})
+
+function runAndMark() {
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  expect(maker().props.canMarkWorking).toBe(true)
+  event(maker(), 'onMarkWorking')
+}
+
+it('実行中の表示だけでは動作OK登録できず、実行コードと確認の一致を求める', () => {
+  expect(maker().props.canMarkWorking).toBe(false)
+  event(maker(), 'onMarkWorking')
+  expect(currentProject().working).toBeNull()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  runAndMark()
+  expect(currentProject().working?.snapshot).toEqual(currentProject().draft)
+  expect(harness.confirm).toHaveBeenCalledOnce()
+})
+
+it.each(['source', 'recipe', 'settings', 'runningSource', 'state', 'board'])('実行後に %s が変わると確認済み登録を止める', mismatch => {
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  if (mismatch === 'source') harness.programmer.source += '\nprint(2)'
+  if (mismatch === 'runningSource') harness.programmer.runningSource = 'old source'
+  if (mismatch === 'state') harness.programmer.state = 'stopped'
+  if (mismatch === 'board') harness.programmer.info.boardId = 'atoms3lite'
+  if (mismatch === 'recipe' || mismatch === 'settings') {
+    const next = structuredClone(currentProject())
+    if (mismatch === 'recipe') next.draft.recipe.modes[0].speed = 1
+    else next.draft.settings.ledCount = 12
+    event(maker(), 'onChange', next)
+  }
+  expect(maker().props.canMarkWorking).toBe(false)
+  event(maker(), 'onMarkWorking')
+  expect(currentProject().working).toBeNull()
+  expect(harness.confirm).not.toHaveBeenCalled()
+})
+
+it('実機確認をキャンセルすると動作OK版を作らない', () => {
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onMarkWorking')
+  expect(currentProject().working).toBeNull()
+  expect(harness.values.has(PROJECT_STORAGE_KEY)).toBe(false)
+})
+
+it('動作OK版を復元すると現draftを退避し、コード・設定・ボタンを正確に戻す', () => {
+  runAndMark()
+  const confirmed = structuredClone(currentProject().working!.snapshot)
+  const next = structuredClone(currentProject()); next.draft.settings.ledCount = 21; next.draft.recipe.modes[0].label = '編集'; next.draft.remoteButtons = [{ kind: 'mode', id: 'OTHER', label: '別', icon: 'heart' }]
+  harness.programmer.source = 'print("edited")'
+  event(maker(), 'onChange', next)
+  harness.programmer.run.mockClear()
+  event(maker(), 'onRestore')
+  expect(currentProject().draft).toEqual(confirmed)
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!).draft).toMatchObject({ source: 'print("edited")', settings: { ledCount: 21 } })
+  expect(maker().props.canMarkWorking).toBe(false)
+  assertNoUsbOperations()
+})
+
+it.each(['running', 'writtenSource', 'snapshot', 'bootUnsupported', 'board'])('完成設定は %s 不一致を拒否する', mismatch => {
+  runAndMark(); harness.programmer.state = 'stopped'
+  if (mismatch === 'running') harness.programmer.state = 'running'
+  if (mismatch === 'writtenSource') harness.programmer.writtenSource = null
+  if (mismatch === 'bootUnsupported') harness.programmer.info.bootOptionSupported = false
+  if (mismatch === 'board') harness.programmer.info.boardId = 'atoms3lite'
+  if (mismatch === 'snapshot') {
+    const next = structuredClone(currentProject()); next.draft.settings.ledPin = 3
+    event(maker(), 'onChange', next)
+  }
+  expect(maker().props.canFinish).toBe(false)
+  event(maker(), 'onFinish')
+  expect(harness.programmer.setBoot).not.toHaveBeenCalled()
+})
+
+it('完成は停止済み・機器上コード一致・動作OK版一致・対応機器でだけ自動起動設定を呼ぶ', () => {
+  runAndMark(); harness.programmer.state = 'stopped'
+  expect(maker().props.canFinish).toBe(true)
+  event(maker(), 'onFinish')
+  expect(harness.programmer.setBoot).toHaveBeenCalledExactlyOnceWith(0)
+})
+
+it('作品の機器設定をAI準備へ渡す前に未適用設定の置換確認をし、コードや通信に触れない', () => {
+  harness.preparation.hasPendingChanges = true; harness.confirm.mockReturnValue(false)
+  event(maker(), 'onOpenAI')
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  harness.confirm.mockReturnValue(true)
+  event(maker(), 'onOpenAI')
+  expect(harness.preparation.adoptProjectSettings).toHaveBeenCalledExactlyOnceWith(currentProject().draft.settings, false)
+  expect(byId(render(), 'panel-preparation').props.hidden).toBe(false)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('作品の名前・ボタンはコントローラへ渡され、登録は作品保存のみで通信しない', () => {
+  const next = structuredClone(currentProject()); next.name = '魔法の杖'
+  event(maker(), 'onChange', next)
+  const buttons = [{ kind: 'action', id: 'SPARKLE', label: '変身', icon: 'star' }]
+  event(find(render(), element => element.type === BluetoothPanel), 'onRemoteButtonsChange', buttons)
+  const panel = find(render(), element => element.type === BluetoothPanel)
+  expect(panel.props.projectName).toBe('魔法の杖')
+  expect(panel.props.remoteButtons).toEqual(buttons)
+  expect(JSON.parse(harness.values.get(PROJECT_STORAGE_KEY)!).draft.remoteButtons).toEqual(buttons)
+  assertNoUsbOperations()
+})
+
+it('複数の作品読み込みが逆順で完了しても、最後に選んだファイルだけ確認・反映する', async () => {
+  const firstProject = createProject(); firstProject.name = '古い読み込み'; firstProject.draft.source = 'old incoming code'
+  const secondProject = createProject(); secondProject.name = '最後に選んだ作品'; secondProject.draft.source = 'latest incoming code'
+  let resolveFirst!: (text: string) => void
+  let resolveSecond!: (text: string) => void
+  const first = event(maker(), 'onImport', { name: 'first.json', size: 1000, text: () => new Promise<string>(resolve => { resolveFirst = resolve }) })
+  const second = event(maker(), 'onImport', { name: 'second.json', size: 1000, text: () => new Promise<string>(resolve => { resolveSecond = resolve }) })
+  resolveSecond(serializeProject(secondProject)); await second
+  expect(currentProject().name).toBe('最後に選んだ作品')
+  const checkpoint = harness.values.get('mpw-artwork-before-replace-v1')
+  resolveFirst(serializeProject(firstProject)); await first
+  expect(currentProject().name).toBe('最後に選んだ作品')
+  expect(harness.programmer.source).toBe('latest incoming code')
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  expect(harness.programmer.setSource).toHaveBeenCalledExactlyOnceWith('latest incoming code')
+  expect(harness.values.get('mpw-artwork-before-replace-v1')).toBe(checkpoint)
+  assertNoUsbOperations()
+})
+
+it('退避が成功しても作品全体の下書き保存が失敗したら編集コードを置き換えない', async () => {
+  const previous = currentProject()
+  harness.values.set(PROJECT_DRAFT_STORAGE_KEY, serializeProject(previous))
+  const incoming = createProject(); incoming.name = '置換候補'; incoming.draft.source = 'incoming source'
+  harness.setItem.mockImplementation((key: string, value: string) => {
+    if (key === PROJECT_DRAFT_STORAGE_KEY) throw new Error('draft quota')
+    harness.values.set(key, value)
+  })
+  await event(maker(), 'onImport', projectFile(incoming))
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(maker().props.notice).toContain('編集中の作品をブラウザに保存できませんでした')
+  expect(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)).toBe(serializeProject(previous))
+  expect(harness.values.has('mpw-artwork-before-replace-v1')).toBe(true)
+  assertNoUsbOperations()
+})
+
+it('下書き全体を保存してからコードを置き換え、読込直後の再起動にも設定の一貫性を保つ', async () => {
+  const incoming = createProject(); incoming.draft.source = 'incoming'; incoming.draft.settings.boardId = 'atoms3lite'; incoming.draft.settings.ledPin = 8
+  harness.programmer.setSource.mockImplementation((source: string) => {
+    const persisted = JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!)
+    expect(persisted.draft.source).toBe(source)
+    expect(persisted.draft.settings.boardId).toBe('atoms3lite')
+    expect(persisted.draft.settings.ledPin).toBe(8)
+    harness.programmer.source = source
+  })
+  await event(maker(), 'onImport', projectFile(incoming))
+  expect(harness.programmer.setSource).toHaveBeenCalledOnce()
+  expect(harness.values.has(PROJECT_STORAGE_KEY)).toBe(false)
+  harness.values.set('mpw-source', 'old split code')
+  harness.slots = []
+  render()
+  expect(harness.initialSources.at(-1)).toBe('incoming')
+  expect(harness.sourceAuthorities.at(-1)).toBe(true)
+  expect(currentProject().draft.settings.boardId).toBe('atoms3lite')
+  assertNoUsbOperations()
+})
+
+it('編集後のコード・設定を単一の下書きとして自動保存し、明示保存とは分ける', () => {
+  harness.runDependentEffects = true
+  render()
+  const next = structuredClone(currentProject()); next.name = '編集中'; next.draft.settings.ledCount = 23
+  event(maker(), 'onChange', next)
+  harness.programmer.source = 'new editor code'
+  render()
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!)).toMatchObject({ name: '編集中', draft: { source: 'new editor code', settings: { ledCount: 23 } } })
+  expect(harness.values.has(PROJECT_STORAGE_KEY)).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('破損した下書きは自動保存で消さず、明示保存を断るとそのまま残す', () => {
+  harness.values.set(PROJECT_DRAFT_STORAGE_KEY, '{corrupt draft')
+  harness.runDependentEffects = true
+  render()
+  expect(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)).toBe('{corrupt draft')
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onSave')
+  expect(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)).toBe('{corrupt draft')
+  expect(harness.values.has(PROJECT_STORAGE_KEY)).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('最後のタブを保存して再表示し、未知の保存タブは初回導線へ戻す', () => {
+  harness.runDependentEffects = true
+  event(byId(render(), 'tab-maker'), 'onClick'); render()
+  expect(harness.values.get('mpw-active-tab')).toBe('maker')
+  harness.values.set('mpw-source', 'legacy saved source')
+  harness.slots = []
+  expect(byId(render(), 'tab-maker').props['aria-selected']).toBe(true)
+  harness.values.set('mpw-active-tab', 'unknown'); harness.values.delete('mpw-source'); harness.slots = []
+  expect(byId(render(), 'tab-maker').props['aria-selected']).toBe(true)
+  assertNoUsbOperations()
+})
+
+it('単体動作確認は起動設定の表示値や他画面での設定成功だけでは有効にならない', () => {
+  harness.programmer.info.bootOption = 0
+  expect(maker().props.canConfirmStandalone).toBe(false)
+  harness.programmer.bootConfigured = { mode: 0, source: harness.programmer.source }
+  expect(maker().props.canConfirmStandalone).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('単体動作確認は完成操作と一致するコードの起動設定成功が揃って初めて有効になる', () => {
+  runAndMark(); harness.programmer.state = 'stopped'
+  event(maker(), 'onFinish')
+  expect(maker().props.canConfirmStandalone).toBe(false)
+  harness.programmer.bootConfigured = { mode: 0, source: 'different program' }
+  expect(maker().props.canConfirmStandalone).toBe(false)
+  harness.programmer.bootConfigured = { mode: 1, source: harness.programmer.source }
+  expect(maker().props.canConfirmStandalone).toBe(false)
+  harness.programmer.bootConfigured = { mode: 0, source: harness.programmer.source }
+  expect(maker().props.canConfirmStandalone).toBe(true)
+})
+
+it.each(['code', 'settings', 'recipe', 'remoteButtons'])('単体確認待ちの %s 変更は以前の確認条件を失効する', mismatch => {
+  runAndMark(); harness.programmer.state = 'stopped'; event(maker(), 'onFinish')
+  harness.programmer.bootConfigured = { mode: 0, source: harness.programmer.source }
+  expect(maker().props.canConfirmStandalone).toBe(true)
+  if (mismatch === 'code') harness.programmer.source = 'print("changed")'
+  else {
+    const next = structuredClone(currentProject())
+    if (mismatch === 'settings') next.draft.settings.ledPin = 3
+    if (mismatch === 'recipe') next.draft.recipe.modes[0].speed = 1
+    if (mismatch === 'remoteButtons') next.draft.remoteButtons = [{ kind: 'action', id: 'OTHER', label: '別', icon: 'heart' }]
+    event(maker(), 'onChange', next)
+  }
+  expect(maker().props.canConfirmStandalone).toBe(false)
+})
+
+it('作品設定を使い始めた後は不一致のAI準備文脈をUSBへ渡さず、AI準備自体は保持する', () => {
+  const legacyContext = { profile: { ...createProject().draft.settings, boardId: 'atoms3lite', ledCount: 99 }, errors: [] }
+  harness.preparation.context = legacyContext
+  render()
+  expect(harness.contexts.at(-1)).toBe(legacyContext)
+  event(maker(), 'onChange', structuredClone(currentProject()))
+  render()
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(harness.preparation.context).toBe(legacyContext)
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('作品と一致するAI準備だけを通信文脈として使用する', () => {
+  const context = { profile: structuredClone(createProject().draft.settings), errors: [] }
+  harness.preparation.context = context
+  event(maker(), 'onChange', structuredClone(currentProject()))
+  render()
+  expect(harness.contexts.at(-1)).toBe(context)
+  const changed = structuredClone(currentProject()); changed.draft.settings.ledCount = 25
+  event(maker(), 'onChange', changed); render()
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(context.profile.ledCount).toBe(10)
+  assertNoUsbOperations()
+})
+
+it.each([null, 'false'])('有効な作品下書きがあればactiveフラグ=%sでも不一致のAI準備文脈を省く', active => {
+  const draft = createProject(); draft.draft.source = 'print("restored project")'; draft.draft.settings.boardId = 'atoms3lite'; draft.draft.settings.ledPin = 8
+  harness.values.set(PROJECT_DRAFT_STORAGE_KEY, serializeProject(draft))
+  if (active !== null) harness.values.set('mpw-project-settings-active', active)
+  const previousContext = { profile: { ...createProject().draft.settings, firmwareVersion: 'old-ui-version', ledCount: 37 }, errors: [] }
+  harness.preparation.context = previousContext
+  render()
+  expect(harness.sourceAuthorities.at(-1)).toBe(true)
+  expect(harness.initialSources.at(-1)).toBe(draft.draft.source)
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(harness.preparation.context).toBe(previousContext)
+  expect(currentProject().draft.settings).toEqual(draft.draft.settings)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each([null, 'false'])('有効な作品下書きと一致するAI準備文脈はactiveフラグ=%sでも維持する', active => {
+  const draft = createProject(); draft.draft.source = 'print("restored")'; draft.draft.settings.firmwareVersion = '2.3.7'; draft.draft.settings.ledCount = 24
+  harness.values.set(PROJECT_DRAFT_STORAGE_KEY, serializeProject(draft))
+  if (active !== null) harness.values.set('mpw-project-settings-active', active)
+  const matchingContext = { profile: structuredClone(draft.draft.settings), errors: [] }
+  harness.preparation.context = matchingContext
+  render()
+  expect(harness.sourceAuthorities.at(-1)).toBe(true)
+  expect(harness.contexts.at(-1)).toBe(matchingContext)
+  expect(harness.preparation.context).toBe(matchingContext)
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
 })

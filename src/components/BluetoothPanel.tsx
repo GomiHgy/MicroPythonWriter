@@ -2,6 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { BluetoothController } from '../services/bluetooth/BluetoothController'
 import { MAX_STATUS_AGE_MS } from '../services/bluetooth/protocol'
 import { useLocale } from '../i18n'
+import { effectIcons, type RemoteButton } from '../services/projects/types'
+import { RemoteButtonEditor } from './RemoteButtonEditor'
 import './BluetoothPanel.css'
 
 const modes = [
@@ -31,13 +33,14 @@ function ControlSlider({ command, label, value, disabled, send }: { command: 'BR
   </div>
 }
 
-export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenProgram: () => void; onOpenPreparation: () => void }) {
+export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons = [], projectName, onRemoteButtonsChange }: { onOpenProgram: () => void; onOpenPreparation: () => void; remoteButtons?: RemoteButton[]; projectName?: string; onRemoteButtonsChange?: (buttons: RemoteButton[]) => void }) {
   const { locale, t } = useLocale()
   const [controller] = useState(() => new BluetoothController())
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   const [now, setNow] = useState(() => Date.now())
   const [custom, setCustom] = useState('')
   const [sentNotice, setSentNotice] = useState<{ connectedAt: number | null; at: number } | null>(null)
+  const [focused, setFocused] = useState(false)
   useEffect(() => () => controller.disconnect(), [controller])
   useEffect(() => {
     if (state.phase !== 'connected') return
@@ -71,6 +74,7 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenPro
   const modeName = artwork ? artwork.controls.modes.find(item => item.id === mode)?.label : knownMode ? t(knownMode) : mode
   const playbackName = artwork ? t(artwork.playback === 'playing' ? '再生中' : artwork.playback === 'paused' ? '停止中（色を保持）' : '消灯') : t(legacy ? 'このプログラムでは未対応' : '未受信')
   const actionName = artwork?.controls.actions.find(item => item.id === artwork.action)?.label
+  const appearance = (kind: RemoteButton['kind'], id: string, label: string): RemoteButton => remoteButtons.find(button => button.kind === kind && button.id === id) ?? { kind, id, label, icon: kind === 'mode' ? 'light' : 'star' }
   const title = connected ? t('{name} とつながっています', { name: state.deviceName ?? 'M5NanoC6 / AtomS3Lite' }) : t(connecting ? '機器につないでいます…' : '光を、手元でコントロール')
   const description = t(connected ? 'ボタンやスライダーで光り方を変えてみよう。' : connecting ? '機器を選んだら、このまま少し待ってください。' : 'M5NanoC6／AtomS3Liteの電源を入れて、「Bluetoothでつなぐ」を押してください。')
   const customValid = /^[A-Z][A-Z0-9_]{0,15}$/.test(custom.trim().toUpperCase()) && !['BRIGHTNESS', 'SPEED', 'MODE', 'ACTION', 'PLAY', 'PAUSE'].includes(custom.trim().toUpperCase())
@@ -81,7 +85,7 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenPro
     return sent
   }
 
-  return <div className="bluetooth-panel">
+  return <div className={`bluetooth-panel${focused && artwork ? ' using-view' : ''}`}>
     <section className={`device-card ${connected ? 'ready' : 'waiting'}`}>
       <div className="status-badge" aria-hidden="true">{connected ? '✓' : connecting ? '…' : '⌁'}</div>
       <div className="device-copy"><p className="eyebrow">{t('コードを書かずに、光をあそぼう')}</p><h2>{title}</h2><p>{description}</p></div>
@@ -94,6 +98,7 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenPro
     {state.phase === 'unsupported' && <div className="notice warn" role="alert">{t('この環境ではBluetooth接続を使えません。パソコン版Chrome・Edge、またはAndroid版Chromeで、HTTPSのページ（開発時はlocalhost）を開いてください。iPhone・iPadの標準ブラウザでは使えません。')}</div>}
     {state.error && state.phase !== 'unsupported' && <div className="notice warn" role="alert">{t(state.error)}</div>}
     <p className="bluetooth-guide">{t('はじめてなら、プログラム画面で対応プログラムを「実行」しよう。タブを変えてもプログラムは止まりません。')}</p>
+    {artwork && <div className="remote-view-toggle"><strong>{projectName}</strong><button className="quiet-button" aria-pressed={focused} onClick={() => setFocused(value => !value)}>{t(focused ? '設定も表示する' : '作品を使う画面にする')}</button></div>}
 
     <div className="controller-grid">
       <section className="panel remote-panel" aria-labelledby="remote-title">
@@ -115,14 +120,14 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenPro
         <h3 className="control-title">{t('モードを選ぶ')}</h3>
         <div className="mode-buttons">
           {artwork ? artwork.controls.modes.map(item => <button key={item.id} className={`mode-button artwork-mode${canControl && mode === item.id ? ' selected' : ''}`} aria-pressed={canControl && mode === item.id} disabled={!canControl} onClick={() => void send(`MODE ${item.id}`)}>
-            <span className="mode-icon" aria-hidden="true">✦</span><strong>{item.label}</strong>
+            <span className="mode-icon" aria-hidden="true">{effectIcons[appearance('mode', item.id, item.label).icon]}</span><strong>{appearance('mode', item.id, item.label).label}</strong>
           </button>) : legacy ? modes.map(item => <button key={item.command} className={`mode-button${canControl && mode === item.command ? ' selected' : ''}`} aria-pressed={canControl && mode === item.command} disabled={!canControl} onClick={() => void send(item.command)}>
             <span className="mode-icon" style={{ color: item.color }} aria-hidden="true">{item.icon}</span><strong>{t(item.name)}</strong><small>{t(item.description)}</small>
           </button>) : <button className="mode-button control-placeholder" disabled><span className="mode-icon" aria-hidden="true">✦</span><strong>{t('モードを選ぶ')}</strong><small>{t('接続後に機器から届きます')}</small></button>}
         </div>
         <section className="action-controls" aria-labelledby="action-title">
           <h3 id="action-title" className="control-title">{t('一度だけ演出する')}</h3>
-          {artwork ? artwork.controls.actions.length ? <><div className="action-buttons">{artwork.controls.actions.map(item => <button key={item.id} className="action-button" disabled={!canControl || state.sending || artwork.action !== null} onClick={() => void send(`ACTION ${item.id}`)}><span aria-hidden="true">✧</span> {item.label}</button>)}</div><p className="controller-note">{t('終わると元のモードと再生状態に戻ります。途中でモード変更・停止・消灯もできます。')}</p></> : <p className="controller-note">{t('この作品には、一度だけの演出はありません。')}</p> : <><button className="action-button control-placeholder" disabled>✧ {t('アクションを実行')}</button><p className="controller-note">{t(legacy ? '作品専用アクションは新仕様（NanoLED v2）で使えます。' : '作品専用のボタン名は、接続後に機器から受け取ります。')}</p></>}
+          {artwork ? artwork.controls.actions.length ? <><div className="action-buttons">{artwork.controls.actions.map(item => <button key={item.id} className="action-button" disabled={!canControl || state.sending || artwork.action !== null} onClick={() => void send(`ACTION ${item.id}`)}><span aria-hidden="true">{effectIcons[appearance('action', item.id, item.label).icon]}</span> {appearance('action', item.id, item.label).label}</button>)}</div><p className="controller-note">{t('終わると元のモードと再生状態に戻ります。途中でモード変更・停止・消灯もできます。')}</p></> : <p className="controller-note">{t('この作品には、一度だけの演出はありません。')}</p> : <><button className="action-button control-placeholder" disabled>✧ {t('アクションを実行')}</button><p className="controller-note">{t(legacy ? '作品専用アクションは新仕様（NanoLED v2）で使えます。' : '作品専用のボタン名は、接続後に機器から受け取ります。')}</p></>}
           {actionName && <p className="action-status" role="status">{t(stale ? '最後に届いた演出: {name}' : '機器からの報告: 「{name}」を実行中', { name: actionName })}</p>}
         </section>
         {sentNotice && connected && sentNotice.connectedAt === state.connectedAt && now - sentNotice.at < 5000 && <p className="controller-note command-notice" role="status">{t('操作を送信しました。実行完了の確認ではありません。機器から届く状態と実際の光を確認してください。')}</p>}
@@ -159,6 +164,11 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation }: { onOpenPro
         <p className="controller-note">{t('表示は、機器が報告したLEDへの出力色です。実際の光をセンサーで測ったものではありません。動く光は間をあけて表示します。')}</p>
       </section>
     </div>
+
+    {artwork && onRemoteButtonsChange && <details className="advanced-card remote-appearance"><summary>{t('作品のボタン名とアイコンを変える')}</summary><div className="advanced-body">
+      <p>{t('表示名だけをこの作品に保存します。機器のプログラムや通信コマンドは変えません。接続先が報告した操作だけが使えます。')}</p>
+      {(['mode', 'action'] as const).flatMap(kind => artwork.controls[kind === 'mode' ? 'modes' : 'actions'].map(item => <RemoteButtonEditor key={`${state.connectedAt}-${projectName}-${kind}-${item.id}-${JSON.stringify(remoteButtons)}`} value={appearance(kind, item.id, item.label)} onSave={value => onRemoteButtonsChange([...remoteButtons.filter(button => button.kind !== kind || button.id !== item.id), value])} />))}
+    </div></details>}
 
     <details className="advanced-card bluetooth-help"><summary><span aria-hidden="true">?</span><div><strong>{t('うまくつながらないとき')}</strong><small>{t('初回の準備・対応プログラムについて')}</small></div></summary><div className="advanced-body">
       <ol><li>{t('プログラム画面で、リモコン対応のプログラムを「実行」してください。普通のLEDプログラムだけでは接続できません。')}</li><li>{t('パソコンやスマートフォンのBluetoothをオンにして、使う機器の「NanoLED-」で始まる名前を選んでください。')}</li><li>{t('ほかのBluetoothアプリでつないでいる場合は、そちらの接続を切ってから試してください。')}</li><li>{t('状態が届かないときは、再受信を試してください。それでも変わらなければ接続を切り、プログラムが動いていることを確認してつなぎ直してください。')}</li></ol>

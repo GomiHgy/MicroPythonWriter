@@ -29,7 +29,7 @@ vi.mock('react', async () => ({
 const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
 function preparation(): WorkshopPreparation {
   const context = createWorkshopContext(profile)
-  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
+  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), adoptProjectSettings: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
 }
 type Element = ReactElement<Record<string, unknown>>
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {

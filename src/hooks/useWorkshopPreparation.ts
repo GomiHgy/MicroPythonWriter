@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
+import type { ProjectSettings } from '../services/projects/types'
 import { restoreLedSettings, saveLedSettings, storeLedSettings, ledSettingsKey, type LedSettings } from '../services/workshop/LedSettings'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
@@ -50,6 +51,19 @@ export function useWorkshopPreparation() {
     setIsImporting(false)
     setSelectedId(next?.id ?? null)
     setDraft(next ? cloneWorkshopProfile(next.profile) : null)
+  }
+
+  function adoptProjectSettings(value: ProjectSettings, wireless: boolean) {
+    const preset = settings.profiles.find(item => item.profile.boardId === value.boardId)
+    const original = workshopPresets.find(item => item.id === preset?.id)
+    if (!preset || !original) return
+    editGeneration.current++
+    setIsImporting(false)
+    const next = { ...preset.profile, firmwareVersion: value.firmwareVersion || null, ledModel: value.ledModel, ledCount: value.ledCount, ledPin: value.ledPin, maxBrightnessPercent: value.maxBrightnessPercent, features: { button: true, ble: wireless, controller: wireless }, baseline: { ...preset.profile.baseline, verification: null } }
+    const failure = storeLedSettings(original, next, true)
+    setSelectedId(preset.id)
+    setDraft(cloneWorkshopProfile(next))
+    setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: next } : item), notice: failure || '作品の設定を引き継ぎました。BLEの実機確認情報は引き継いでいません。' }))
   }
 
   function editDraft(patch: Partial<WorkshopProfile>) {
@@ -122,7 +136,7 @@ export function useWorkshopPreparation() {
     setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: original } : item), notice: 'この機器を初期設定に戻しました。保存済みのブラウザ設定も削除しました。' }))
   }
 
-  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, editDraft, editLedSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
+  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, adoptProjectSettings, editDraft, editLedSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
 }
 
 export type WorkshopPreparation = ReturnType<typeof useWorkshopPreparation>

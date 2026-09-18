@@ -1,0 +1,61 @@
+.maker-panel { max-width: 1000px; margin: 0 auto; }
+.maker-intro { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 20px; }
+.maker-intro h2 { margin: 6px 0; }
+.maker-intro p { margin: 0; line-height: 1.8; }
+.maker-intro .small-badge { white-space: normal; min-width: 110px; text-align: center; }
+.maker-progress { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; list-style: none; padding: 0; margin: 0 0 20px; }
+.maker-progress li { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; font-size: .78rem; padding: 12px 4px; border-bottom: 3px solid #d5e1ee; color: #5b7186; }
+.maker-progress li span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #e2eaf2; }
+.maker-progress li[aria-current=step] { color: #075fac; border-color: #1675ce; font-weight: 750; }
+.maker-progress li[aria-current=step] span { background: #075fac; color: #fff; }
+.maker-panel .panel { padding: 24px; margin-bottom: 18px; }
+.maker-step h3 { font-size: 1.35rem; margin: 5px 0 18px; }
+.maker-panel p, .maker-panel li { line-height: 1.85; }
+.maker-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.maker-panel label:not(.maker-check):not(.maker-import) { display: flex; flex-direction: column; gap: 7px; font-size: .9rem; }
+.maker-panel input:not([type=checkbox]), .maker-panel select { max-width: 100%; box-sizing: border-box; min-width: 0; }
+.maker-panel input:not([type=checkbox]):not([type=range]):not([type=file]), .maker-panel select { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid #bbcddd; border-radius: 8px; background: #fff; color: #203d59; font: inherit; }
+.maker-panel input[type=color] { padding: 4px !important; }
+.maker-panel input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; margin: 2px 0; }
+.maker-check { display: flex; gap: 10px; align-items: flex-start; line-height: 1.7; padding: 14px 0; }
+.maker-next { display: block; margin: 22px 0 16px; min-height: 48px; min-width: min(100%, 260px); }
+.maker-secondary, .maker-library-buttons, .maker-presets { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; }
+.maker-panel .maker-note { color: #576f86; font-size: .86rem; }
+.maker-panel details summary { cursor: pointer; font-weight: 650; line-height: 1.7; }
+.maker-wiring { display: grid; gap: 10px; background: #eef4fa; padding: 18px; border-radius: 12px; }
+.maker-wiring > div { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+.maker-wiring dt { color: #526b84; }
+.maker-wiring dd { margin: 0; font-weight: 700; }
+.maker-blocker { padding: 16px; background: #fff5df; border-left: 4px solid #b47400; border-radius: 6px; color: #684400; }
+.maker-blocker p { margin: 8px 0 0; }
+.maker-preview { margin: 22px 0; border-radius: 14px; background: #172739; color: #d8e5f2; padding: 22px; }
+.maker-preview > div { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center; }
+.maker-preview span { width: 17px; height: 17px; border-radius: 50%; box-shadow: 0 0 12px #fff3; }
+.maker-preview p { font-size: .8rem; margin: 16px 0 0; }
+.maker-mode { min-width: 0; padding: 14px 18px 18px; margin: 20px 0; border: 1px solid #c7d8e7; border-radius: 12px; }
+.maker-mode legend { padding: 0 8px; font-weight: 700; }
+.maker-library h3 { margin-top: 0; }
+.maker-import { display: flex; flex-direction: column; gap: 6px; font-size: .86rem; max-width: 100%; }
+.maker-import input { width: 240px; }
+.maker-help h4 { margin-bottom: 2px; }
+.maker-help p { margin-top: 6px; }
+@media (prefers-color-scheme: dark) {
+  .maker-progress li { border-color: #3c5268; color: #b8cce0; }
+  .maker-progress li span { background: #2b4156; }
+  .maker-progress li[aria-current=step] { color: #85bfff; border-color: #75b6ff; }
+  .maker-panel input:not([type=checkbox]):not([type=range]):not([type=file]), .maker-panel select { color: #e0ebf6; background: #172636; border-color: #496179; }
+  .maker-panel .maker-note { color: #b4c7da; }
+  .maker-wiring { background: #203346; }
+  .maker-wiring dt { color: #bed0e1; }
+  .maker-blocker { background: #3a3020; color: #f1d59e; border-color: #d5a443; }
+  .maker-mode { border-color: #496179; }
+}
+@media (max-width: 600px) {
+  .maker-intro { flex-direction: column; }
+  .maker-progress { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .maker-panel .panel { padding: 18px; }
+  .maker-fields { grid-template-columns: 1fr; }
+  .maker-next { width: 100%; }
+  .maker-library-buttons { align-items: stretch; flex-direction: column; }
+  .maker-library-buttons button { width: 100%; }
+}

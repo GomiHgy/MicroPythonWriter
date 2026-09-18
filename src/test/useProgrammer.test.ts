@@ -4,6 +4,7 @@ import { MicroPythonDevice } from '../services/micropython/MicroPythonDevice'
 import { RawReplClient, type LongRunningCallbacks, type LongRunningCompletion, type LongRunningConfirmation } from '../services/micropython/RawReplClient'
 import { FileTransferService } from '../services/micropython/FileTransferService'
 import { DeviceProbe } from '../services/micropython/DeviceProbe'
+import { BootModeService } from '../services/micropython/BootModeService'
 import { WebSerialTransport } from '../services/serial/WebSerialTransport'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { DeviceTimeoutError, SerialDisconnectedError } from '../types'
@@ -50,7 +51,7 @@ vi.mock('react', () => ({
   },
 }))
 
-function HookHarness() { return useProgrammer(selectedWorkshop) }
+function HookHarness() { return useProgrammer(selectedWorkshop, projectFallback, preferProjectSource) }
 
 function render() {
   hooks.cursor = 0
@@ -72,6 +73,8 @@ let confirmedBy: LongRunningConfirmation = 'still-running'
 let callbacks: LongRunningCallbacks[] = []
 let disconnectDetected: () => void
 let selectedWorkshop: WorkshopContext | null = null
+let projectFallback: string | undefined
+let preferProjectSource = false
 
 function completeStop() {
   active = false
@@ -83,6 +86,7 @@ beforeEach(() => {
   hooks.slots = []; hooks.cursor = 0; hooks.mounted = false; hooks.effects = []
   active = false; callbacks = []; confirmedBy = 'still-running'
   selectedWorkshop = null
+  projectFallback = undefined; preferProjectSource = false
   vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn() })
   setLocale('ja')
   vi.stubGlobal('confirm', vi.fn(() => true))
@@ -108,6 +112,64 @@ function kit(label: string) {
 }
 
 describe('修正依頼のコードと教材のスナップショット', () => {
+  it.each(['', 'project source'])('一式保存した作品下書きのコードを古いmpw-sourceより優先する (%s)', source => {
+    projectFallback = source; preferProjectSource = true
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'mpw-source' ? 'old independent source' : null, setItem: vi.fn() })
+    expect(render().source).toBe(source)
+  })
+  it('一式下書きがなければ既存コードの自動保存を優先する', () => {
+    projectFallback = 'old named project'
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'mpw-source' ? 'latest legacy draft' : null, setItem: vi.fn() })
+    expect(render().source).toBe('latest legacy draft')
+  })
+  it('自動起動の書込みと再起動が成功した場合だけコードに結び付けて記録する', async () => {
+    vi.spyOn(BootModeService.prototype, 'set').mockResolvedValue()
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+    await render().connect(); render().setSource('known main')
+    await render().run(); await render().stop(); await render().setBoot(0)
+    expect(render().state).toBe('disconnected')
+    expect(render().info.bootOption).toBeUndefined()
+    expect(render().bootConfigured).toEqual({ source: 'known main', mode: 0 })
+    await render().connect()
+    expect(render().bootConfigured).toBeNull()
+  })
+  it('自動起動設定失敗では持ち出し確認を解禁しない', async () => {
+    vi.spyOn(BootModeService.prototype, 'set').mockRejectedValue(new Error('NVS failed'))
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+    await render().connect(); await render().run(); await render().stop(); await render().setBoot(0)
+    expect(render().state).toBe('error')
+    expect(render().bootConfigured).toBeNull()
+    expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+  })
+  it('作品確認用のコード一致は書込み成功・実行受付後だけ記録する', async () => {
+    await render().connect()
+    expect(render().writtenSource).toBeNull()
+    expect(render().runningSource).toBeNull()
+    render().setSource('print("known")')
+    await render().run()
+    expect(render().writtenSource).toBe('print("known")')
+    expect(render().runningSource).toBe('print("known")')
+    render().setSource('print("edited")')
+    expect(render().runningSource).toBe('print("known")')
+    await render().stop()
+    expect(render().writtenSource).toBe('print("known")')
+    await render().disconnect()
+    expect(render().writtenSource).toBeNull()
+    expect(render().runningSource).toBeNull()
+  })
+
+  it('書込み失敗・切断時は過去のコード記録を動作確認に流用しない', async () => {
+    await render().connect()
+    await render().run()
+    vi.mocked(FileTransferService.prototype.writeMain).mockRejectedValueOnce(new Error('write failed'))
+    await render().run()
+    expect(render().state).toBe('error')
+    expect(render().writtenSource).toBeNull()
+    expect(render().runningSource).toBeNull()
+    disconnectDetected()
+    expect(render().writtenSource).toBeNull()
+    expect(render().runningSource).toBeNull()
+  })
   it.each(['en', 'zh'] as const)('エラー後の言語変更 %s でも操作時のコード・機器・教材・ログを維持する', async locale => {
     selectedWorkshop = kit('007')
     await render().connect()

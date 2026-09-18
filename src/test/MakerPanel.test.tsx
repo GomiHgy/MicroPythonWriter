@@ -1,0 +1,305 @@
+import { isValidElement, type ReactElement, type ReactNode } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ts from 'typescript'
+import panelSource from '../components/MakerPanel.tsx?raw'
+import { MakerPanel, type MakerPanelProps } from '../components/MakerPanel'
+import { makerMessages } from '../i18n/makerMessages'
+import { createProject } from '../services/projects/ProjectStorage'
+
+type Element = ReactElement<Record<string, unknown>>
+const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, locale: 'ja' as 'ja' | 'en' | 'zh' }))
+vi.mock('react', async () => ({
+  ...await vi.importActual<typeof import('react')>('react'),
+  useState: <Value,>(initial: Value | (() => Value)) => {
+    const index = harness.cursor++
+    if (!(index in harness.slots)) harness.slots[index] = typeof initial === 'function' ? (initial as () => Value)() : initial
+    return [harness.slots[index], (next: Value | ((old: Value) => Value)) => { harness.slots[index] = typeof next === 'function' ? (next as (old: Value) => Value)(harness.slots[index] as Value) : next }]
+  },
+}))
+vi.mock('../i18n', () => ({ useLocale: () => ({ locale: harness.locale, t: (key: string, values: Record<string, string | number> = {}) => (harness.locale === 'ja' ? key : makerMessages[key]?.[harness.locale] ?? key).replace(/\{(\w+)\}/g, (match, name: string) => String(values[name] ?? match)) }) }))
+
+let props: MakerPanelProps
+function render() { harness.cursor = 0; return MakerPanel(props) }
+function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
+  if (Array.isArray(node)) return node.flatMap(child => all(child, predicate))
+  if (!isValidElement<Record<string, unknown>>(node)) return []
+  return [...(predicate(node) ? [node] : []), ...all(node.props.children as ReactNode, predicate)]
+}
+function text(node: ReactNode): string {
+  if (Array.isArray(node)) return node.map(text).join('')
+  if (isValidElement<{ children?: ReactNode }>(node)) return text(node.props.children)
+  return typeof node === 'string' || typeof node === 'number' ? String(node) : ''
+}
+function find(predicate: (element: Element) => boolean) { const matches = all(render(), predicate); expect(matches).toHaveLength(1); return matches[0] }
+function button(label: string) { return find(element => element.type === 'button' && text(element.props.children as ReactNode) === label) }
+function input(id: string) { return find(element => element.props.id === id) }
+function event(element: Element, handler: string, value?: unknown) { return (element.props[handler] as (value: unknown) => unknown)(value) }
+function click(label: string) { event(button(label), 'onClick') }
+function check(id: string, value = true) { event(input(id), 'onChange', { target: { checked: value } }) }
+function testStep() { click('次へ：配線を確認'); check('maker-wired'); click('次へ：試しに光らせる') }
+function designStep() { testStep(); click('実機確認は後で行い、先に光り方を作る') }
+function controlsStep() { designStep(); click('次へ：操作を選ぶ') }
+function finishStep() { controlsStep(); props.canMarkWorking = true; check('maker-tested'); click('次へ：完成して持ち出す') }
+function sideEffects() { return [props.onConnect, props.onRun, props.onStop, props.onFinish, props.onPrepare, props.onMarkWorking] }
+
+beforeEach(() => {
+  harness.slots = []; harness.cursor = 0; harness.locale = 'ja'
+  const project = createProject()
+  project.draft.settings.firmwareVersion = 'test-version'
+  project.draft.source = 'print("test")'
+  props = {
+    project, onChange: vi.fn(next => { props.project = next }), onSave: vi.fn(), onExport: vi.fn(), onImport: vi.fn(async () => {}), onMarkWorking: vi.fn(), onRestore: vi.fn(), onPrepare: vi.fn(), onOpenProgram: vi.fn(), onOpenAI: vi.fn(), onOpenController: vi.fn(), onConnect: vi.fn(), onRun: vi.fn(), onStop: vi.fn(), onFinish: vi.fn(), onDownloadCandidate: vi.fn(), onUndoReplacement: vi.fn(),
+    state: 'disconnected', error: null, notice: '', verifiedStarter: false, starterReason: 'TEST UNVERIFIED', sourceMatches: false, canMarkWorking: false, canFinish: false, canConfirmStandalone: false, bootSupported: false,
+  }
+})
+
+describe('作品づくりの順序と安全確認', () => {
+  it('初回にコードではなく6ステップと設定を表示し、機器操作をしない', () => {
+    const view = render()
+    expect(text(view)).toContain('作品をつくる')
+    expect(all(view, element => element.props['aria-current'] === 'step').map(element => text(element))).toEqual(['1機器を選ぶ'])
+    expect(input('maker-led-count').props.value).toBe(10)
+    expect(input('maker-brightness').props.value).toBe(20)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('ファームウェア版未入力なら次へ進めず、実行・接続も行わない', () => {
+    props.project.draft.settings.firmwareVersion = ''
+    expect(button('次へ：配線を確認').props.disabled).toBe(true)
+    click('次へ：配線を確認')
+    expect(input('maker-board')).toBeDefined()
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it.each([['m5nanoc6', 9, 20], ['atoms3lite', 41, 35]] as const)('%sの内蔵ボタンとLEDのピンを分けて表示する', (boardId, buttonPin, rgbPin) => {
+    props.project.draft.settings.boardId = boardId
+    click('次へ：配線を確認')
+    expect(text(render())).toContain(`GPIO ${buttonPin}`)
+    expect(text(render())).toContain(`GPIO ${rgbPin}`)
+    expect(text(render())).toContain('GPIO 2')
+    expect(button('次へ：試しに光らせる').props.disabled).toBe(true)
+    click('次へ：試しに光らせる')
+    expect(input('maker-wired')).toBeDefined()
+  })
+  it('配線チェックと段階移動だけでは通信や実行をしない', () => {
+    testStep()
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+    expect(input('maker-seen').props.checked).toBe(false)
+  })
+  it.each([false, true])('未検証ならソース一致=%sでも準備・接続・実行を無効にする', matches => {
+    props.sourceMatches = matches; props.state = 'raw-repl-ready'
+    testStep()
+    expect(text(render())).toContain('実機未確認')
+    expect(text(render())).toContain('TEST UNVERIFIED')
+    const primary = find(element => element.type === 'button' && element.props.className === 'primary maker-next')
+    expect(primary.props.disabled).toBe(true)
+    event(primary, 'onClick')
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+    click('実機確認は後で行い、先に光り方を作る')
+    expect(button('光り方を追加（最大8つ）')).toBeDefined()
+  })
+  it('検証済みのコード準備・USB接続・実行を別々の明示操作にする', () => {
+    props.verifiedStarter = true
+    testStep()
+    click('試すコードを準備')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1)
+    expect(props.onConnect).not.toHaveBeenCalled()
+    expect(props.onRun).not.toHaveBeenCalled()
+    props.sourceMatches = true
+    click('USBでつなぐ')
+    expect(props.onConnect).toHaveBeenCalledTimes(1)
+    expect(props.onRun).not.toHaveBeenCalled()
+    props.state = 'raw-repl-ready'
+    click('機器で実行する')
+    expect(props.onRun).toHaveBeenCalledTimes(1)
+  })
+  it('実行中の表示を実際の点灯確認として扱わない', () => {
+    props.state = 'running'; props.canMarkWorking = true
+    testStep()
+    expect(text(render())).toContain('機器を見て確認')
+    expect(input('maker-seen').props.checked).toBe(false)
+    check('maker-seen')
+    expect(input('maker-seen').props.checked).toBe(true)
+    expect(props.onMarkWorking).not.toHaveBeenCalled()
+    props.project = { ...props.project, draft: { ...props.project.draft, source: 'changed' } }
+    expect(input('maker-seen').props.checked).toBe(false)
+    props.project = { ...props.project, draft: { ...props.project.draft, source: 'print("test")' } }
+    expect(input('maker-seen').props.checked).toBe(false)
+  })
+  it('未実行のチェックをプログラム的に呼んでも確認状態を設定できない', () => {
+    testStep(); check('maker-seen')
+    expect(input('maker-seen').props.checked).toBe(false)
+    click('実機確認は後で行い、先に光り方を作る'); click('次へ：操作を選ぶ'); check('maker-tested')
+    expect(input('maker-tested').props.checked).toBe(false)
+    click('次へ：完成して持ち出す')
+    expect(input('maker-tested')).toBeDefined()
+  })
+  it('機器設定が外部で変わったら最初へ戻し、配線確認も失効させる', () => {
+    testStep()
+    props.project = { ...props.project, draft: { ...props.project.draft, settings: { ...props.project.draft.settings, boardId: 'atoms3lite' } } }
+    expect(input('maker-board').props.value).toBe('atoms3lite')
+    click('次へ：配線を確認')
+    expect(input('maker-wired').props.checked).toBe(false)
+  })
+})
+
+describe('選択式レシピとプレビュー', () => {
+  it('色切り替えプリセットは異なる2色と短押し操作を設定する', () => {
+    designStep(); click('ボタンで色を切り替える')
+    const { recipe, remoteButtons } = props.project.draft
+    expect(recipe.modes).toHaveLength(2)
+    expect(new Set(recipe.modes.map(mode => mode.color)).size).toBe(2)
+    expect(recipe).toMatchObject({ shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false })
+    expect(remoteButtons.map(button => button.label)).toEqual(recipe.modes.map(mode => mode.label))
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it.each([['押している間だけ光る', true, false], ['スマホで光り方を変える', false, true]] as const)('%sプリセットは実行せず設定だけを変更する', (label, held, wireless) => {
+    designStep(); click(label)
+    expect(props.project.draft.recipe.whileHeld).toBe(held)
+    expect(props.project.draft.recipe.wireless).toBe(wireless)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('光り方は1〜8個で、追加IDは重複しない', () => {
+    designStep()
+    expect(button('この光り方を削除').props.disabled).toBe(true)
+    click('この光り方を削除')
+    expect(props.project.draft.recipe.modes).toHaveLength(1)
+    for (let index = 0; index < 9; index++) click('光り方を追加（最大8つ）')
+    expect(props.project.draft.recipe.modes).toHaveLength(8)
+    expect(new Set(props.project.draft.recipe.modes.map(mode => mode.id)).size).toBe(8)
+    expect(button('光り方を追加（最大8つ）').props.disabled).toBe(true)
+  })
+  it('プレビューを機器の受信状態とは表示しない', () => {
+    designStep()
+    const preview = find(element => element.props.className === 'maker-preview')
+    expect(preview.props['aria-label']).toBe('光り方のイメージ。実機の状態ではありません。')
+    expect(text(preview)).toContain('保証するものではありません')
+    expect(all(preview, element => element.type === 'span')).toHaveLength(10)
+  })
+  it('押している間の操作が優先され、短押し長押し欄を無効にする', () => {
+    designStep(); click('押している間だけ光る'); click('次へ：操作を選ぶ')
+    expect(all(render(), element => element.type === 'select').every(select => select.props.disabled)).toBe(true)
+  })
+  it('既存コードの実機確認は生成コードと一致しなくても許可し、相違を案内する', () => {
+    controlsStep(); props.canMarkWorking = true; props.sourceMatches = false
+    expect(text(render())).toContain('現在の編集コードは')
+    check('maker-tested'); click('次へ：完成して持ち出す')
+    expect(button('今の版を「動作OK」として保存').props.disabled).toBe(false)
+  })
+  it('レシピを変更すると操作済みチェックが失効する', () => {
+    controlsStep(); props.canMarkWorking = true; check('maker-tested')
+    const wireless = input('maker-wireless')
+    event(wireless, 'onChange', { target: { checked: true } })
+    expect(input('maker-tested').props.checked).toBe(false)
+  })
+})
+
+describe('完成・保存・読み込み', () => {
+  it('実行中は先に停止し、停止後の別操作で自動起動を設定する', () => {
+    props.state = 'running'; props.bootSupported = true
+    finishStep()
+    click('今の版を「動作OK」として保存')
+    expect(props.onMarkWorking).toHaveBeenCalledTimes(1)
+    click('持ち出す準備のため停止')
+    expect(props.onStop).toHaveBeenCalledTimes(1)
+    expect(props.onFinish).not.toHaveBeenCalled()
+    props.state = 'stopped'; props.canFinish = true
+    click('自動起動を設定する')
+    expect(props.onFinish).toHaveBeenCalledTimes(1)
+  })
+  it('保存・機器状態の条件が足りないと自動起動できない', () => {
+    props.state = 'stopped'; finishStep()
+    expect(button('自動起動を設定する').props.disabled).toBe(true)
+    click('自動起動を設定する')
+    expect(props.onFinish).not.toHaveBeenCalled()
+  })
+  it.each([0, 1, undefined])('機器の自動起動設定値%sだけでは持ち出し確認を許可しない', bootOption => {
+    props.bootOption = bootOption; finishStep()
+    expect(text(render())).not.toContain('自動起動の設定を確認しました')
+    expect(input('maker-standalone').props.disabled).toBe(true)
+    check('maker-standalone')
+    expect(input('maker-standalone').props.checked).toBe(false)
+    expect(text(render())).not.toContain('持ち出し確認のチェックを記録しました')
+    expect(props.onFinish).not.toHaveBeenCalled()
+  })
+  it('自動起動の成功証拠があれば機器情報の消去後も独立した持ち出し確認を許可する', () => {
+    finishStep()
+    props.canConfirmStandalone = true; props.bootOption = undefined; props.bootSupported = false
+    expect(text(render())).toContain('自動起動の設定を確認しました')
+    expect(text(render())).not.toContain('自動起動の設定方法を確認できていません')
+    expect(input('maker-standalone').props.disabled).toBe(false)
+    expect(input('maker-standalone').props.checked).toBe(false)
+    check('maker-standalone')
+    expect(input('maker-standalone').props.checked).toBe(true)
+    expect(text(render())).toContain('提供側の検証証明ではありません')
+    expect(props.onFinish).not.toHaveBeenCalled()
+  })
+  it('持ち出し確認後でも成功証拠が失効したらチェックと完了表示を隠す', () => {
+    finishStep(); props.canConfirmStandalone = true; check('maker-standalone')
+    props.canConfirmStandalone = false
+    expect(input('maker-standalone').props.checked).toBe(false)
+    expect(input('maker-standalone').props.disabled).toBe(true)
+    expect(text(render())).not.toContain('持ち出し確認のチェックを記録しました')
+    expect(text(render())).not.toContain('自動起動の設定を確認しました')
+    props.canConfirmStandalone = true
+    expect(input('maker-standalone').props.checked).toBe(false)
+  })
+  it('名前・保存・ファイル操作は機器を変更しない', async () => {
+    event(input('maker-name'), 'onChange', { target: { value: '魔法の杖' } })
+    expect(props.project.name).toBe('魔法の杖')
+    expect(input('maker-name').props.maxLength).toBe(64)
+    click('作品を保存'); click('作品ファイルを書き出す')
+    const file = new File(['{}'], 'artwork.json', { type: 'application/json' })
+    const target = { files: [file], value: 'artwork.json' }
+    event(find(element => element.type === 'input' && element.props.type === 'file'), 'onChange', { currentTarget: target })
+    expect(props.onImport).toHaveBeenCalledWith(file)
+    expect(target.value).toBe('')
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    expect(props.onExport).toHaveBeenCalledTimes(1)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('動作OK版がない復元は無効にし、保存済みなら確認処理へ委ねる', () => {
+    expect(button('前の動作OK版に戻す').props.disabled).toBe(true)
+    click('前の動作OK版に戻す')
+    expect(props.onRestore).not.toHaveBeenCalled()
+    props.project.working = { snapshot: structuredClone(props.project.draft), confirmedAt: new Date().toISOString() }
+    click('前の動作OK版に戻す')
+    expect(props.onRestore).toHaveBeenCalledTimes(1)
+    props.canUndoReplacement = true
+    click('直前の読み込み・復元を取り消す')
+    expect(props.onUndoReplacement).toHaveBeenCalledTimes(1)
+  })
+  it('未検証候補の開発者用ダウンロードを通常実行と分離する', () => {
+    expect(text(render())).toContain('未検証候補は提供側の実機テスト用')
+    click('未検証候補をダウンロード')
+    expect(props.onDownloadCandidate).toHaveBeenCalledTimes(1)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+})
+
+describe('多言語と案内', () => {
+  it.each((['en', 'zh'] as const).flatMap(locale => [0, 1, 2, 3, 4, 5].map(stage => [locale, stage] as const)))('%sの段階%sでも固定案内を翻訳し、設定値を保持する', (locale, stage) => {
+    if (stage === 1) click('次へ：配線を確認')
+    if (stage === 2) testStep()
+    if (stage === 3) designStep()
+    if (stage === 4) controlsStep()
+    if (stage === 5) finishStep()
+    harness.locale = locale
+    expect(text(render())).not.toMatch(/[ぁ-んァ-ヶ]/u)
+    expect(props.project.draft.settings.firmwareVersion).toBe('test-version')
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('コンポーネントの全日本語文字列が英語・中国語で揃う', () => {
+    const source = ts.createSourceFile('MakerPanel.tsx', panelSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const keys: string[] = []
+    const visit = (node: ts.Node) => { if (ts.isStringLiteral(node) && /[ぁ-んァ-ヶ一-龯]/u.test(node.text)) keys.push(node.text); ts.forEachChild(node, visit) }
+    visit(source)
+    expect(keys.length).toBeGreaterThan(100)
+    for (const key of keys) {
+      expect(makerMessages, key).toHaveProperty(key)
+      for (const locale of ['en', 'zh'] as const) {
+        const value = makerMessages[key][locale]
+        expect(value).not.toMatch(/[ぁ-んァ-ヶ]/u)
+        expect([...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()).toEqual([...key.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort())
+      }
+    }
+  })
+})

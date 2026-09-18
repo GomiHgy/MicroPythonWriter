@@ -14,7 +14,7 @@ const emptyInfo: DeviceInfo = { deviceName: '未接続', microPythonVersion: '�
 interface OperationSnapshot { source: string; sourceKnown: boolean; device: DeviceInfo; workshop: WorkshopContext | null; locale: Locale }
 const readPreference = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const savePreference = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* 保存できない環境でも編集・通信は継続する */ } }
-export function useProgrammer(workshop: WorkshopContext | null = null) {
+export function useProgrammer(workshop: WorkshopContext | null = null, fallbackSource?: string, preferProjectSource = false) {
   const transport = useMemo(() => new WebSerialTransport(), [])
   const initialState: DeviceState = transport.supported ? 'disconnected' : 'unsupported'
   const machine = useRef(new SerialStateMachine(transport.supported))
@@ -33,7 +33,10 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
   const [info, setInfo] = useState<DeviceInfo>(emptyInfo)
   const [log, updateLog] = useState('')
   const [error, setError] = useState<AppError>()
-  const [source, setSource] = useState(() => readPreference('mpw-source') ?? starter)
+  const [source, setSource] = useState(() => preferProjectSource && fallbackSource !== undefined ? fallbackSource : readPreference('mpw-source') ?? fallbackSource ?? starter)
+  const [writtenSource, setWrittenSource] = useState<string | null>(null)
+  const [runningSource, setRunningSource] = useState<string | null>(null)
+  const [bootConfigured, setBootConfigured] = useState<{ source: string | null; mode: 0 | 1 } | null>(null)
   const [baudRate, setBaudRate] = useState(() => Number(readPreference('mpw-baud') ?? 115200))
   const move = (next: DeviceState) => setState(machine.current.move(next))
   const force = (next: DeviceState) => setState(machine.current.force(next))
@@ -62,14 +65,14 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
   useEffect(() => { savePreference('mpw-baud', String(baudRate)) }, [baudRate])
   useEffect(() => {
     const unsubscribe = transport.onData(bytes => appendLog(new TextDecoder().decode(bytes)))
-    const unsubscribeDisconnect = transport.onDisconnectDetected(() => { connectionLost.current = true; runId.current++; programOperation.current = undefined; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; appendLog('\n[USB切断を検出しました。再接続してください。]\n'); force('connection-lost') })
+    const unsubscribeDisconnect = transport.onDisconnectDetected(() => { connectionLost.current = true; runId.current++; programOperation.current = undefined; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; setWrittenSource(null); setRunningSource(null); appendLog('\n[USB切断を検出しました。再接続してください。]\n'); force('connection-lost') })
     return () => { unsubscribe(); unsubscribeDisconnect(); transport.dispose() }
   }, [transport, appendLog])
   const trap = async (stage: string, action: () => Promise<void>, isCurrent = () => true, snapshot: OperationSnapshot | (() => OperationSnapshot) = capture()) => { try { setError(undefined); await action() } catch (caught) { if (!isCurrent()) return; const disconnected = connectionLost.current || caught instanceof SerialDisconnectedError; force(disconnected ? 'connection-lost' : 'error'); showError(disconnected ? 'SERIAL_DISCONNECTED' : stage, caught, typeof snapshot === 'function' ? snapshot() : snapshot) } }
   const normalMode = () => trap('RAW_REPL_SYNC_ERROR', async () => { if (!device.current || programOperation.current !== undefined) return; runId.current++; move('interrupting'); move('entering-raw-repl'); await device.current.enterNormalMode(); activeSnapshot.current = undefined; move('raw-repl-ready'); move('probing'); setDeviceInfo(await device.current.probe.probe()); move('raw-repl-ready') }, undefined, deviceContext())
-  const connect = () => trap('USB接続', async () => { connectionLost.current = false; setDeviceInfo(emptyInfo); move('requesting-port'); move('opening'); await transport.connect(baudRate); device.current = new MicroPythonDevice(transport); move('connected'); await normalMode() }, undefined, { ...capture(false), device: structuredClone(emptyInfo) })
-  const reconnect = async () => { const snapshot = { ...capture(false), device: structuredClone(emptyInfo) }; try { connectionLost.current = false; setDeviceInfo(emptyInfo); setError(undefined); move('reconnecting'); await transport.reconnect(baudRate); device.current = new MicroPythonDevice(transport); move('connected'); await normalMode() } catch (caught) { connectionLost.current = true; device.current = undefined; force('connection-lost'); showError('SERIAL_DISCONNECTED', caught, snapshot) } }
-  const disconnect = async () => { runId.current++; programOperation.current = undefined; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; await transport.disconnect(); connectionLost.current = false; setDeviceInfo(emptyInfo); force('disconnected') }
+  const connect = () => trap('USB接続', async () => { connectionLost.current = false; setBootConfigured(null); setWrittenSource(null); setRunningSource(null); setDeviceInfo(emptyInfo); move('requesting-port'); move('opening'); await transport.connect(baudRate); device.current = new MicroPythonDevice(transport); move('connected'); await normalMode() }, undefined, { ...capture(false), device: structuredClone(emptyInfo) })
+  const reconnect = async () => { const snapshot = { ...capture(false), device: structuredClone(emptyInfo) }; try { connectionLost.current = false; setBootConfigured(null); setDeviceInfo(emptyInfo); setError(undefined); move('reconnecting'); await transport.reconnect(baudRate); device.current = new MicroPythonDevice(transport); move('connected'); await normalMode() } catch (caught) { connectionLost.current = true; device.current = undefined; force('connection-lost'); showError('SERIAL_DISCONNECTED', caught, snapshot) } }
+  const disconnect = async () => { runId.current++; programOperation.current = undefined; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; setWrittenSource(null); setRunningSource(null); await transport.disconnect(); connectionLost.current = false; setDeviceInfo(emptyInfo); force('disconnected') }
   const load = () => {
     const snapshot = capture(false)
     return trap('プログラム読込み', async () => { if (!device.current || programOperation.current !== undefined) return; const next = await device.current.files.readMain(); fileSnapshot.current = { ...snapshot, source: next, sourceKnown: true }; if (source && source !== starter && !confirm(translate(getLocale(), 'ローカルの未保存編集を上書きしますか？'))) return; setSource(next) }, undefined, deviceContext())
@@ -80,6 +83,8 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
     if (!execute && !confirm(translate(getLocale(), '既存のmain.pyをmain.py.bakへ退避して、編集内容で更新します。実行はしません。続ける？'))) return
     const id = ++runId.current
     programOperation.current = id
+    setRunningSource(null)
+    setBootConfigured(null)
     const snapshot = capture()
     let errorSnapshot = ['running', 'running-no-marker'].includes(machine.current.state) ? deviceContext() : snapshot
     const isCurrent = () => id === runId.current && device.current === target && !connectionLost.current
@@ -95,9 +100,11 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
         move('uploading')
         appendLog(`\n===== ${execute ? '実行' : 'プログラム更新'}開始 #${id} ${new Date().toLocaleTimeString()} =====\n`)
         fileSnapshot.current = undefined
+        setWrittenSource(null)
         await target.files.writeMain(snapshot.source)
         if (!isCurrent()) return
         fileSnapshot.current = snapshot
+        setWrittenSource(snapshot.source)
         if (!execute) { move('raw-repl-ready'); return }
         move('verifying')
         await target.validateMain()
@@ -106,6 +113,7 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
         activeSnapshot.current = snapshot
         const started = await target.startMain({ onComplete: result => handleCompletion(id, result, snapshot) })
         if (!isCurrent() || started.state === 'completed') return
+        setRunningSource(snapshot.source)
         force(started.confirmedBy === 'still-running' ? 'running-no-marker' : 'running')
       }, isCurrent, () => errorSnapshot)
     } finally {
@@ -128,9 +136,9 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
       else { await target.repl.interrupt(); if (isCurrent()) { activeSnapshot.current = undefined; force('stopped') } }
     }, isCurrent, snapshot)
   }
-  const finishReset = async () => { await transport.disconnect(); connectionLost.current = false; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; setDeviceInfo(emptyInfo); force('disconnected') }
-  const setBoot = (mode: 0 | 1) => trap('起動モード設定', async () => { if (!device.current || programOperation.current !== undefined) return; const text = mode === 0 ? '動作OKとして自動起動モードに変更し、リセットします。実機動作を確認済み？' : '次回起動を永続プログラムモードに変更します。続ける？'; if (!confirm(translate(getLocale(), text))) return; await device.current.prepareForWrite(); move('setting-boot-mode'); await device.current.boot.set(mode, info); setDeviceInfo({ ...infoRef.current, bootOption: mode }); move('resetting'); await device.current.boot.reset(); await finishReset() }, undefined, deviceContext())
-  const reset = () => trap('ハードリセット', async () => { if (!device.current || programOperation.current !== undefined || !confirm(translate(getLocale(), 'MicroPython機器をリセットします。続ける？'))) return; await device.current.prepareForWrite(); move('resetting'); await device.current.boot.reset(); await finishReset() }, undefined, deviceContext())
+  const finishReset = async () => { await transport.disconnect(); connectionLost.current = false; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; setWrittenSource(null); setRunningSource(null); setDeviceInfo(emptyInfo); force('disconnected') }
+  const setBoot = (mode: 0 | 1) => trap('起動モード設定', async () => { if (!device.current || programOperation.current !== undefined) return; setBootConfigured(null); const bootSource = fileSnapshot.current?.source ?? null; const text = mode === 0 ? '動作OKとして自動起動モードに変更し、リセットします。実機動作を確認済み？' : '次回起動を永続プログラムモードに変更します。続ける？'; if (!confirm(translate(getLocale(), text))) return; await device.current.prepareForWrite(); move('setting-boot-mode'); await device.current.boot.set(mode, info); setDeviceInfo({ ...infoRef.current, bootOption: mode }); move('resetting'); await device.current.boot.reset(); await finishReset(); setBootConfigured({ source: bootSource, mode }) }, undefined, deviceContext())
+  const reset = () => trap('ハードリセット', async () => { if (!device.current || programOperation.current !== undefined || !confirm(translate(getLocale(), 'MicroPython機器をリセットします。続ける？'))) return; setBootConfigured(null); await device.current.prepareForWrite(); move('resetting'); await device.current.boot.reset(); await finishReset() }, undefined, deviceContext())
   const locale = getLocale()
   const localizedError = useMemo(() => {
     const saved = errorContext
@@ -138,5 +146,5 @@ export function useProgrammer(workshop: WorkshopContext | null = null) {
     const { snapshot, terminalLog } = saved
     return { ...error, repairPrompt: prompt.build(error, snapshot.source, snapshot.device, terminalLog, error.stage, snapshot.workshop, { sourceKnown: snapshot.sourceKnown, locale }) }
   }, [error, errorContext, locale, prompt])
-  return { supported: transport.supported, state, info, log, setLog, error: localizedError, source, setSource, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
+  return { supported: transport.supported, state, info, log, setLog, error: localizedError, source, setSource, writtenSource, runningSource, bootConfigured, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
 }

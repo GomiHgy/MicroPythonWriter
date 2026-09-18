@@ -2,6 +2,13 @@ import type { MessageCatalog } from './types'
 
 /** 日本語をキーにして、機器名や通信コマンドそのものは翻訳しない。 */
 export const bluetoothMessages: MessageCatalog = {
+  '設定も表示する': { en: 'Show setup too', zh: '同时显示设置' },
+  '作品を使う画面にする': { en: 'Switch to project controls', zh: '切换到作品操作画面' },
+  '作品のボタン名とアイコンを変える': { en: 'Customize button names and icons', zh: '自定义按钮名称和图标' },
+  '表示名だけをこの作品に保存します。機器のプログラムや通信コマンドは変えません。接続先が報告した操作だけが使えます。': { en: 'Save display names in this project only. Device code and commands do not change. Only operations reported by the connected device are available.', zh: '仅在此作品中保存显示名称，不更改设备程序或通信命令。只能使用所连接设备报告的操作。' },
+  '表示名': { en: 'Display name', zh: '显示名称' },
+  'アイコン': { en: 'Icon', zh: '图标' },
+  'このボタン名を保存': { en: 'Save this button name', zh: '保存此按钮名称' },
   '接続非対応': { en: 'Bluetooth unavailable', zh: '不支持连接' },
   '接続中': { en: 'Connecting', zh: '正在连接' },
   '状態待ち': { en: 'Waiting for status', zh: '等待状态' },

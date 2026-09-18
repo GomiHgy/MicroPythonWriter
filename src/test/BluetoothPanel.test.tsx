@@ -1,11 +1,14 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BluetoothPanel } from '../components/BluetoothPanel'
+import { RemoteButtonEditor } from '../components/RemoteButtonEditor'
+import type { RemoteButton } from '../services/projects/types'
 import type { BluetoothSnapshot } from '../services/bluetooth/BluetoothController'
 import type { LedStatus } from '../services/bluetooth/protocol'
 import { bluetoothMessages } from '../i18n/bluetoothMessages'
 import type { Locale } from '../i18n/types'
 import panelSource from '../components/BluetoothPanel.tsx?raw'
+import editorSource from '../components/RemoteButtonEditor.tsx?raw'
 import controllerSource from '../services/bluetooth/BluetoothController.ts?raw'
 import protocolSource from '../services/bluetooth/protocol.ts?raw'
 import ts from 'typescript'
@@ -79,8 +82,8 @@ function renderInScope(name: string, render: () => ReactNode): ReactNode {
   return node
 }
 
-function panel(onOpenProgram = vi.fn(), onOpenPreparation = vi.fn()): ReactNode {
-  return renderInScope('panel', () => BluetoothPanel({ onOpenProgram, onOpenPreparation }))
+function panel(onOpenProgram = vi.fn(), onOpenPreparation = vi.fn(), preferences: Pick<Parameters<typeof BluetoothPanel>[0], 'remoteButtons' | 'projectName' | 'onRemoteButtonsChange'> = {}): ReactNode {
+  return renderInScope('panel', () => BluetoothPanel({ onOpenProgram, onOpenPreparation, ...preferences }))
 }
 
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
@@ -618,6 +621,108 @@ describe('作品専用の無線リモコン v2', () => {
   })
 })
 
+describe('保存した作品のリモコン表示', () => {
+  const saved: RemoteButton[] = [
+    { kind: 'mode', id: 'CALM', label: '星空の待機', icon: 'heart' },
+    { kind: 'action', id: 'SPARK', label: '変身', icon: 'rainbow' },
+    { kind: 'mode', id: 'UNKNOWN', label: '未対応の光', icon: 'star' },
+    { kind: 'action', id: 'CALM', label: '同じIDの別操作', icon: 'star' },
+  ]
+  const configured = (onRemoteButtonsChange = vi.fn()) => panel(undefined, undefined, { remoteButtons: saved, projectName: '魔法の杖', onRemoteButtonsChange })
+
+  it('v2が報告した操作だけに保存名・アイコンを表示し、未知の操作を作らない', () => {
+    modern()
+    const view = configured()
+    expect(content(view)).toContain('魔法の杖')
+    expect(content(button(view, '星空の待機'))).toContain('♥')
+    expect(content(button(view, '変身'))).toContain('🌈')
+    expect(content(view)).not.toContain('未対応の光')
+    expect(content(view)).not.toContain('同じIDの別操作')
+    expect(all(view, element => element.type === RemoteButtonEditor)).toHaveLength(3)
+    expect(button(view, 'にじいろ散歩')).toBeDefined()
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it.each([['星空の待機', 'MODE CALM'], ['変身', 'ACTION SPARK']] as const)('表示名%sでも保存名ではなく受信したIDで送信する', (label, command) => {
+    modern()
+    event(button(configured(), label), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith(command)
+  })
+
+  it('ボタン名保存は対応項目だけを置換し、他の設定を保持して通信しない', () => {
+    modern()
+    const save = vi.fn()
+    const editor = find(configured(save), element => element.type === RemoteButtonEditor && (element.props.value as RemoteButton).kind === 'mode' && (element.props.value as RemoteButton).id === 'CALM')
+    event(editor, 'onSave', { kind: 'mode', id: 'CALM', label: 'おやすみ', icon: 'star' })
+    expect(save).toHaveBeenCalledWith([
+      ...saved.filter(item => item.kind !== 'mode' || item.id !== 'CALM'),
+      { kind: 'mode', id: 'CALM', label: 'おやすみ', icon: 'star' },
+    ])
+    expect(saved[0].label).toBe('星空の待機')
+    expect(harness.send).not.toHaveBeenCalled()
+    expect(harness.connect).not.toHaveBeenCalled()
+    expect(harness.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('受信カタログが変わると古い保存名のボタンも編集欄も表示しない', () => {
+    modern(); configured()
+    modern({ mode: 'REST', controls: { speed: false, modes: [{ id: 'REST', label: '新しい待機' }], actions: [] } })
+    const view = configured()
+    expect(button(view, '新しい待機')).toBeDefined()
+    expect(content(view)).not.toContain('星空の待機')
+    expect(content(view)).not.toContain('変身')
+    expect(all(view, element => element.type === RemoteButtonEditor)).toHaveLength(1)
+  })
+
+  it('旧仕様では保存名で標準4モードを置き換えず、表示編集も出さない', () => {
+    connected()
+    const view = panel(undefined, undefined, { projectName: '魔法の杖', remoteButtons: [{ kind: 'mode', id: 'PINK', label: '保存した名前', icon: 'heart' }], onRemoteButtonsChange: vi.fn() })
+    expect(button(view, 'ピンク')).toBeDefined()
+    expect(content(view)).not.toContain('保存した名前')
+    expect(all(view, element => element.type === RemoteButtonEditor)).toHaveLength(0)
+    expect(all(view, element => element.props.className === 'remote-view-toggle')).toHaveLength(0)
+    event(button(view, 'ピンク'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('PINK')
+  })
+
+  it('使う画面への切り替えは通信せず、切断時は案内を隠すクラスを外す', () => {
+    modern()
+    event(button(configured(), '作品を使う画面にする'), 'onClick')
+    expect(find(configured(), element => String(element.props.className).split(' ').includes('bluetooth-panel')).props.className).toBe('bluetooth-panel using-view')
+    expect(button(configured(), '設定も表示する').props['aria-pressed']).toBe(true)
+    expect(harness.send).not.toHaveBeenCalled()
+    expect(harness.disconnect).not.toHaveBeenCalled()
+    harness.snapshot = { phase: 'disconnected', deviceName: null, connectedAt: null, receivedAt: null, status: null, error: null, sending: false }
+    const view = configured()
+    expect(find(view, element => String(element.props.className).split(' ').includes('bluetooth-panel')).props.className).toBe('bluetooth-panel')
+    expect(content(view)).toContain('対応プログラムの準備')
+    expect(button(view, 'AIの準備へ')).toBeDefined()
+    expect(button(view, 'Bluetoothでつなぐ').props.disabled).toBe(false)
+    expect(content(view)).not.toContain('星空の待機')
+  })
+
+  it('使う画面でも通信が途絶えると保存名の操作を無効にし、再受信と消灯を残す', () => {
+    modern({ playback: 'paused' })
+    event(button(configured(), '作品を使う画面にする'), 'onClick')
+    vi.advanceTimersByTime(6000)
+    const view = configured()
+    for (const label of ['星空の待機', '変身', '再生', '停止']) expect(button(view, label).props.disabled, label).toBe(true)
+    expect(content(view)).toContain('更新停止')
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    expect(button(view, '状態をもう一度受け取る').props.disabled).toBe(false)
+  })
+
+  it.each(['en', 'zh'] as const)('%sでも作品名・保存したボタン名と送信IDを翻訳しない', locale => {
+    modern(); harness.locale = locale
+    const view = configured()
+    expect(content(view)).toContain('魔法の杖')
+    expect(button(view, '星空の待機')).toBeDefined()
+    event(button(view, '変身'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('ACTION SPARK')
+    expect(harness.instances).toBe(1)
+  })
+})
+
 describe('スライダーと追加コマンド', () => {
   it.each(['disconnected', 'connected'] as const)('%sでも状態未受信ならスライダー初期値を機器の設定と表示しない', phase => {
     harness.snapshot = { ...harness.snapshot, phase }
@@ -769,7 +874,7 @@ describe('Bluetooth画面の言語切り替え', () => {
   })
 
   it('画面と通信サービスの全日本語メッセージに英語・簡体字中国語が揃い、置換項目も一致する', () => {
-    const sources = [['BluetoothPanel.tsx', panelSource], ['BluetoothController.ts', controllerSource], ['protocol.ts', protocolSource]]
+    const sources = [['BluetoothPanel.tsx', panelSource], ['RemoteButtonEditor.tsx', editorSource], ['BluetoothController.ts', controllerSource], ['protocol.ts', protocolSource]]
     const keys: string[] = []
     for (const [path, text] of sources) {
       const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)

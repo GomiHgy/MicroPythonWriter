@@ -3,6 +3,7 @@ import { useWorkshopPreparation } from '../hooks/useWorkshopPreparation'
 import { workshopPresets } from '../config/workshops'
 import { setLocale } from '../i18n'
 import { ledSettingsKey } from '../services/workshop/LedSettings'
+import { createProject } from '../services/projects/ProjectStorage'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }))
 vi.mock('react', () => ({
@@ -37,6 +38,62 @@ beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubG
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('AI準備用hookは講師設定だけを扱う', () => {
+  it('作品設定の引き継ぎは機種・LED値を採用しても基準コードの確認情報を流用しない', () => {
+    verifyBaseline(); render().applyDraft()
+    const previousCode = render().selectedProfile!.baseline.code
+    const project = createProject()
+    project.draft.source = 'print("作品のコードは別の場所に保持")'
+    project.draft.settings.firmwareVersion = '2.3.7'
+    project.draft.settings.ledCount = 22
+    project.draft.settings.ledPin = 3
+    const before = structuredClone(project)
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    render().adoptProjectSettings(project.draft.settings, true)
+    expect(render().selectedId).toBe(workshopPresets[0].id)
+    expect(render().selectedProfile).toMatchObject({ ...project.draft.settings, features: { button: true, ble: true, controller: true }, baseline: { code: previousCode, verification: null } })
+    expect(render().draft?.baseline.verification).toBeNull()
+    expect(render().context?.bleEnabled).toBe(false)
+    expect(render().notice).toContain('実機確認情報は引き継いでいません')
+    expect(project).toEqual(before)
+    expect(fetch).not.toHaveBeenCalled()
+    const saved = vi.mocked(localStorage.setItem).mock.calls[0]
+    expect(saved[0]).toBe(ledSettingsKey(workshopPresets[0]))
+    expect(JSON.parse(saved[1]).verificationInvalidated).toBe(true)
+    expect(saved[1]).not.toContain(project.draft.source)
+    expect(saved[1]).not.toContain(previousCode)
+  })
+
+  it('作品の機種がAtomS3Liteなら対応プロフィールを選びNanoC6の基準コードを混ぜない', () => {
+    verifyBaseline(); render().applyDraft()
+    const settings = { ...createProject().draft.settings, boardId: 'atoms3lite' as const, firmwareVersion: '2.3.7', ledPin: 8 }
+    render().adoptProjectSettings(settings, false)
+    expect(render().selectedId).toBe(workshopPresets[1].id)
+    expect(render().selectedProfile).toMatchObject({ ...settings, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } })
+    expect(render().prompt).toContain('GPIO41')
+    expect(render().prompt).toContain('GPIO35')
+    expect(render().prompt).not.toContain('test baseline')
+  })
+
+  it('作品設定の引き継ぎは古い非同期基準コード読み込みを失効する', async () => {
+    prepare()
+    let resolve!: (value: string) => void
+    const pending = render().importBaseline({ name: 'old.py', size: 10, text: () => new Promise(done => { resolve = done }) })
+    render().adoptProjectSettings({ ...createProject().draft.settings, firmwareVersion: '2.3.7' }, false)
+    expect(render().isImporting).toBe(false)
+    resolve('old asynchronous baseline'); await pending
+    expect(render().draft?.baseline.code).not.toContain('old asynchronous')
+    expect(render().selectedProfile?.firmwareVersion).toBe('2.3.7')
+  })
+
+  it('未入力版の引き継ぎは準備文を出さず、保存失敗を成功として表示しない', () => {
+    vi.mocked(localStorage.setItem).mockImplementation(() => { throw Error('quota') })
+    render().adoptProjectSettings(createProject().draft.settings, false)
+    expect(render().selectedProfile?.firmwareVersion).toBeNull()
+    expect(render().prompt).toBe('')
+    expect(render().notice).toContain('保存できません')
+    expect(render().draft?.baseline.verification).toBeNull()
+  })
+
   it('v2を明示確認して適用した場合だけv2準備文を生成し、コード変更で失効する', () => {
     verifyBaseline()
     render().applyDraft()

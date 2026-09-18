@@ -1,0 +1,64 @@
+# 入門プログラム：提供側の実機受入
+
+## 現在の配布状態
+
+`firmware/starter/runtime.py` と `StarterProgram.ts` は、提供側が検証するための候補実装。**M5NanoC6 / AtomS3Lite と対象UIFlow2の組合せで、実機受入を完了したプログラムはまだない。** `providerVerifiedStarters` は空のため、現時点の `starterAvailability()` は常に `verified: false` を返す。利用者の「動作OK版」保存・AI基準コード登録を、提供側の受入証明として使わない。
+
+将来の提供側記録は、リポジトリ内の `ProviderStarterVerification`（受入した生成コード全文 `source`、ISO日時 `confirmedAt`、担当者 `confirmedBy`、証拠の所在 `evidencePath`）としてレビューする。生成コードとの全文一致・記録項目の存在を照合するため、設定・演出・ランタイムの変更も未確認へ戻る。作品JSONやブラウザ保存からこの表を追加・変更しない。照合ロジックがあることと、実在する受入済み記録があることは別である。
+
+候補の生成・ダウンロードはソフトウェア上の操作であり、機器へ自動実行・書込みしない。未確認候補を一般利用者に「まず動く」「確認済み」と表示しない。入門ボタンの通常利用を解禁するには、この受入を提供側が完了し、証拠と一致する対応表を別途コードレビューして追加する必要がある。
+
+## 候補の範囲
+
+- 外付けRGB LED 1〜300個、GRB、BPP 3、`machine.bitstream()` と固定 `(400, 850, 800, 450)` ns。送信後80µsリセット。NeoPixel追加ライブラリは使用しない。
+- GPIOは利用者設定。NanoC6ボタン9 / AtomS3Liteボタン41を使い分け、既知の内蔵LED・ボタンとの衝突を拒否。数値範囲内でも出力可能・外部端子に出ている・他用途と衝突しないことは保証しない。
+- 起動時は消灯。短押しで選択・切替、押している間、長押し消灯。チャタリング40ms、長押し800ms。長押し後に短押しを重ねない。
+- 単色・虹色・流れる光・きらめき。速度、0=無限の繰返し、有限回の終了時に保持/消灯。全出力に設定輝度上限を適用し、消灯→点灯には200ms以上の非ブロッキングフェード。
+- 無線有効時だけ標準 `bluetooth.BLE` を開始。NanoLED v2、選択したモード、組込み1回アクション `SPARKLE`（約1秒）を提供。アクション後は元のモード位相・再生状態へ戻る。
+- BLE RX有界8チャンク、行128バイト、実コマンドLF込み20バイトまで。過大/不正行・キュー超過は破棄。TXは20バイトずつ、送信中行は固定、待機は最新1件、最大5件/秒、周期約1秒。Notify失敗は3回までで接続を終了。初回STATUSを受けるまで通知しない。
+- `STATUS` / `PLAY` / `PAUSE` / `OFF` / `MODE <id>` / `ACTION SPARKLE` / `BRIGHTNESS n` / `SPEED n`。停止は保持、消灯は黒。送信済みRGBを報告し、物理発光を計測した値とは扱わない。
+
+UIFlow2の各リリース・各ボードでAPI搭載や挙動が同じとは推定しない。特に、LEDタイミング、リセット時間、Bluetoothとbitstreamの同時負荷、Pythonメモリ・JSON Unicode符号化は実機で確認する。対応範囲の最大カタログでJSONが4096バイトを超えた場合もフェイルクローズで終了し、短縮して誤った状態を送らない。
+
+## API確認の一次資料
+
+調査日: 2026-09-19。以下はAPI形状の確認であって対象ファームウェアの実機証明ではない。候補は外部ライブラリのコードをコピーせず、直接低レベルAPIを使用する。
+
+- [MicroPython Bluetooth API](https://docs.micropython.org/en/latest/library/bluetooth.html): IRQ番号、NUSサービスの登録、応答ありWrite、Notify、append RX、広告API。latest資料は開発版であることに注意。
+- [M5StackのBLE UARTサーバー実装](https://github.com/m5stack/uiflow-micropython/blob/master/m5stack/libs/bleuart/bleuart_server.py): 同じ `bluetooth.BLE` / GATT API とIRQが公式UIFlowリポジトリで使用されることを確認。masterを特定リリースの保証に流用しない。
+- [MicroPython machine.bitstream](https://docs.micropython.org/en/v1.25.0/library/machine.html#machine.bitstream): encodingとナノ秒タイミングタプル。
+- [NanoC6公式PinMap](https://docs.m5stack.com/en/core/M5NanoC6)、[AtomS3 Lite公式PinMap](https://docs.m5stack.com/en/core/AtomS3%20Lite): 基板・端子・電源を現物と照合する。
+- [NanoLED v2アプリ通信仕様](ble-protocol.md): UUID、状態通知、再接続、アクション復帰の正本。
+
+## 実機確認表（提供側が記入）
+
+現時点はすべて **NOT RUN**。未記入をPASSへ変換しない。
+
+| 記録項目 | 必要な内容 |
+| --- | --- |
+| 機器 | `m5nanoc6` または `atoms3lite`、製品リビジョン、検証個体 |
+| ファームウェア | UIFlow2の完全な版名、配布URL、ファイルSHA-256、機器の `sys.implementation` / `os.uname()` |
+| プログラム | 生成した `main.py` のSHA-256、候補ランタイムのコミット、設定・レシピJSON |
+| LED | 正確な型番・RGBであること、個数、DATA GPIO、色順、電源容量、供給方法・配線写真 |
+| 出力条件 | 最大輝度、電流・温度の安全確認、bitstream波形・リセット時間 |
+| 操作環境 | OS/ブラウザ/版、USB実行と電源単独起動、BLE接続端末 |
+| 受入証拠 | 日付、担当者、各項目のPASS/FAIL/NOT RUN、ログ・写真・動画・計測結果 |
+
+機種・ファームウェア・LED型番/個数/GPIO/上限輝度・プログラムを変えたら確認範囲を再評価する。他機種や別UIFlow2版へ丸ごとPASSを流用しない。WS2812B/WS2812B-MINI/WS2812C-2020/SK6812/SK6812MINIを一括して確認済み扱いしない。
+
+## 受入手順
+
+1. 提供側が配線・電源・LEDのRGB仕様を確認し、記録表を埋める。低い輝度・少数LEDから始める。GPIO設定だけで電源容量の安全を保証しない。
+2. 正確なUIFlow2版に対し、まず無線なし候補をUSB実行。起動消灯、全LEDの赤/緑/青と順序、安全上限、40ms未満の接点揺れ、短押し、800ms長押し後の解放を確認。
+3. 押している間のレシピで押下開始・200ms以上の点灯フェード・解放消灯を確認。フェード中に停止/消灯しても応答し、点灯中の色切替でフェードをやり直さないことを確認。
+4. 4種類の演出で速度0/50/100、有限回の保持/消灯、無限繰返し、再生停止後の位相維持、明るさ0/50/100を確認。連続使用時の電流・発熱も確認。
+5. 無線あり候補へ変更し、[v2実機受入](ble-protocol.md#v2実機受入未実施はnot-run)を全項目確認。SPARKLE後のplaying/paused/off復帰、連打不蓄積、PLAY/PAUSE/MODE/OFFによる中断を含む。
+6. 日本語・中国語・絵文字ラベル、最大8モード・最大300LEDの20バイト分割通知、連続書込み、行/キュー超過、通知停止、抜線・電源断、再接続、USB再実行後の復帰を確認。途中行が別接続へ混ざらないことを確認。
+7. USBの永続更新は別操作として実施し、電源単独で電源再投入。PC・スマホを接続しない本体ボタン動作も確認。「プログラム起動」と「作品が正しく動く」を別々に記録。
+8. FAILを修正して再試験。全必須項目と証拠が揃ってから、レビュー付きで検証済み対応表/配布物/ハッシュ照合を実装する。現段階の空レジストリや `verified: false` を利用者が切り替える手段は用意しない。
+
+## 自動テストの範囲
+
+`src/test/starterProgram.test.ts` は設定境界、ピン差、Python文字列埋込み、未確認ゲートを確認する。CPythonが見つかる環境では `firmware/starter/test_runtime.py` も実行し、GPIO/BLE/時刻を模擬した状態機械を検査する。CPythonがない環境では当該2件はSKIPで、実機確認済みにしない。
+
+手動ホスト確認: `python -B firmware/starter/test_runtime.py`。WindowsでPATHにPythonがない場合、既存のPythonの絶対パスを使用できる。これらのPASSはUIFlow2のAPI互換、電気的安全、LED波形、実発光、実BLE通信のPASSではない。
