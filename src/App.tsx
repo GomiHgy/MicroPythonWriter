@@ -132,5 +132,12 @@ export default function App() {
     <div id="panel-controller" role="tabpanel" aria-labelledby="tab-controller" hidden={activeTab !== 'controller'}>
       <BluetoothPanel onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} />
     </div>
+    <footer className="app-version" aria-label={t('アプリのバージョン情報')}>
+      <span>MicroPython Writer · {t('バージョン')} <code>{__APP_BUILD__.revision ?? t('取得できませんでした')}</code></span>
+      {__APP_BUILD__.dirty === true && <span>{t('未コミットの変更あり')}</span>}
+      {__APP_BUILD__.revision !== null && __APP_BUILD__.dirty === null && <span>{t('変更状態は未確認')}</span>}
+      {import.meta.env.DEV && <span>{t('開発版')}</span>}
+      <span>{t('生成日時')} <time dateTime={__APP_BUILD__.builtAt}>{__APP_BUILD__.builtAt.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')}</time></span>
+    </footer>
   </main>
 }

@@ -1,6 +1,13 @@
 import type { MessageCatalog } from './types'
 
 export const appMessages: MessageCatalog = {
+  'アプリのバージョン情報': { en: 'App version information', zh: '应用版本信息' },
+  'バージョン': { en: 'Version', zh: '版本' },
+  '取得できませんでした': { en: 'Unavailable', zh: '无法获取' },
+  '未コミットの変更あり': { en: 'Uncommitted changes', zh: '存在未提交的更改' },
+  '変更状態は未確認': { en: 'Change status unknown', zh: '更改状态未知' },
+  '開発版': { en: 'Development', zh: '开发版' },
+  '生成日時': { en: 'Generated', zh: '生成时间' },
   "AIとフルカラーLED電飾をはじめよう": {
     "en": "Start full-color LED lighting with AI",
     "zh": "和 AI 一起玩转全彩 LED 灯饰"

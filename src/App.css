@@ -155,3 +155,5 @@ footer { margin-top: 12px; padding: 13px 16px; color: #61758a; font-size: .84rem
   .editor, .cm-editor { min-height: 400px; height: 400px; }
   .terminal { height: 230px; }
 }
+:root .app-version { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 16px 8px; font-size: .75rem; line-height: 1.7; overflow-wrap: anywhere; }
+.app-version code { font-size: inherit; }

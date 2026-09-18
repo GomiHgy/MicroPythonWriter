@@ -5,7 +5,7 @@ import { CodeEditor } from '../components/CodeEditor'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import type { AppError } from '../types'
-import { setLocale } from '../i18n'
+import { setLocale, translate } from '../i18n'
 
 type Element = ReactElement<Record<string, unknown>>
 
@@ -57,6 +57,21 @@ function find(node: ReactNode, predicate: (element: Element) => boolean): Elemen
 }
 
 function byId(node: ReactNode, id: string) { return find(node, element => element.props.id === id) }
+
+it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョン欄を表示する', (tab, locale) => {
+  setLocale(locale)
+  let view = render()
+  event(byId(view, `tab-${tab}`), 'onClick')
+  view = render()
+  const footer = find(view, element => element.props.className === 'app-version')
+  expect(footer.type).toBe('footer')
+  expect(footer.props['aria-label']).toBe(translate(locale, 'アプリのバージョン情報'))
+  expect(find(footer, element => element.type === 'code').props.children).toBe(__APP_BUILD__.revision ?? translate(locale, '取得できませんでした'))
+  for (const panel of all(view, element => element.props.role === 'tabpanel')) {
+    expect(all(panel, element => element.props.className === 'app-version')).toHaveLength(0)
+  }
+  expect(find(footer, element => element.type === 'time').props.dateTime).toBe(__APP_BUILD__.builtAt)
+})
 
 function event(element: Element, name: string, value?: unknown) {
   const handler = element.props[name]
