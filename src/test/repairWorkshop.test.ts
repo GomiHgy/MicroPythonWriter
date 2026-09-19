@@ -88,6 +88,29 @@ describe('ワークショップ修正依頼', () => {
     expect(hasSensitiveAssignments(repair)).toBe(true)
   })
 
+  it.each(['ja', 'en', 'zh'] as const)('%s の修正依頼は同梱候補を参考と明記し、失敗したコードと未確認状態を維持する', locale => {
+    const input = profile()
+    input.displayName = 'Test material'
+    input.features = { button: false, ble: true, controller: true }
+    input.baseline = { code: 'stale-private-baseline', verification: null }
+    const context = createWorkshopContext(input)
+    const before = structuredClone(context)
+    const candidate = context.controllerStarter!.source
+    input.ledCount = 100
+    input.baseline.code = 'edited-after-failure'
+    const actualSource = 'print("captured-failing-source")'
+    const log = 'captured-operation-log'
+    const repair = builder.build(error, actualSource, device, log, 'DEVICE_RUNTIME_ERROR', context, { locale })
+    for (const text of [candidate, actualSource, log, error.traceback, 'LED_COUNT: 37', '"v":2']) expect(repair).toContain(text)
+    expect(repair).not.toContain('stale-private-baseline')
+    expect(repair).not.toContain('edited-after-failure')
+    expect(repair).not.toContain('LED_COUNT: 100')
+    expect(repair).toContain(locale === 'ja' ? '実行されたコードの証拠ではない' : locale === 'en' ? 'not evidence of what ran' : '不代表设备实际运行了它')
+    expect(repair).toContain(locale === 'ja' ? '実機未確認の試用コード' : locale === 'en' ? 'unverified trial' : '未实机验证的试用代码')
+    if (locale !== 'ja') expect(repair.replace(candidate, '')).not.toMatch(/[\u3040-\u30ff]/u)
+    expect(context).toEqual(before)
+  })
+
   it('選択した教材が不正でも黙って汎用版へ変えず、未登録コードを含めない', () => {
     const input = profile()
     input.ledCount = null

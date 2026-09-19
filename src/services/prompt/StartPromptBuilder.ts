@@ -1,6 +1,24 @@
 import type { WorkshopContext } from './WorkshopRules'
 import { boardDefinitions } from '../../config/boards'
 
+function controllerQuestions(context: WorkshopContext): string {
+  if (!context.controllerEnabled) return ''
+  const v2 = context.bleSource === 'bundled-candidate' || context.profile.baseline.verification?.nanoLedV2 === true
+  const button = context.profile.features.button
+  if (context.locale === 'en') return `
+- Include a question about how to control the lighting, not only button gestures. Offer ${button ? '"Onboard button / Web remote / Both / Choose for me"' : '"Mainly the Web remote / Light automatically on power-up and adjust with the Web remote / Choose for me"'}. ${button ? 'If both are chosen, share the same effects across button and remote controls.' : 'The onboard button is disabled: do not offer button operations or a Both option.'}
+- Also ask which remote operations they want, using plain choices: ${v2 ? '"See reported LED state / Adjust brightness / Play, pause and turn lights off / Named lighting modes and one-shot action buttons / Choose for me"' : '"See reported LED state / Adjust brightness / Switch lighting modes and turn lights off / Adjust speed / Choose for me"'}. Multiple choices are allowed. ${v2 ? 'Ask for friendly effect/action names, not protocol IDs; keep pause (hold the current frame) distinct from lights off.' : 'This registered v1 program does not support playback pause/resume, named v2 catalogs or one-shot actions. Do not offer them or automatically upgrade to v2.'}
+- Count these within the maximum 6 questions, one question per reply; skip anything already answered. Do not ask for UUIDs or APIs. After code is ready: prepare it in Program, explicitly Run on the device, then open Controller, connect and check its reported state against the actual LEDs.`
+  if (context.locale === 'zh') return `
+- 必须询问希望怎样操作灯光，不能只询问按钮手势。选项为${button ? '“机身按钮 / 网页遥控器 / 两者都用 / 帮我决定”' : '“主要用网页遥控器 / 通电自动亮起并用网页遥控器调整 / 帮我决定”'}。${button ? '两者都用时，按钮和遥控器共用相同效果。' : '机身按钮已禁用，不提供按钮操作或“两者都用”选项。'}
+- 还要用简单选项询问想用哪些遥控功能：${v2 ? '“查看设备上报的 LED 状态 / 调整亮度 / 播放、暂停和熄灭 / 有名称的灯光模式及一次性动作按钮 / 帮我决定”' : '“查看设备上报的 LED 状态 / 调整亮度 / 切换灯光模式及熄灭 / 调整速度 / 帮我决定”'}，允许多选。${v2 ? '询问易懂的效果或动作名称，不询问协议 ID；区分暂停（保留当前画面）和熄灭。' : '此已登记的 v1 程序不支持暂停/继续播放、v2 名称列表或一次性动作，不能提供这些选项或自动升级到 v2。'}
+- 这些问题计入最多 6 题，每次回复只问一题，已回答的内容不再问。不询问 UUID 或 API。代码准备好后，指引用户在“程序”中准备代码、明确点击“运行”，再打开“控制器”连接设备，将上报状态与实物 LED 比较。`
+  return `
+- 本体ボタンの押し方だけで相談を進めず、操作方法を聞く質問を必ず含める。選択肢は${button ? '「本体ボタン / Webリモコン / 両方 / おまかせ」' : '「Webリモコン中心 / 電源を入れたら自動で光り、Webリモコンで調整 / おまかせ」'}。${button ? '両方を選んだ場合は、ボタンとリモコンで同じ演出を共有する。' : '本体ボタンは無効なので、ボタン操作や「両方」の選択肢を出さない。'}
+- 希望するリモコン操作も、${v2 ? '「機器から届いたLEDの状態を見る / 明るさを変える / 再生・一時停止・消灯 / 名前付きの光り方・一回限りのアクションボタン / おまかせ」' : '「機器から届いたLEDの状態を見る / 明るさを変える / 光り方の切り替え・消灯 / 速さを変える / おまかせ」'}の分かりやすい選択肢で質問する（複数選択可）。${v2 ? '演出やアクションは分かりやすい名前で聞き、通信IDを質問しない。一時停止（現在の光を保持）と消灯を区別する。' : '登録済みv1は再生の一時停止・再開、v2の名前付きカタログ、一回限りのアクションには非対応。それらを選択肢にせず、v2へ自動更新しない。'}
+- この質問も最大6問の中に含め、一度に1問だけ聞き、回答済みの内容は省く。UUIDやAPIは質問しない。完成後は「プログラム」にコードを準備→利用者が「実行」→「コントローラ」で接続→機器から届く状態と実物のLEDを確認、の順で案内する。`
+}
+
 export function buildStartPrompt(context: WorkshopContext): string {
   if (context.errors.length) return ''
   const buttonPin = boardDefinitions[context.profile.boardId].buttonPin
@@ -14,6 +32,7 @@ ${context.rules}
 - In your first reply, briefly confirm the device "${boardDefinitions[context.profile.boardId].name}" and its LED settings. Do not output code yet; immediately ask exactly one first question, rather than only saying you are ready.
 - Ask one question at a time, with 3–5 beginner-friendly choices including "Choose for me". Ask at most 6 necessary questions and do not repeat answered questions.
 - Do not ask users for GPIOs, UUIDs, RGB values, firmware versions or the fixed 200ms fade. Do not offer unavailable features.
+${controllerQuestions(context)}
 - Turn wishes such as "cute" or "magical" into color, lighting pattern, direction, speed, trigger, repetition, ending state and mood. Use fixed defaults for unimportant omissions and briefly explain adopted defaults.
 - After questions, summarize startup behavior, enabled button/BLE actions, colors, patterns, speed, repetition, ending state, mood and defaults in English, and ask for confirmation.
 - Normally wait for confirmation such as "Build this" before producing complete code. If the user already gives sufficient specifications and clearly asks for code, skip unnecessary questions.
@@ -34,6 +53,7 @@ ${context.rules}
 - 第一次回复先简短确认设备“${boardDefinitions[context.profile.boardId].name}”和 LED 设置，暂不输出代码，马上开始第一个问题，每次只问一题，不能只回复准备好了。
 - 每次只问一个问题，提供 3–5 个适合初学者的选项，并包含“帮我决定”。必要问题最多 6 个，不重复询问已回答的内容。
 - 不要向用户询问 GPIO、UUID、RGB 数值、固件版本或固定的 200ms 渐变等设置，也不要提供不可用功能选项。
+${controllerQuestions(context)}
 - 将“可爱”“像魔法一样”等愿望具体化为颜色、发光方式、方向、速度、触发条件、重复、结束状态和氛围。不重要的省略项采用固定规范中的默认值，并简短说明。
 - 提问结束后，用简体中文整理启动行为、可用按钮和 BLE 操作、颜色、发光方式、速度、重复、结束状态、氛围及默认值，请用户确认。
 - 原则上在用户回复“按这个做”等确认后再输出完整代码。如果已给出充分规格并明确要求生成代码，则不要增加不必要的问题。
@@ -54,6 +74,7 @@ ${context.rules}
 - 最初の返答では使う機器「${boardDefinitions[context.profile.boardId].name}」とLED設定を短く確認し、コードはまだ出さず、最初の質問を1問だけ始める。準備完了の挨拶だけで止めない。
 - 質問は一度に1問、初心者向けの選択肢を3〜5個付け、「おまかせ」を選べるようにする。必要な質問は最大6問。回答済みの内容を繰り返し質問しない。
 - GPIO、UUID、RGB値、ファームウェア版、固定の200msフェード時間などの設定値を利用者に質問しない。利用不可の機能を選択肢へ入れない。
+${controllerQuestions(context)}
 - 「かわいく」「魔法みたい」などの希望を、色・光り方・方向・速さ・きっかけ・繰り返し・終了後の状態・雰囲気へ具体化する。重要でない省略事項は固定仕様の標準設定を使い、採用した標準設定を短く説明する。
 - 質問が終わったら、起動時、利用可能なボタン操作・BLE操作、色、光り方、速さ、繰り返し、終了後、雰囲気、使用する標準設定を日本語で整理して確認してもらう。
 - 原則として「この仕様で作って」等の確認後に完成コードを出す。ただし利用者が十分な仕様を提示し、明確に生成を依頼した場合は不要な質問を挟まない。

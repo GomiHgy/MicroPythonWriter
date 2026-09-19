@@ -63,3 +63,12 @@
 }
 .ai-led-settings { margin: 18px 0; border: 1px solid #8da4bb; border-radius: 12px; padding: 16px; min-width: 0; }
 .ai-led-settings legend { font-weight: 700; padding: 0 6px; }
+.ai-controller-guide { margin: 20px 0; padding: 18px; border: 1px solid #8da4bb; border-radius: 12px; }
+.ai-controller-guide h3 { margin: 0 0 8px; font-size: 1.15rem; }
+.ai-controller-guide > p { line-height: 1.65; }
+.ai-controller-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 0; list-style: none; counter-reset: controller-step; }
+.ai-controller-steps li { display: flex; flex-direction: column; counter-increment: controller-step; min-width: 0; }
+.ai-controller-steps strong::before { content: counter(controller-step) ". "; }
+.ai-controller-steps p { flex: 1; line-height: 1.7; font-size: .88rem; }
+.ai-controller-steps button { width: 100%; }
+@media (max-width: 650px) { .ai-controller-steps { grid-template-columns: 1fr; } .ai-controller-guide { padding: 14px; } }

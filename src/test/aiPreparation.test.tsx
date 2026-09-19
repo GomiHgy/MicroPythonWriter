@@ -27,9 +27,9 @@ vi.mock('react', async () => ({
 }))
 
 const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
-function preparation(): WorkshopPreparation {
-  const context = createWorkshopContext(profile)
-  return { profiles: [{ id: 'test', profile }], selectedId: 'test', selectedProfile: profile, context, prompt: buildStartPrompt(context), draft: profile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), adoptProjectSettings: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
+function preparation(selectedProfile = profile): WorkshopPreparation {
+  const context = createWorkshopContext(selectedProfile)
+  return { profiles: [{ id: 'test', profile: selectedProfile }], selectedId: 'test', selectedProfile, context, prompt: buildStartPrompt(context), draft: selectedProfile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), adoptProjectSettings: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
 }
 type Element = ReactElement<Record<string, unknown>>
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
@@ -46,13 +46,82 @@ function content(node: ReactNode): string {
 function find(node: ReactNode, predicate: (element: Element) => boolean) { const result = all(node, predicate); expect(result).toHaveLength(1); return result[0] }
 function button(node: ReactNode, label: string) { return find(node, element => element.type === 'button' && content(element.props.children as ReactNode).includes(label)) }
 function event(element: Element, name: string, value?: unknown) { return (element.props[name] as (value: unknown) => unknown)(value) }
-function render(prep: WorkshopPreparation, onOpenProgram = vi.fn()) { harness.cursor = 0; const node = AiPreparationPanel({ preparation: prep, onOpenProgram }); harness.effects.splice(0).forEach(effect => effect()); return node }
+function render(prep: WorkshopPreparation, onOpenProgram = vi.fn(), extras: Partial<Parameters<typeof AiPreparationPanel>[0]> = {}) { harness.cursor = 0; const node = AiPreparationPanel({ preparation: prep, onOpenProgram, ...extras }); harness.effects.splice(0).forEach(effect => effect()); return node }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
 
 beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harness.effects = []; harness.focus.mockClear(); harness.select.mockClear(); vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } }); vi.stubGlobal('confirm', vi.fn(() => true)) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  const wirelessProfile = (): WorkshopProfile => ({ ...structuredClone(profile), features: { button: true, ble: true, controller: true } })
+  it.each(['ja', 'en', 'zh'] as const)('%s で基準コード登録の代わりに準備・実行・リモコンの3手順を示す', locale => {
+    setLocale(locale)
+    const prep = preparation(wirelessProfile())
+    const onPrepareController = vi.fn(), onOpenController = vi.fn(), onOpenProgram = vi.fn()
+    const panel = render(prep, onOpenProgram, { onPrepareController, onOpenController })
+    const guide = find(panel, element => element.props['aria-labelledby'] === 'ai-controller-heading')
+    expect(all(guide, element => element.type === 'li')).toHaveLength(3)
+    expect(content(guide)).toContain(translate(locale, '基準コードの登録は不要です。まずはアプリに同梱した対応プログラムで、リモコン操作を試せます。'))
+    expect(content(guide)).not.toContain('BLE基準コードが未登録です')
+    if (locale !== 'ja') expect(content(guide)).not.toMatch(/[ぁ-んァ-ヶ]/u)
+    const prepare = button(guide, translate(locale, '対応プログラムを準備'))
+    expect(prepare.props.disabled).toBe(false)
+    event(prepare, 'onClick')
+    expect(onPrepareController).toHaveBeenCalledOnce()
+    expect(onOpenProgram).not.toHaveBeenCalled()
+    expect(onOpenController).not.toHaveBeenCalled()
+    event(button(guide, translate(locale, 'プログラム画面を開く')), 'onClick')
+    event(button(guide, translate(locale, 'Webリモコンを開く')), 'onClick')
+    expect(onOpenProgram).toHaveBeenCalledOnce()
+    expect(onOpenController).toHaveBeenCalledOnce()
+    expect(prep.confirmBaseline).not.toHaveBeenCalled()
+    expect(prep.editDraft).not.toHaveBeenCalled()
+    expect(prep.selectedProfile?.baseline.verification).toBeNull()
+  })
+
+  it.each(['pending', 'importing', 'settings', 'handler'])('準備不可の %s はコード準備ボタンを無効にする', reason => {
+    const selected = wirelessProfile()
+    if (reason === 'settings') selected.firmwareVersion = null
+    const prep = preparation(selected)
+    if (reason === 'pending') prep.hasPendingChanges = true
+    if (reason === 'importing') prep.isImporting = true
+    const panel = render(prep, vi.fn(), { onPrepareController: reason === 'handler' ? undefined : vi.fn() })
+    expect(button(panel, '対応プログラムを準備').props.disabled).toBe(true)
+    if (reason === 'settings') expect(content(panel)).toContain('まず機器とLEDの設定を確認してください')
+  })
+
+  it('登録済みコードを変更せず、適合しない場合のお試しコード利用を明示する', () => {
+    const selected = wirelessProfile()
+    selected.baseline.code = '# custom code remains intact'
+    const prep = preparation(selected)
+    const panel = render(prep, vi.fn(), { onPrepareController: vi.fn() })
+    expect(content(panel)).toContain('登録内容は変更しません')
+    expect(prep.selectedProfile?.baseline.code).toBe('# custom code remains intact')
+    expect(prep.confirmBaseline).not.toHaveBeenCalled()
+    expect(prep.saveDraft).not.toHaveBeenCalled()
+  })
+
+  it('有効な登録済み基準コードがある場合は同梱コードへの置換を誘導しない', () => {
+    const prep = preparation(wirelessProfile())
+    prep.context = { ...prep.context!, bleSource: 'registered', controllerStarter: undefined }
+    const panel = render(prep, vi.fn(), { onPrepareController: vi.fn() })
+    expect(content(panel)).toContain('登録済みのプログラムを土台に')
+    expect(all(panel, element => element.type === 'button' && content(element) === '対応プログラムを準備')).toHaveLength(0)
+    expect(content(panel)).not.toContain('登録内容は変更しません')
+  })
+
+  it('Bluetoothだけの初期設定ではWebコントローラを使う入口を案内する', () => {
+    const selected = wirelessProfile(); selected.features.controller = false
+    const panel = render(preparation(selected))
+    expect(content(panel)).toContain('「Webコントローラ」をONにして「設定を適用」')
+    expect(content(panel)).not.toContain('BLE基準コードが未登録です')
+  })
+
+  it('準備に失敗した理由をAIの準備画面にも表示する', () => {
+    const panel = render(preparation(wirelessProfile()), vi.fn(), { controllerPreparationNotice: 'コードを準備できませんでした。' })
+    expect(content(find(panel, element => element.props.role === 'alert'))).toBe('コードを準備できませんでした。')
+  })
+
   function featureSettings(prep: WorkshopPreparation) {
     const teacher = find(render(prep), element => typeof element.type === 'function')
     harness.slots = []; harness.cursor = 0

@@ -4,6 +4,7 @@ import { boardDefinitions, isBoardId } from '../../config/boards'
 import type { Locale } from '../../i18n/types'
 import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules } from '../../i18n/promptMessages'
 import { translateWorkshop } from '../../i18n/workshopMessages'
+import { buildControllerStarter } from '../workshop/ControllerStarter'
 
 export interface WorkshopContext {
   locale: Locale
@@ -12,6 +13,9 @@ export interface WorkshopContext {
   bleReasons: string[]
   bleEnabled: boolean
   controllerEnabled: boolean
+  bleSource?: 'registered' | 'bundled-candidate' | 'none'
+  controllerStarter?: ReturnType<typeof buildControllerStarter>
+  controllerStarterError?: string
   rules: string
 }
 
@@ -24,6 +28,49 @@ function codeBlock(code: string) {
   for (const run of code.matchAll(/~+/g)) length = Math.max(length, run[0].length + 1)
   const fence = '~'.repeat(length)
   return `${fence}python\n${code}\n${fence}`
+}
+
+function bundledControllerRules(profile: WorkshopProfile, locale: Locale, source: string) {
+  const code = codeBlock(source)
+  if (locale === 'en') return `## Bundled web-controller starter: unverified trial
+- This prompt uses the bundled NanoLED v2 candidate, not a hardware-verified registered baseline. The selected device, UIFlow2 ${setting(profile.firmwareVersion)} and LED configuration have NOT been verified on hardware. Availability of this trial does not guarantee firmware APIs, compatibility, electrical safety or physical lighting.
+- Any existing baseline and verification record remain saved unchanged. If that registration is missing, stale or incompatible, it is excluded from this prompt; this separately supplied candidate is NOT a verified replacement or an automatic v1 upgrade.
+- Use the complete candidate below as the starting implementation. Preserve its BLE initialization, bounded queues, device name, protocol and safety limits. Do not guess alternative APIs. If an API fails on the selected firmware, explain that target-device investigation is needed; never claim verification or fabricate a registration.
+- When repairing an error, the separately captured main.py is the repair target; this candidate is reference code, not evidence of what ran. Do not replace the user's effects with this starter without being asked.
+- No baseline registration is required to try this candidate. First prepare the supported program, then explicitly run it on the USB-connected device, then open Controller and connect to its NanoLED- device. On the first valid status report, check the reported LEDs, brightness and playback, and compare them with the actual LEDs. Writing or receiving a report is not proof of physical lighting. Do not automatically write, run or change startup settings.
+
+${nanoLedV2Rules.en}
+
+## Complete bundled candidate (not hardware verified)
+${code}`
+  if (locale === 'zh') return `## 内置网页控制器入门程序：未实机验证的试用代码
+- 本提示词使用内置 NanoLED v2 候选代码，不是已登记的实机验证基准代码。所选设备、UIFlow2 ${setting(profile.firmwareVersion)} 和 LED 配置尚未完成实机验证。可以试用不代表固件 API、兼容性、供电安全或实际发光已获保证。
+- 已有基准代码和验证记录保持原样保存。如果登记缺失、过期或不兼容，则不将其带入本提示词；这里单独提供的候选代码不是已验证的替代品，也不是自动将 v1 升级。
+- 以下完整候选代码是实现的起点。保持 BLE 初始化、有界队列、设备名称、协议及安全上限，不猜测替代 API。若所选固件出现 API 错误，应说明需要在目标设备上排查，不能宣称已验证或虚构验证登记。
+- 修复错误时，以另外记录的 main.py 为修复对象；此候选代码仅作参考，不代表设备实际运行了它。未经要求，不用入门效果替换用户作品。
+- 试用此候选代码不需要登记基准代码。先准备兼容程序，再由用户明确通过 USB 在设备上运行，然后打开“控制器”连接对应的 NanoLED- 设备。首次收到有效状态后，查看上报的 LED、亮度与播放状态，并与实物 LED 比较。写入完成或收到状态不代表已确认实物发光。不要自动写入、运行或更改自动启动设置。
+
+${nanoLedV2Rules.zh}
+
+## 内置候选代码全文（未实机验证）
+${code}`
+  return `## 同梱Webコントローラ入門プログラム：実機未確認の試用コード
+- この準備文では、実機確認を登録した基準コードではなく、同梱のNanoLED v2候補コードを使う。選択した機器・UIFlow2 ${setting(profile.firmwareVersion)}・LED構成での実機確認は未実施。試用可能であることはファームウェアAPI・互換性・電源安全性・実際の発光の保証ではない。
+- 既存の基準コードと確認情報は変更せず保存される。未登録・確認失効・非対応の登録コードはこの準備文へ含めない。別途示す候補は確認済みの代替コードでも、v1の自動更新でもない。
+- 下記の候補全文を実装の土台にし、BLE初期化・有界キュー・デバイス名・通信仕様・安全上限を維持する。代替APIを推測しない。対象ファームウェアでAPIエラーが出た場合は対象機器での調査が必要と伝え、確認済みと偽ったり確認登録を捏造したりしない。
+- エラー修正では別途記録されたmain.pyが修正対象。この候補は参考コードであり、実行されたコードの証拠ではない。依頼なく利用者の演出を入門用へ置き換えない。
+- 試用のために基準コードの登録は求めない。「対応プログラムを準備」→ USB接続した機器で利用者が「実行」→「コントローラ」でNanoLED-の機器に接続、の順で案内する。最初の正しい状態が届いたらLEDの報告・明るさ・再生状態を見て、実際のLEDとも比較する。書き込み完了や状態受信は実物の発光確認とは別。自動書き込み・自動実行・自動起動設定は行わない。
+
+${nanoLedV2Rules.ja}
+
+## 同梱の候補コード全文（実機未確認）
+${code}`
+}
+
+function controllerUnavailableRules(locale: Locale) {
+  if (locale === 'en') return '## Web-controller preparation is unavailable\nCheck the device and LED settings and enable Bluetooth, then prepare the supported program. Do not guess BLE APIs, invent a working program or require a beginner to register a hardware-verified baseline. Continue discussing available LEDs and only enabled button operations. Do not offer Web-remote operations until preparation is available.'
+  if (locale === 'zh') return '## 暂时无法准备网页控制器程序\n请检查设备与 LED 设置并启用 Bluetooth，然后准备兼容程序。不要猜测 BLE API、虚构可用程序或要求初学者登记实机验证基准代码。可以继续讨论 LED 和已启用的按钮功能；准备可用前不提供网页遥控操作选项。'
+  return '## Webコントローラの準備はまだできません\n機器とLEDの設定を確認し、Bluetoothを有効にしてから、対応プログラムを準備する。BLEのAPIや動作するコードを推測せず、初心者に実機確認済み基準コードの登録を求めない。利用可能なLEDと有効なボタンの相談は続けられる。準備できるまでWebリモコン操作は選択肢に入れない。'
 }
 
 const ledRules = `## LEDとボタンの固定ルール
@@ -83,9 +130,25 @@ export function createWorkshopContext(input: WorkshopProfile, locale: Locale = '
   const profile = cloneWorkshopProfile(input)
   const errors = validateWorkshopProfile(profile).map(text => translateWorkshop(locale, text))
   const bleReasons = getBlePreparationReasons(profile).map(text => translateWorkshop(locale, text))
-  const bleEnabled = errors.length === 0 && profile.features.ble && bleReasons.length === 0
+  let bleSource: NonNullable<WorkshopContext['bleSource']> = errors.length === 0 && profile.features.ble && bleReasons.length === 0 ? 'registered' : 'none'
+  let controllerStarter: WorkshopContext['controllerStarter']
+  let controllerStarterError: string | undefined
+  if (errors.length === 0 && profile.features.ble && profile.features.controller && bleSource === 'none') {
+    try {
+      controllerStarter = buildControllerStarter(profile)
+      bleSource = 'bundled-candidate'
+    } catch {
+      controllerStarterError = locale === 'ja'
+        ? '対応プログラムを準備できません。機器・UIFlow2版・RGB LED数（1〜300個）・外部LEDピン・最大輝度の設定を確認してください。'
+        : locale === 'en'
+          ? 'The controller starter cannot be prepared. Check the board, UIFlow2 version, RGB LED count (1–300), external LED pin and maximum brightness settings.'
+          : '无法准备控制器入门程序。请检查设备、UIFlow2 版本、RGB LED 数量（1–300）、外接 LED 引脚及最大亮度设置。'
+    }
+  }
+  const bleEnabled = bleSource !== 'none'
   const controllerEnabled = bleEnabled && profile.features.controller
-  if (locale !== 'ja') return { locale, profile, errors, bleReasons, bleEnabled, controllerEnabled, rules: localizedRules(profile, locale, errors, bleReasons, bleEnabled, controllerEnabled) }
+  const context = { locale, profile, errors, bleReasons, bleEnabled, controllerEnabled, bleSource, controllerStarter, controllerStarterError }
+  if (locale !== 'ja') return { ...context, rules: localizedRules(profile, locale, errors, bleReasons, bleEnabled, controllerEnabled, controllerStarter?.source) }
   const board = isBoardId(profile.boardId) ? boardDefinitions[profile.boardId] : null
   const buttonPin = board?.buttonPin ?? '未確認'
   const onboardRule = profile.boardId === 'atoms3lite'
@@ -109,15 +172,19 @@ MAX_BRIGHTNESS_PERCENT: ${setting(profile.maxBrightnessPercent)}
 実行先: UIFlow2ファームウェア上のMicroPython。MicroPythonWriterからRaw REPLを使ってmain.pyを書き込み・実行する。UIFlow2エディタの利用は必須ではない。
 対象UIFlow2版は利用者の入力値であり、USBのMicroPython版・firmwareInfoとは別物。取得情報から推測・上書きしない。
 入力した数値が範囲内であることは電源安全性や実機動作の証明ではない。AI向け固定仕様はコードを強制するサンドボックスではなく、実機確認を代替しない。`
-  const availability = bleEnabled
+  const availability = controllerStarter
+    ? bundledControllerRules(profile, locale, controllerStarter.source)
+    : bleEnabled
     ? `BLEデバイス名: 確認済み基準コードのNanoLED-で始まる名前を維持する。キットIDは不要。新しい名前を明示的に設定する場合の例はNanoLED-${board?.name ?? 'Device'}。同名の機器を一意に識別できるとは説明しない。基準コードが対応する名前でなければ確認を求め、黙って変更しない。\n${bleRules}${profile.baseline.verification?.nanoLedV2 ? `\n\n${nanoLedV2Rules.ja}` : profile.baseline.verification?.nanoLedV1 ? `\n\n${nanoLedRules}` : '\nこのキットはWebコントローラ未対応。NanoLEDへの変更を推測せず、確認済み基準コードの通信仕様を維持する。'}\n\n## 登録された基準コード全文\n実機確認の登録情報: ${profile.baseline.verification?.confirmedBy} / ${profile.baseline.verification?.confirmedAt}\n確認対象UIFlow2: ${profile.baseline.verification?.firmwareVersion}\nNanoLED v1確認: ${profile.baseline.verification?.nanoLedV1 ? '利用者が確認と登録' : '未確認'}\nNanoLED v2確認: ${profile.baseline.verification?.nanoLedV2 ? '利用者が確認と登録' : '未確認（v1からの自動移行は行わない）'}\n${codeBlock(profile.baseline.code)}`
-    : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。利用者にAPIや通信仕様を質問せず、必要なら「対象機器で確認した基準コードの登録が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
+    : profile.features.controller
+      ? controllerUnavailableRules(locale)
+      : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。利用者にAPIや通信仕様を質問せず、必要なら「対象機器で確認した基準コードの登録が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
   const invalid = errors.length ? `\n\n## 設定が未完成または不正です\n${errors.map(error => `- ${error}`).join('\n')}\n設定値を推測せず、利用者が上記を直すまで、このキットの完成コード生成・設定に依存する修正は保留する。汎用設定へ黙って切り替えない。` : ''
   const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${availability}\n\n## 情報の扱い\n固定仕様、実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、実機と対象環境での確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
-  return { locale, profile, errors, bleReasons, bleEnabled, controllerEnabled, rules }
+  return { ...context, rules }
 }
 
-function localizedRules(profile: WorkshopProfile, locale: 'en' | 'zh', errors: string[], bleReasons: string[], bleEnabled: boolean, controllerEnabled: boolean) {
+function localizedRules(profile: WorkshopProfile, locale: 'en' | 'zh', errors: string[], bleReasons: string[], bleEnabled: boolean, controllerEnabled: boolean, candidateSource?: string) {
   const en = locale === 'en'
   const block = localizedPromptBlocks[locale]
   const unknown = en ? 'Not set or invalid' : '未设置或无效'
@@ -163,9 +230,13 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
     : (en ? 'Onboard RGB is GPIO20, its power is enabled by GPIO19 HIGH, and the blue LED is GPIO7. Keep these separate from external LEDs and button GPIO9. Do not copy AtomS3Lite GPIO35/GPIO41. Do not add onboard LED behavior unless instructed.' : '内置 RGB 为 GPIO20，GPIO19 拉高使能其供电，蓝色 LED 为 GPIO7。它们与外接 LED 及按钮 GPIO9 不同，不能套用 AtomS3Lite 的 GPIO35/GPIO41。未经用户指示，不添加内置 LED 操作。')
   const led = interpolatePrompt(block.led, { ledPin: value(profile.ledPin), buttonPin, onboardRule })
   const verification = profile.baseline.verification
-  const availability = bleEnabled
+  const availability = candidateSource
+    ? bundledControllerRules(profile, locale, candidateSource)
+    : bleEnabled
     ? `${en ? 'BLE device name' : 'BLE 设备名称'}: ${en ? `Preserve the verified baseline name starting with NanoLED-. No kit ID is required. Only if explicitly setting a new name, an example is NanoLED-${board?.name ?? 'Device'}. Names are not unique identifiers. If the baseline name is incompatible, ask for confirmation rather than silently renaming.` : `保持已验证基准代码中以 NanoLED- 开头的名称，不需要套件编号。只有明确设置新名称时，示例为 NanoLED-${board?.name ?? 'Device'}。名称不保证唯一；如果基准代码名称不兼容，请要求确认，不要擅自更改。`}\n${block.ble}\n\n${verification?.nanoLedV2 ? nanoLedV2Rules[locale] : verification?.nanoLedV1 ? block.nanoLed : (en ? 'This kit is not web-controller compatible. Preserve the verified baseline protocol; do not assume a NanoLED conversion.' : '此套件不支持网页控制器。保持已验证基准代码的通信协议，不能猜测并改为 NanoLED。')}\n\n## ${en ? 'Complete registered baseline' : '登记的完整基准代码'}\n${en ? 'User registration' : '用户登记信息'}: ${verification?.confirmedBy} / ${verification?.confirmedAt}\n${en ? 'Verified UIFlow2' : '已验证 UIFlow2'}: ${verification?.firmwareVersion}\nNanoLED v1: ${verification?.nanoLedV1 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified' : '未验证')}\nNanoLED v2: ${verification?.nanoLedV2 ? (en ? 'User-confirmed and registered' : '用户已验证并登记') : (en ? 'Unverified; never auto-upgrade v1' : '未验证；不会自动升级 v1')}\n${codeBlock(profile.baseline.code)}`
-    : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask users about APIs or protocols; say a baseline verified on the target device must be registered. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向用户询问 API 或协议，需要时说明必须登记经目标设备验证的基准代码。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
+    : profile.features.controller
+      ? controllerUnavailableRules(locale)
+      : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask users about APIs or protocols; say a baseline verified on the target device must be registered. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向用户询问 API 或协议，需要时说明必须登记经目标设备验证的基准代码。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
   const invalid = errors.length ? `\n\n## ${en ? 'Settings are incomplete or invalid' : '设置不完整或无效'}\n${errors.map(error => `- ${error}`).join('\n')}\n${en ? 'Do not guess values. Defer complete code generation and setting-dependent repairs until the user fixes these settings. Do not silently switch to generic settings.' : '不要猜测设置值。在用户修正上述设置前，暂缓生成完整代码和依赖设置的修复，不能擅自切换为通用设置。'}` : ''
   return `${header}${invalid}\n\n${led}\n\n${availability}\n\n${block.information}`
 }

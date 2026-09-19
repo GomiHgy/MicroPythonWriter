@@ -5,6 +5,7 @@ import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, LED_MODELS, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile } from '../services/workshop/WorkshopProfile'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { boardDefinitions, identifyBoard, identifySoc } from '../config/boards'
+import { buildControllerStarter } from '../services/workshop/ControllerStarter'
 
 function profile(): WorkshopProfile {
   return {
@@ -150,7 +151,93 @@ describe('WorkshopProfileの設定検証', () => {
 })
 
 describe('BLEの準備状態', () => {
-  it.each(['ja', 'en', 'zh'] as const)('%s は明示v2確認がある場合だけ作品カタログと再生・アクション仕様を含める', locale => {
+  it.each(['ja', 'en', 'zh'] as const)('%s の同梱候補全文・未確認表示・準備から実行と接続の手順を含める', locale => {
+    const value = profile()
+    value.displayName = 'Test material'
+    value.features = { button: true, ble: true, controller: true }
+    const before = structuredClone(value)
+    const expected = buildControllerStarter(value)
+    const context = createWorkshopContext(value, locale)
+    expect(context).toMatchObject({ bleSource: 'bundled-candidate', bleEnabled: true, controllerEnabled: true })
+    expect(context.controllerStarter).toEqual(expected)
+    expect(context.controllerStarterError).toBeUndefined()
+    expect(context.profile).toEqual(before)
+    expect(value).toEqual(before)
+    const prompt = buildStartPrompt(context)
+    for (const text of [expected.source, '"v":2', 'MODE <id>', 'ACTION <id>', 'PLAY / PAUSE / OFF', 'TEST-ONLY-UIFlow2']) expect(prompt).toContain(text)
+    const localized = prompt.replace(expected.source, '')
+    const phrases = {
+      ja: ['実機未確認の試用コード', '実機確認は未実施', '保証ではない', '「対応プログラムを準備」→', 'USB接続', '「コントローラ」', '本体ボタン / Webリモコン / 両方 / おまかせ', '機器から届いたLEDの状態を見る', '明るさを変える', '再生・一時停止・消灯', '名前付きの光り方・一回限りのアクションボタン', '最大6問'],
+      en: ['unverified trial', 'NOT been verified on hardware', 'does not guarantee', 'First prepare', 'USB-connected device', 'open Controller', 'Onboard button / Web remote / Both / Choose for me', 'See reported LED state', 'Adjust brightness', 'Play, pause and turn lights off', 'Named lighting modes and one-shot action buttons', 'maximum 6 questions'],
+      zh: ['未实机验证的试用代码', '尚未完成实机验证', '不代表', '先准备兼容程序', '通过 USB', '“控制器”', '机身按钮 / 网页遥控器 / 两者都用 / 帮我决定', '查看设备上报的 LED 状态', '调整亮度', '播放、暂停和熄灭', '有名称的灯光模式及一次性动作按钮', '最多 6 题'],
+    }
+    for (const text of phrases[locale]) expect(localized).toContain(text)
+    if (locale !== 'ja') expect(localized).not.toMatch(/[\u3040-\u30ff]/u)
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s でボタンなしならWebリモコン用の選択肢だけを尋ねる', locale => {
+    const value = profile()
+    value.features = { button: false, ble: true, controller: true }
+    const prompt = buildStartPrompt(createWorkshopContext(value, locale))
+    const expected = {
+      ja: ['Webリモコン中心 / 電源を入れたら自動で光り、Webリモコンで調整 / おまかせ', '本体ボタン / Webリモコン / 両方 / おまかせ'],
+      en: ['Mainly the Web remote / Light automatically on power-up and adjust with the Web remote / Choose for me', 'Onboard button / Web remote / Both / Choose for me'],
+      zh: ['主要用网页遥控器 / 通电自动亮起并用网页遥控器调整 / 帮我决定', '机身按钮 / 网页遥控器 / 两者都用 / 帮我决定'],
+    }
+    expect(prompt).toContain(expected[locale][0])
+    expect(prompt).not.toContain(expected[locale][1])
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s の登録済みv1ではv2だけの操作を選択肢にしない', locale => {
+    const value = bleProfile()
+    const context = createWorkshopContext(value, locale)
+    const prompt = buildStartPrompt(context)
+    expect(context.bleSource).toBe('registered')
+    expect(context.controllerStarter).toBeUndefined()
+    expect(prompt).not.toContain('"v":2')
+    const offered = {
+      ja: '「機器から届いたLEDの状態を見る / 明るさを変える / 光り方の切り替え・消灯 / 速さを変える / おまかせ」',
+      en: '"See reported LED state / Adjust brightness / Switch lighting modes and turn lights off / Adjust speed / Choose for me"',
+      zh: '“查看设备上报的 LED 状态 / 调整亮度 / 切换灯光模式及熄灭 / 调整速度 / 帮我决定”',
+    }
+    const v2Options = {
+      ja: '再生・一時停止・消灯 / 名前付きの光り方',
+      en: 'Play, pause and turn lights off / Named lighting modes',
+      zh: '播放、暂停和熄灭 / 有名称的灯光模式',
+    }
+    expect(prompt).toContain(offered[locale])
+    expect(prompt).not.toContain(v2Options[locale])
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s のBLEのみでは基準コード検証を省略せず候補やリモコン質問を追加しない', locale => {
+    const value = profile()
+    value.features = { button: true, ble: true, controller: false }
+    const context = createWorkshopContext(value, locale)
+    expect(context).toMatchObject({ bleSource: 'none', bleEnabled: false, controllerEnabled: false })
+    expect(context.controllerStarter).toBeUndefined()
+    const prompt = buildStartPrompt(context)
+    expect(prompt).not.toContain('6e400001')
+    expect(prompt).not.toContain('"v":2')
+    expect(prompt).not.toMatch(/本体ボタン \/ Webリモコン|Onboard button \/ Web remote|机身按钮 \/ 网页遥控器/u)
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s の試用候補生成失敗は設定修正へ案内し、基準コードの登録を要求しない', locale => {
+    const value = profile()
+    value.features = { button: true, ble: true, controller: true }
+    value.ledCount = 301
+    const context = createWorkshopContext(value, locale)
+    expect(context.errors).toEqual([])
+    expect(context).toMatchObject({ bleSource: 'none', bleEnabled: false, controllerEnabled: false })
+    expect(context.controllerStarter).toBeUndefined()
+    expect(context.controllerStarterError).toContain(locale === 'ja' ? '1〜300' : '1–300')
+    const prompt = buildStartPrompt(context)
+    expect(prompt).not.toContain('"v":2')
+    expect(prompt).not.toContain('6e400001')
+    expect(prompt).toContain(locale === 'ja' ? '機器とLEDの設定を確認' : locale === 'en' ? 'Check the device and LED settings' : '检查设备与 LED 设置')
+    expect(prompt).not.toMatch(/「対象機器で確認した基準コードの登録が必要です」|say a baseline verified on the target device must be registered|需要时说明必须登记经目标设备验证/u)
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s は登録済みv1を維持し、明示v2確認または別の未確認候補だけにv2仕様を含める', locale => {
     const value = bleProfile()
     const legacy = buildStartPrompt(createWorkshopContext(value, locale))
     expect(legacy).not.toContain('"v":2')
@@ -160,12 +247,17 @@ describe('BLEの準備状態', () => {
     const context = createWorkshopContext(value, locale)
     expect(context.bleEnabled).toBe(true)
     expect(context.controllerEnabled).toBe(true)
+    expect(context.bleSource).toBe('registered')
+    expect(context.controllerStarter).toBeUndefined()
     const prompt = buildStartPrompt(context)
     for (const text of ['"v":2', '"controls"', '"playback"', '"action"', 'MODE <id>', 'ACTION <id>', 'PLAY / PAUSE / OFF', '4096', 'UTF-8', 'Unicode', 'MIN_OFF_TO_ON_FADE_MS = 200', 'WS2812_TIMING_NS = (400, 850, 800, 450)', '6e400003-b5a3-f393-e0a9-e50e24dcca9e', value.baseline.code]) expect(prompt).toContain(text)
     expect(prompt).not.toContain('"v":1')
     if (locale !== 'ja') expect(prompt.replace(value.baseline.code, '').replace(value.displayName, '').replace(value.baseline.verification!.confirmedBy, '')).not.toMatch(/[\u3040-\u30ff]/u)
     value.baseline.code += '# modified'
-    expect(createWorkshopContext(value, locale).bleEnabled).toBe(false)
+    const changed = createWorkshopContext(value, locale)
+    expect(changed.bleSource).toBe('bundled-candidate')
+    expect(changed.rules).not.toContain(value.baseline.code)
+    expect(changed.profile.baseline).toEqual(value.baseline)
   })
   it('v2フラグはbooleanだけを受け付け、v1から確認を推測しない', () => {
     const value = bleProfile()
@@ -174,57 +266,65 @@ describe('BLEの準備状態', () => {
     for (const nanoLedV2 of ['true', 1, null]) expect(isWorkshopProfile({ ...value, baseline: { ...value.baseline, verification: { ...value.baseline.verification, nanoLedV2 } } })).toBe(false)
     value.baseline.verification!.nanoLedV1 = false
     value.baseline.verification!.nanoLedV2 = false
-    expect(createWorkshopContext(value).controllerEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
+    expect(createWorkshopContext(value).profile.baseline.verification).toEqual(value.baseline.verification)
   })
   it('旧NanoC6確認をAtomS3Liteへ流用せず、確認機種を一致させる', () => {
     const value = bleProfile()
     expect(createWorkshopContext(value).bleEnabled).toBe(true)
     value.boardId = 'atoms3lite'
-    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
+    expect(createWorkshopContext(value).rules).not.toContain(value.baseline.code)
     expect(getBlePreparationReasons(value).join('\n')).toContain('確認対象機器')
     value.baseline.verification!.boardId = 'atoms3lite'
-    expect(createWorkshopContext(value).bleEnabled).toBe(true)
+    expect(createWorkshopContext(value).bleSource).toBe('registered')
     value.boardId = 'm5nanoc6'
-    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
   })
-  it('基準コードが未登録・未確認でもLEDとボタン用の準備は止めない', () => {
+  it('基準コードが未登録でも未確認の同梱候補でWebコントローラを準備できる', () => {
     const value = profile()
     value.features.ble = true
     value.features.controller = true
     const context = createWorkshopContext(value)
     expect(context.errors).toEqual([])
-    expect(context.bleEnabled).toBe(false)
-    expect(context.controllerEnabled).toBe(false)
+    expect(context.bleEnabled).toBe(true)
+    expect(context.controllerEnabled).toBe(true)
+    expect(context.bleSource).toBe('bundled-candidate')
     expect(context.bleReasons.join('\n')).toContain('未登録')
     expect(buildStartPrompt(context)).toContain('最初の質問を1問だけ')
-    expect(context.rules).not.toContain('6e400001')
+    expect(context.rules).toContain('6e400001')
+    expect(context.rules).toContain('実機未確認の試用コード')
+    expect(context.profile.baseline).toEqual({ code: '', verification: null })
   })
 
-  it('未確認コードを準備文へ持ち出さない', () => {
+  it('未確認の登録コードを持ち出さず、別の候補を出すと明記する', () => {
     const value = bleProfile()
     value.baseline.verification = null
     const context = createWorkshopContext(value)
-    expect(context.bleEnabled).toBe(false)
+    expect(context.bleSource).toBe('bundled-candidate')
     expect(context.rules).not.toContain('baseline sentinel')
   })
 
-  it('対象ファームウェアまたはコードを変えるとBLEが失効する', () => {
+  it('対象ファームウェアまたはコードの変更で登録コードを除外し、未確認候補へ明示的に切り替える', () => {
     const value = bleProfile()
     value.firmwareVersion += '-changed'
-    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
+    expect(createWorkshopContext(value).rules).not.toContain(value.baseline.code)
     expect(getBlePreparationReasons(value).join('\n')).toContain('版が設定と一致しません')
     const changed = bleProfile()
     changed.baseline.code += '\n'
-    expect(createWorkshopContext(changed).bleEnabled).toBe(false)
+    expect(createWorkshopContext(changed).bleSource).toBe('bundled-candidate')
+    expect(createWorkshopContext(changed).rules).not.toContain(changed.baseline.code)
     expect(getBlePreparationReasons(changed).join('\n')).toContain('確認時から変更')
   })
 
-  it('Webコントローラ対応の確認がなければBLEだけを止める', () => {
+  it('登録コードのWeb対応確認がなければ登録を保持して別の未確認候補を用意する', () => {
     const value = bleProfile()
     value.baseline.verification!.nanoLedV1 = false
     const context = createWorkshopContext(value)
     expect(context.errors).toEqual([])
-    expect(context.bleEnabled).toBe(false)
+    expect(context.bleSource).toBe('bundled-candidate')
+    expect(context.profile.baseline).toEqual(value.baseline)
     expect(context.bleReasons.join('\n')).toContain('NanoLED v1')
   })
 
@@ -261,13 +361,13 @@ describe('BLEの準備状態', () => {
     expect(createWorkshopContext(value).bleEnabled).toBe(true)
   })
 
-  it('確認者と日時の空欄や未解決プレースホルダでは有効化しない', () => {
+  it('確認者と日時が不正な登録を確認済みとして扱わず候補で準備する', () => {
     const value = bleProfile()
     value.baseline.verification!.confirmedBy = '{{TEACHER}}'
-    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
     value.baseline.verification!.confirmedBy = 'テスト'
     value.baseline.verification!.confirmedAt = 'not a date'
-    expect(createWorkshopContext(value).bleEnabled).toBe(false)
+    expect(createWorkshopContext(value).bleSource).toBe('bundled-candidate')
     value.baseline.code += '{{LED_COUNT}}'
     value.baseline.verification!.code = value.baseline.code
     expect(createWorkshopContext(value).rules).not.toContain('{{LED_COUNT}}')

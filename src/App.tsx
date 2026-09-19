@@ -37,6 +37,7 @@ export default function App() {
   const [projectData, setProjectData] = useState(loadedProject.project)
   const [projectSettingsActive, setProjectSettingsActive] = useState(() => readPreference('mpw-project-settings-active') === 'true')
   const [projectNotice, setProjectNotice] = useState(loadedProject.notice)
+  const [controllerPreparationNotice, setControllerPreparationNotice] = useState('')
   const [loadNeedsReview, setLoadNeedsReview] = useState(() => loadedProject.notice !== '')
   const [lastRunDraft, setLastRunDraft] = useState<ProjectSnapshot | null>(null)
   const [standaloneDraft, setStandaloneDraft] = useState<ProjectSnapshot | null>(null)
@@ -197,6 +198,18 @@ export default function App() {
       setProjectNotice('試すコードを編集画面に準備しました。機器には送っていません。「コード・通信ログを見る」で確認し、作品として保存できます。')
     }
   }
+  const prepareControllerTrial = () => {
+    const context = preparation.context
+    const trial = context?.controllerStarter
+    if (!trial || context.bleSource !== 'bundled-candidate' || !context.controllerEnabled || preparation.hasPendingChanges || preparation.isImporting) return
+    setControllerPreparationNotice('')
+    if (!confirm(t('Webリモコン用の試用プログラムを準備します。作品のコード・機器設定・操作ボタンを置き換え、現在の内容は一時退避します。機器への書き込みや実行はしません。続けますか？'))) return
+    if (!replaceProject({ ...project, draft: { source: trial.source, settings: trial.settings, recipe: trial.recipe, remoteButtons: [] } })) {
+      setControllerPreparationNotice('コードを準備できませんでした。現在の編集内容は変更していません。ブラウザの保存機能・空き容量を確認してください。')
+      return
+    }
+    openTab('program')
+  }
   const downloadCandidate = () => {
     if (!generatedSource) { setProjectNotice(availability.reason); return }
     try {
@@ -276,7 +289,7 @@ export default function App() {
     </div>
 
     <div id="panel-preparation" role="tabpanel" aria-labelledby="tab-preparation" hidden={activeTab !== 'preparation'}>
-      <AiPreparationPanel preparation={preparation} onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} />
+      <AiPreparationPanel preparation={preparation} onOpenProgram={() => openTab('program')} onPrepareController={prepareControllerTrial} onOpenController={() => openTab('controller')} controllerPreparationNotice={controllerPreparationNotice} />
     </div>
 
     <div id="panel-program" role="tabpanel" aria-labelledby="tab-program" hidden={activeTab !== 'program'}>
@@ -299,6 +312,12 @@ export default function App() {
       <div className={`step ${ready || running ? 'active' : ''}`}><span>2</span><div><strong>{t("書く")}</strong><small>{t("下のプログラムを編集する")}</small></div></div>
       <div className={`step ${running ? 'active' : ''}`}><span>3</span><div><strong>{t("試す")}</strong><small>{t("「実行」で動きを確認する")}</small></div></div>
     </section>
+
+    {preparation.context?.controllerStarter?.source === app.source && <section className="notice" aria-label={t('Webリモコンのお試し手順')}>
+          <strong>{t('Webリモコンのお試しプログラム')}</strong>
+      <p>{t('USBをつないで「実行」を押してください。実行後はプログラムを止めずに、Webリモコンへ進みます。機器から状態を受信してから操作してください。')}</p>
+      <button className="quiet-button" onClick={() => openTab('controller')}>{t('Webリモコンを開く')}</button>
+    </section>}
 
     {app.info.deviceName !== '未接続' && !(app.info.boardConfirmed || app.info.nanoC6Confirmed) && <div className="notice warn">{t("M5NanoC6／AtomS3Liteとしては確認できませんでした。一般的なMicroPython機器として操作します。")}</div>}
 

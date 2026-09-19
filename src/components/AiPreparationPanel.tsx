@@ -6,10 +6,10 @@ import { copyPreparationPrompt, downloadPreparationPrompt } from '../services/pr
 import { LED_MODELS, MAX_BASELINE_CODE_LENGTH, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import './AiPreparationPanel.css'
 
-type Props = { preparation: WorkshopPreparation; onOpenProgram: () => void }
+type Props = { preparation: WorkshopPreparation; onOpenProgram: () => void; onPrepareController?: () => void; onOpenController?: () => void; controllerPreparationNotice?: string }
 const numberOrNull = (value: string) => value.trim() === '' || !Number.isFinite(Number(value)) ? null : Number(value)
 
-export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
+export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareController, onOpenController, controllerPreparationNotice }: Props) {
   const { t, locale } = useLocale()
   const { selectedProfile: profile, context, prompt } = preparation
   const board = profile ? getBoardDefinition(profile.boardId) : null
@@ -70,8 +70,26 @@ export function AiPreparationPanel({ preparation, onOpenProgram }: Props) {
         <p className="ai-help">{t('外部LEDピンは実際の配線に合わせてください。内蔵LED・ボタン・USB用のピンと競合させず、電源と出力可能なGPIOを確認してください。')}</p>
       </fieldset>}
       {context?.errors.length ? <div className="notice warn"><strong>{t('設定を確認してください')}</strong><p>{t('下の項目を入力・確認すると、AIに渡す準備文を作れます。')}</p><details><summary>{t('確認する項目（{count}件）', { count: context.errors.length })}</summary><ul>{context.errors.map(error => <li key={error}>{t(error)}</li>)}</ul></details></div> : null}
-      {profile && (profile.features.ble || profile.features.controller) && !context?.bleEnabled && <p className="ai-help">{t('Bluetoothを使う場合は、基準コードの実機確認が必要です。')} {context?.bleReasons.map(reason => t(reason)).join(' ')} {t('LEDと本体ボタンの準備は続けられます。')}</p>}
-      {profile && context?.bleEnabled && profile.features.controller && !context.controllerEnabled && <p className="ai-help">{t('Webコントローラを使う場合は、NanoLED v1またはv2対応の実機確認が必要です。')} {context.bleReasons.map(reason => t(reason)).join(' ')}</p>}
+      {profile?.features.controller && <section className="ai-controller-guide" aria-labelledby="ai-controller-heading">
+        <h3 id="ai-controller-heading">{t('Webリモコンを使う準備')}</h3>
+        {controllerPreparationNotice && <p className="notice warn" role="alert">{t(controllerPreparationNotice)}</p>}
+        {context?.bleSource === 'registered' ? <>
+          <p>{t('登録済みのプログラムを土台に、AIと光り方・操作を相談できます。対応している通信仕様はそのまま使います。')}</p>
+          <div className="ai-secondary-actions"><button className="quiet-button" onClick={onOpenProgram}>{t('プログラム画面を開く')}</button><button className="quiet-button" onClick={onOpenController} disabled={!onOpenController}>{t('Webリモコンを開く')}</button></div>
+        </> : <>
+          <p>{t('基準コードの登録は不要です。まずはアプリに同梱した対応プログラムで、リモコン操作を試せます。')}</p>
+          <p className="notice warn">{t('試用プログラムは実機未検証です。動作を保証するものではありません。機器で試す前に、配線・電源・機器とLEDの設定を確認してください。')}</p>
+          {context?.bleSource === 'bundled-candidate' && !!profile.baseline.code.trim() && <p className="ai-help">{t('登録コードは現在の設定での確認が取れないため、この手順とAIの準備文には同梱の試用プログラムを使います。登録内容は変更しません。')}</p>}
+          <ol className="ai-controller-steps">
+            <li><strong>{t('対応プログラムを準備')}</strong><p>{t('機器とLEDの設定に合わせてコードを用意します。準備だけでは機器へ送信しません。')}</p><button disabled={!context?.controllerStarter || preparation.hasPendingChanges || preparation.isImporting || !onPrepareController} onClick={onPrepareController}>{t('対応プログラムを準備')}</button></li>
+            <li><strong>{t('機器で実行する')}</strong><p>{t('「プログラム」画面でUSBをつなぎ、「実行」を押します。未検証コードを試す確認画面が出たら、内容を確認してください。')}</p><button className="quiet-button" onClick={onOpenProgram}>{t('プログラム画面を開く')}</button></li>
+            <li><strong>{t('リモコンで試す')}</strong><p>{t('プログラムを実行したまま「コントローラ」を開き、Bluetoothで機器につなぎます。状態が届いたら、明るさ・再生／停止・光り方を試しましょう。')}</p><button className="quiet-button" onClick={onOpenController} disabled={!onOpenController}>{t('Webリモコンを開く')}</button></li>
+          </ol>
+          {!context?.controllerStarter && <p className="ai-help">{t('まず機器とLEDの設定を確認してください。対応プログラムはRGB LED 1〜300個用です。')} {t(context?.controllerStarterError ?? '')}</p>}
+          <p className="ai-help">{t('動きを変えたくなったら、下の準備文をAIへ送って相談できます。AIが、選んだ機能に合わせてWebリモコンなどの使い方を質問します。')}</p>
+        </>}
+      </section>}
+      {profile?.features.ble && !profile.features.controller && !context?.bleEnabled && <p className="ai-help">{t('はじめてBluetoothを使う場合は、詳細設定の「Webコントローラ」をONにして「設定を適用」してください。同梱プログラムで試す手順が表示されます。独自のBluetooth通信を使う場合だけ、開発者向け設定で基準コードを登録します。')}</p>}
       <ol className="ai-simple-steps"><li><strong>{t('準備文をコピー')}</strong><span>{t('入力した設定は自動で入ります')}</span></li><li><strong>{t('好きなAIへ貼って送信')}</strong><span>{t('新しい会話で、質問に答えよう')}</span></li><li><strong>{t('コードを貼って「実行」')}</strong><span>{t('できた main.py をプログラム画面へ')}</span></li></ol>
       {preparation.hasPendingChanges && <p className="notice warn">{t('詳細設定に未適用の変更があります。先に「設定を適用」を押してください。適用するまでコピー・ファイル保存はできません。')}</p>}
       {preparation.isImporting && <p role="status" className="notice">{t('基準コードを読み込み中です。完了するまでコピー・ファイル保存を待ってください。')}</p>}
@@ -120,7 +138,8 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
       }} />{t(label)}</label>)}
         {draft.features.controller && <p id="ai-controller-ble-help" className="ai-help">{t('WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。')}</p>}
       </fieldset>
-      <details className="ai-baseline"><summary>{t('基準コードと実機確認')}</summary><p className="ai-help">{t('任意の基準コードです。Bluetoothには対象UIFlow2版の実機で動作を確認したコードが必要です。入力・読込だけでは確認済みになりません。コードは実行されません。')}</p>
+      <details className="ai-baseline"><summary>{t('開発者向け：独自の基準コードと実機確認（通常は不要）')}</summary><p className="ai-help">{t('独自のBluetoothプログラムを使う人向けです。同梱プログラムを試すだけなら、入力や確認登録は不要です。実機確認していないコードを確認済みとして登録しないでください。')}</p>
+        {!!preparation.context?.bleReasons.length && <ul className="ai-help">{preparation.context.bleReasons.map(reason => <li key={reason}>{t(reason)}</li>)}</ul>}
         <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
         <label className="ai-baseline-code">{t('基準コード（全文）')}<textarea value={draft.baseline.code} spellCheck={false} onChange={event => { setField('baseline', { code: event.target.value, verification: null }); setTestedOnDevice(false) }} /></label>
         {draft.baseline.code.length > MAX_BASELINE_CODE_LENGTH && <p className="notice warn">{t('基準コードが100,000文字を超えています。内容は省略していません。Bluetoothの準備とブラウザ保存には使えないため、登録内容を確認してください。')}</p>}

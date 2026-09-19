@@ -290,6 +290,61 @@ class RuntimeTests(unittest.TestCase):
         self.step(350)
         self.assertEqual(self.program.playback, "off")
 
+    def test_disabled_button_never_initializes_or_reads_input_pin(self):
+        for legacy_missing_double in (False, True):
+            with self.subTest(legacy_missing_double=legacy_missing_double):
+                self.setUp()
+                self.config.update(short_press="none", double_press="none", long_press="none", while_held=False)
+                if legacy_missing_double:
+                    del self.config["double_press"]
+                initialized = []
+
+                class NoInputPin(Pin):
+                    def __init__(self, number, mode, pull=None, value=None):
+                        if mode == Pin.IN:
+                            raise AssertionError("disabled button must never initialize an input GPIO")
+                        initialized.append(number)
+                        super().__init__(number, mode, pull, value)
+
+                fake_machine.Pin = NoInputPin
+                try:
+                    self.program = runtime.LedProgram(self.config)
+                    self.assertIsNone(self.program.button)
+                    self.assertEqual(initialized, [self.config["led_pin"]])
+                    self.program.button_step(NOW)
+                    self.program.command("MODE FLOW")
+                    self.step(1000)
+                    self.assertEqual(self.program.playback, "playing")
+                    self.assertGreater(self.program.phase, 0)
+                    radio = self.radio()
+                    radio.ble.incoming(b"STATUS\nBRIGHTNESS 35\nPAUSE\n")
+                    self.step(1000, radio)
+                    self.assertEqual(self.program.brightness, 35)
+                    self.assertEqual(self.program.playback, "paused")
+                    self.assertTrue(radio.ble.notifications)
+                finally:
+                    fake_machine.Pin = Pin
+
+    def test_any_enabled_gesture_initializes_the_board_button(self):
+        for key in ("short_press", "double_press", "long_press"):
+            with self.subTest(key=key):
+                self.setUp()
+                self.config.update(short_press="none", double_press="none", long_press="none", while_held=False)
+                self.config[key] = "toggle"
+                self.program = runtime.LedProgram(self.config)
+                self.assertIsNotNone(self.program.button)
+                self.assertEqual(self.program.button.number, self.config["button_pin"])
+
+    def test_while_held_initializes_button_even_when_all_gestures_are_none(self):
+        self.config.update(short_press="none", double_press="none", long_press="none", while_held=True)
+        self.program = runtime.LedProgram(self.config)
+        self.assertIsNotNone(self.program.button)
+        self.stable_button(0)
+        self.step(1000)
+        self.assertEqual(self.program.playback, "playing")
+        self.stable_button(1)
+        self.assertEqual(self.program.playback, "off")
+
     def test_each_gesture_applies_each_action_exactly_once(self):
         for gesture in ("short_press", "double_press", "long_press"):
             for operation in ("next", "toggle", "none"):

@@ -34,6 +34,24 @@ function verifyBaseline() {
   render().editDraft({ baseline: { code: 'print("test baseline")', verification: null } })
   render().confirmBaseline('テスト講師', true)
 }
+function expectTrialCandidate() {
+  const current = render()
+  const context = current.context!
+  expect(context).toMatchObject({ bleSource: 'bundled-candidate', bleEnabled: true, controllerEnabled: true })
+  expect(context.profile.baseline.verification).toBeNull()
+  expect(context.controllerStarter).toBeDefined()
+  expect(context.rules).toContain(context.controllerStarter!.source)
+  expect(current.prompt).toContain(context.controllerStarter!.source)
+  expect(context.controllerStarter!.settings).toMatchObject({
+    boardId: current.selectedProfile!.boardId,
+    firmwareVersion: current.selectedProfile!.firmwareVersion,
+    ledModel: current.selectedProfile!.ledModel,
+    ledPin: current.selectedProfile!.ledPin,
+    ledCount: current.selectedProfile!.ledCount,
+    maxBrightnessPercent: current.selectedProfile!.maxBrightnessPercent,
+  })
+  if (context.profile.baseline.code) expect(context.rules).not.toContain(context.profile.baseline.code)
+}
 
 beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubGlobal('localStorage', { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -100,8 +118,7 @@ describe('WebコントローラとBluetoothの依存関係', () => {
     expect(render().selectedProfile).toEqual({ ...legacy, features: { ...legacy.features, ble: true } })
     expect(render().draft).toEqual(render().selectedProfile)
     expect(render().hasPendingChanges).toBe(false)
-    expect(render().context?.bleEnabled).toBe(false)
-    expect(render().context?.controllerEnabled).toBe(false)
+    expectTrialCandidate()
     expect(render().draft?.baseline.verification).toBeNull()
     expect(values.get(workshopStorageKey(preset))).toBe(raw)
     expect(setItem).not.toHaveBeenCalled()
@@ -109,7 +126,7 @@ describe('WebコントローラとBluetoothの依存関係', () => {
     expect(preset.profile.features).toEqual({ button: true, ble: false, controller: false })
   })
 
-  it('Bluetoothの自動ONは基準コードや実機確認情報を作成せず、未確認BLEの準備文を有効化しない', () => {
+  it('Bluetoothの自動ONは基準コードや確認情報を捏造せず、適用後に別の未確認候補を準備する', () => {
     render().selectProfile(workshopPresets[0].id)
     render().editDraft({ firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', baseline: { code: 'print("not verified")', verification: null } })
     const before = structuredClone(render().draft!.baseline)
@@ -117,8 +134,7 @@ describe('WebコントローラとBluetoothの依存関係', () => {
     expect(render().draft?.features.ble).toBe(true)
     expect(render().draft?.baseline).toEqual(before)
     render().applyDraft()
-    expect(render().context?.bleEnabled).toBe(false)
-    expect(render().context?.controllerEnabled).toBe(false)
+    expectTrialCandidate()
     expect(render().selectedProfile?.baseline).toEqual(before)
     expect(localStorage.setItem).not.toHaveBeenCalled()
   })
@@ -139,7 +155,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().selectedId).toBe(workshopPresets[0].id)
     expect(render().selectedProfile).toMatchObject({ ...project.draft.settings, features: { button: true, ble: true, controller: true }, baseline: { code: previousCode, verification: null } })
     expect(render().draft?.baseline.verification).toBeNull()
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
     expect(render().notice).toContain('実機確認情報は引き継いでいません')
     expect(project).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
@@ -181,10 +197,12 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().draft?.baseline.verification).toBeNull()
   })
 
-  it('v2を明示確認して適用した場合だけv2準備文を生成し、コード変更で失効する', () => {
+  it('登録済みv1を自動更新せず、v2確認を適用するとv2へ移り、コード変更で確認は失効する', () => {
     verifyBaseline()
     render().applyDraft()
     expect(render().selectedProfile?.baseline.verification?.nanoLedV2).toBe(false)
+    expect(render().context?.bleSource).toBe('registered')
+    expect(render().context?.controllerStarter).toBeUndefined()
     expect(render().prompt).not.toContain('"v":2')
     render().confirmBaseline('テスト講師', false, true)
     render().applyDraft()
@@ -207,7 +225,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().selectedProfile?.[field]).toBe(original)
     expect(render().selectedProfile?.baseline.code).toBe('print("test baseline")')
     expect(render().selectedProfile?.baseline.verification).toBeNull()
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
     render().saveDraft(true)
     expect(JSON.parse(values.get(ledSettingsKey(workshopPresets[0]))!).verificationInvalidated).toBe(true)
     render().confirmBaseline('テスト講師', true)
@@ -215,7 +233,8 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(JSON.parse(values.get(ledSettingsKey(workshopPresets[0]))!).verificationInvalidated).toBe(false)
     hooks.slots = []; hooks.cursor = 0
     render().selectProfile(workshopPresets[0].id)
-    expect(render().context?.bleEnabled).toBe(true)
+    expect(render().context?.bleSource).toBe('registered')
+    expect(render().context?.controllerStarter).toBeUndefined()
   })
   it.each(['firmwareVersion', 'ledModel'] as const)('%s はもう一方が未入力でも単独で保存・復元し、両方が揃ってから準備文を生成する', field => {
     const values = new Map<string, string>()
@@ -245,7 +264,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().draft?.baseline.verification).toBeNull()
     expect(render().draft?.displayName).toBe('未適用の名前')
     expect(render().selectedProfile?.displayName).not.toBe('未適用の名前')
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
     expect(render().hasPendingChanges).toBe(true)
   })
   it('ファイル読込中は利用者設定を自動保存せず、読み込んだコードを無断で保存しない', async () => {
@@ -291,7 +310,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().draft?.displayName).toBe('未適用の名前')
     expect(render().selectedProfile?.displayName).not.toBe('未適用の名前')
     expect(render().hasPendingChanges).toBe(true)
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
     expect(localStorage.setItem).toHaveBeenLastCalledWith(expect.stringContaining('mpw-led:'), JSON.stringify({ ledCount: 37, maxBrightnessPercent: 30, ledPin: 3, firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', verificationInvalidated: true }))
   })
   it('不正なLED値は準備文を止め、保存失敗は成功通知にしない', () => {
@@ -360,7 +379,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     expect(render().applyDraft()).toBe(true)
     expect(render().hasPendingChanges).toBe(false)
     expect(render().prompt).toContain('test-ui-2')
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
     expect(localStorage.setItem).not.toHaveBeenCalled()
     expect(workshopPresets[0].profile.ledModel).toBeNull()
     render().selectProfile(null)
@@ -378,7 +397,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     }
     expect(render().draft?.baseline.verification).toBeNull()
     render().applyDraft()
-    expect(render().context?.bleEnabled).toBe(false)
+    expectTrialCandidate()
   })
   it('講師の明示登録でのみ確認情報を付け、ブラウザ保存も明示操作だけ', () => {
     verifyBaseline()

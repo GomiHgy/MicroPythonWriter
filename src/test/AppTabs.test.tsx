@@ -16,7 +16,7 @@ type Element = ReactElement<Record<string, unknown>>
 
 const harness = vi.hoisted(() => ({
   slots: [] as unknown[], cursor: 0,
-  preparation: { context: null as unknown, hasPendingChanges: false, adoptProjectSettings: vi.fn() },
+  preparation: { context: null as unknown, hasPendingChanges: false, isImporting: false, adoptProjectSettings: vi.fn() },
   contexts: [] as unknown[],
   initialSources: [] as unknown[], sourceAuthorities: [] as unknown[], effects: [] as (() => void)[], runDependentEffects: false,
   starterVerified: false, starterSource: 'print("starter")\n', starterThrows: false,
@@ -84,6 +84,16 @@ function byId(node: ReactNode, id: string) { return find(node, element => elemen
 function maker() { return find(render(), element => element.type === MakerPanel) }
 function currentProject() { return maker().props.project as ArtworkProject }
 function editorContent(props: Record<string, unknown>) { return { ...props, onRun: undefined } }
+function aiPanel() { return find(render(), element => element.type === AiPreparationPanel) }
+function controllerTrial() {
+  const draft = structuredClone(createProject().draft)
+  draft.settings.firmwareVersion = '2.4.1'
+  draft.settings.ledCount = 24
+  draft.recipe.wireless = true
+  const trial = { settings: draft.settings, recipe: draft.recipe, source: harness.starterSource }
+  harness.preparation.context = { profile: draft.settings, errors: [], bleSource: 'bundled-candidate', controllerEnabled: true, controllerStarter: trial }
+  return trial
+}
 function assertNoUsbOperations() {
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
 }
@@ -112,7 +122,7 @@ function event(element: Element, name: string, value?: unknown) {
 beforeEach(() => {
   setLocale('ja')
   harness.slots = []; harness.cursor = 0; harness.effects = []; harness.runDependentEffects = false
-  harness.preparation.context = null; harness.preparation.hasPendingChanges = false; harness.contexts = []; harness.initialSources = []; harness.sourceAuthorities = []; harness.programmer.error = undefined
+  harness.preparation.context = null; harness.preparation.hasPendingChanges = false; harness.preparation.isImporting = false; harness.contexts = []; harness.initialSources = []; harness.sourceAuthorities = []; harness.programmer.error = undefined
   harness.programmer.state = 'running'; harness.programmer.supported = true; harness.programmer.source = 'print("keep this draft")'
   harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
   harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
@@ -134,6 +144,107 @@ beforeEach(() => {
 })
 
 afterEach(() => { setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it('AI準備のお試しコードは現在の作品を退避して編集画面へ準備するだけで、機器には送らない', () => {
+  const trial = controllerTrial()
+  const previous = structuredClone(currentProject())
+  event(aiPanel(), 'onPrepareController')
+  expect(currentProject().draft).toEqual({ ...trial, remoteButtons: [] })
+  expect(currentProject().working).toBeNull()
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!)).toEqual(previous)
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft).toEqual({ ...trial, remoteButtons: [] })
+  expect(byId(render(), 'panel-program').props.hidden).toBe(false)
+  expect(harness.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('機器への書き込みや実行はしません'))
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('Webリモコン用コードへの置換を断れば元の編集・設定・保存内容を保つ', () => {
+  controllerTrial()
+  const before = structuredClone(currentProject())
+  harness.confirm.mockReturnValue(false)
+  event(aiPanel(), 'onPrepareController')
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('コードが空でも光り方や操作ボタンの置換確認を省かない', () => {
+  controllerTrial()
+  harness.programmer.source = ''
+  harness.confirm.mockReturnValue(false)
+  const before = structuredClone(currentProject())
+  event(aiPanel(), 'onPrepareController')
+  expect(harness.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('操作ボタンを置き換え'))
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each(['backup', 'draft'])('Webリモコンの %s 保存失敗は元のコードを保持しAI準備内で案内する', stage => {
+  controllerTrial()
+  const before = structuredClone(currentProject())
+  event(byId(render(), 'tab-preparation'), 'onClick')
+  harness.setItem.mockImplementation((key: string, value: string) => {
+    if (key === (stage === 'backup' ? 'mpw-artwork-before-replace-v1' : PROJECT_DRAFT_STORAGE_KEY)) throw new Error('quota')
+    harness.values.set(key, value)
+  })
+  event(aiPanel(), 'onPrepareController')
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(aiPanel().props.controllerPreparationNotice).toContain('現在の編集内容は変更していません')
+  expect(byId(render(), 'panel-preparation').props.hidden).toBe(false)
+  assertNoUsbOperations()
+})
+
+it.each(['pending', 'importing', 'registered', 'disabled', 'missing'])('準備不可の %s 状態では直接ハンドラが呼ばれてもコードを置き換えない', reason => {
+  controllerTrial()
+  const context = harness.preparation.context as Record<string, unknown>
+  if (reason === 'pending') harness.preparation.hasPendingChanges = true
+  if (reason === 'importing') harness.preparation.isImporting = true
+  if (reason === 'registered') context.bleSource = 'registered'
+  if (reason === 'disabled') context.controllerEnabled = false
+  if (reason === 'missing') delete context.controllerStarter
+  event(aiPanel(), 'onPrepareController')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('準備後のWeb用コードにも毎回未検証確認を求め、キャンセルでは実行しない', () => {
+  controllerTrial()
+  event(aiPanel(), 'onPrepareController')
+  harness.confirm.mockClear().mockReturnValue(false)
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  expect(harness.programmer.run).not.toHaveBeenCalled()
+  expect(harness.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('提供側の実機検証が未完了'))
+  harness.confirm.mockReturnValue(true)
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  expect(harness.programmer.run).toHaveBeenCalledTimes(2)
+  expect(harness.confirm).toHaveBeenCalledTimes(3)
+  expect(currentProject().working).toBeNull()
+})
+
+it('Web用コードを準備しても接続機種が違えば実行させない', () => {
+  controllerTrial()
+  event(aiPanel(), 'onPrepareController')
+  harness.programmer.info.boardId = 'atoms3lite'
+  event(find(render(), element => element.type === CodeEditor), 'onRun')
+  expect(harness.programmer.run).not.toHaveBeenCalled()
+  expect(maker().props.notice).toContain('接続した機器と、選択した機器が違います')
+})
+
+it('AI準備からコントローラへ移るだけではコードやUSB通信に触れない', () => {
+  controllerTrial()
+  event(aiPanel(), 'onOpenController')
+  expect(byId(render(), 'panel-controller').props.hidden).toBe(false)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
 
 it.each(['running', 'error', 'connection-lost', 'disconnected'])('操作結果を %s でも操作ボタンの近くに残す', state => {
   harness.programmer.state = state

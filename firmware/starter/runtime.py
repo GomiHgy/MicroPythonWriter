@@ -15,7 +15,12 @@ class LedProgram:
     def __init__(self, config):
         self.config = config
         self.pin = machine.Pin(config["led_pin"], machine.Pin.OUT, value=0)
-        self.button = machine.Pin(config["button_pin"], machine.Pin.IN, machine.Pin.PULL_UP)
+        # ボタンを使わない作品では入力GPIO自体を初期化・読み取りしない。
+        use_button = config["while_held"] or any(
+            config.get(key, "none") != "none"
+            for key in ("short_press", "double_press", "long_press")
+        )
+        self.button = machine.Pin(config["button_pin"], machine.Pin.IN, machine.Pin.PULL_UP) if use_button else None
         self.count = config["led_count"]
         self.buffer = bytearray(self.count * 3)
         self.frame = [(0, 0, 0)] * self.count
@@ -34,7 +39,7 @@ class LedProgram:
         self.just_started = False
         self.dirty = True
         self.last = time.ticks_ms()
-        self.raw = self.button.value()
+        self.raw = self.button.value() if self.button is not None else 1
         self.stable = 1
         self.raw_changed = self.last
         self.pressed_at = self.last
@@ -166,6 +171,8 @@ class LedProgram:
             self.off()
 
     def button_step(self, now):
+        if self.button is None:
+            return
         if self.config["while_held"]:
             # 押している間だけ光る設定は、3種類の押し方より優先する。
             self.pending_short_at = None

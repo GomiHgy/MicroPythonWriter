@@ -7,8 +7,9 @@ export const promptMessages: MessageCatalog = {}
 const nanoLedV2Schema = `{"v":2,"mode":"RAINBOW","brightness":50,"speed":30,"pixels":"100000","playback":"playing","action":null,"controls":{"speed":true,"modes":[{"id":"RAINBOW","label":"Rainbow"}],"actions":[{"id":"SPARKLE","label":"Sparkle once"}]}}`
 
 export const nanoLedV2Rules: Record<Locale, string> = {
-  ja: `## NanoLED v2通信仕様（v2実機確認のある基準コードだけに適用）
-- 機器はPeripheral、ブラウザはCentral。確認済みAPIでNanoLED-から始まる完全名を広告またはscan responseへ含める。サービスUUIDの広告は任意。完全名と128-bit UUIDを同じ広告へ無理に詰めず、広告APIを推測しない。
+  ja: `## NanoLED v2通信仕様
+- この仕様への適合と実機確認は別。上記で明示したコードの出典・確認状態を維持し、同梱候補を確認済みと扱わない。
+- 機器はPeripheral、ブラウザはCentral。選択したコードのAPIでNanoLED-から始まる完全名を広告またはscan responseへ含める。サービスUUIDの広告は任意。完全名と128-bit UUIDを同じ広告へ無理に詰めず、広告APIを推測しない。
 - Primary service UUID: 6e400001-b5a3-f393-e0a9-e50e24dcca9e。RX UUID: 6e400002-b5a3-f393-e0a9-e50e24dcca9e は応答ありWrite必須。TX UUID: 6e400003-b5a3-f393-e0a9-e50e24dcca9e はNotify必須、Read任意。UUIDやWrite応答だけでは反映成功にならない。
 - RXはLF終端のASCIIで1行LF込み20バイト以下。PLAY / PAUSE / OFF / STATUS / BRIGHTNESS n / SPEED n / MODE <id> / ACTION <id>を使う。nは0〜100整数。コマンドは直列送信し、不正・未知・範囲外を適用しない。分割受信はLFまで結合し128バイト超の行を次のLFまで破棄する。受信キュー・待機・再試行は有界。
 - モードは続く光り方、アクションは一度だけの演出。利用者と光り方を相談し、技術的なID入力を求めず分かりやすい名前を付ける。下記例のID・ラベルは例示であり固定の作品内容ではない。再生・停止・消灯とそれぞれのボタンの用途を短く説明する。
@@ -23,8 +24,9 @@ export const nanoLedV2Rules: Record<Locale, string> = {
 - Notifyを1回20バイト以下へ分割する。UTF-8文字の途中で分割されても、ブラウザはLFまでバイト結合してから復号する。1行の固定スナップショットを最後まで送ってから次へ進む。LED・ボタンを止めず主ループで少量ずつ送り、待機分は最新1件だけ。切断では送受信途中行を捨て、再接続でサービス・Characteristicを取り直し完全な行から再送する。
 - TX購読後にSTATUS。初回の有効な状態を受け取るまでOFF以外は操作不可。STATUS、操作反映、本体ボタン、アクション開始・終了で通知し、変化がなくても約1秒ごと、最大5件/秒。通信が遅ければ周期を延ばす。不正JSON・過大行で現在状態を上書きしない。未受信・古い状態を明示する。
 - 送信完了と実行確認は別。v2に要求ID付きACKはない。Write応答をアクション成功・完了と呼ばず、機器から受信した現在のactionだけを表示する。短いアクションを通知で観測できなかった場合も成功と断定しない。`,
-  en: `## NanoLED v2 protocol (only for a baseline explicitly verified as v2)
-- Device: Peripheral; browser: Central. Advertise the full NanoLED- name in advertising or scan response through verified APIs. Service advertising is optional. Do not force the full name and 128-bit UUID into one packet or invent advertising APIs.
+  en: `## NanoLED v2 protocol
+- Protocol conformance and hardware verification are separate. Preserve the source and verification status explicitly stated above; never treat a bundled candidate as hardware verified.
+- Device: Peripheral; browser: Central. Advertise the full NanoLED- name in advertising or scan response through the selected code's APIs. Service advertising is optional. Do not force the full name and 128-bit UUID into one packet or invent advertising APIs.
 - Primary service UUID: 6e400001-b5a3-f393-e0a9-e50e24dcca9e. RX UUID: 6e400002-b5a3-f393-e0a9-e50e24dcca9e requires Write with Response. TX UUID: 6e400003-b5a3-f393-e0a9-e50e24dcca9e requires Notify; Read is optional. Matching UUIDs or a Write Response do not prove application success.
 - RX is ASCII, LF terminated, at most 20 bytes including LF: PLAY / PAUSE / OFF / STATUS / BRIGHTNESS n / SPEED n / MODE <id> / ACTION <id>. n is an integer 0–100. Serialize writes; invalid, unknown or out-of-range commands do not change state. Reassemble received bytes to LF; discard lines exceeding 128 bytes through the next LF. Bound queues, waits and retries.
 - A mode is a continuing effect; an action runs once. Ask about desired effects, not technical IDs. Supply friendly names in the conversation language and briefly explain play, pause, lights off, and project buttons. IDs and labels below are illustrative, not a fixed project.
@@ -39,8 +41,9 @@ export const nanoLedV2Rules: Record<Locale, string> = {
 - Split Notify into at most 20 bytes per chunk. Unicode characters may cross chunks: the browser reassembles bytes to LF before decoding. Finish one frozen snapshot before the next. Send incrementally from the main loop without blocking LEDs/buttons; keep only the newest pending snapshot. Discard partial RX/TX on disconnect; rediscover services/characteristics and restart a complete line after reconnect.
 - Subscribe to TX before STATUS. Disable controls except OFF before the first valid state. Report STATUS, applied commands, button changes, action start/end, and approximately every second unchanged, at most 5 snapshots/second; slow down for slow links. Invalid/oversized JSON must not overwrite state. Indicate missing/stale state.
 - Sending and confirming execution are different: v2 has no request-ID ACK. Never call a Write Response action success/completion. Show only the current action reported by the device; if a short action is not observed in notifications, do not assume it succeeded.`,
-  zh: `## NanoLED v2 通信规范（仅用于明确完成 v2 实机验证的基准代码）
-- 设备为 Peripheral，浏览器为 Central。通过已验证 API 在广播或 scan response 中包含 NanoLED- 开头的完整名称。广播服务 UUID 为可选，不把完整名称与 128-bit UUID 强行塞进同一包，不猜测广播 API。
+  zh: `## NanoLED v2 通信规范
+- 符合协议与实机验证是不同事项。保持上方明确说明的代码来源及验证状态，不能将内置候选代码当作已实机验证。
+- 设备为 Peripheral，浏览器为 Central。通过所选代码的 API 在广播或 scan response 中包含 NanoLED- 开头的完整名称。广播服务 UUID 为可选，不把完整名称与 128-bit UUID 强行塞进同一包，不猜测广播 API。
 - Primary service UUID: 6e400001-b5a3-f393-e0a9-e50e24dcca9e。RX UUID: 6e400002-b5a3-f393-e0a9-e50e24dcca9e 必须支持 Write with Response。TX UUID: 6e400003-b5a3-f393-e0a9-e50e24dcca9e 必须支持 Notify，Read 为可选。UUID 一致或写入响应不代表实际执行成功。
 - RX 为 LF 结尾的 ASCII，每行含 LF 最多 20 字节：PLAY / PAUSE / OFF / STATUS / BRIGHTNESS n / SPEED n / MODE <id> / ACTION <id>。n 为 0–100 整数。顺序写入，无效、未知或越界命令不改变状态。收到 LF 后才处理完整行，超过 128 字节的行丢弃到下一 LF。队列、等待和重试必须有界。
 - 模式是持续的效果，动作只执行一次。询问用户希望的效果，不要求输入技术 ID。用对话语言设置易懂名称，简短说明播放、暂停、熄灭及作品按钮。以下 ID 与名称仅为示例，不是固定作品内容。
