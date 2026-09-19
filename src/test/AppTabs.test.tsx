@@ -131,6 +131,21 @@ beforeEach(() => {
 
 afterEach(() => { setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
+it('ヘッダーに共有のフルカラーLEDアイコンを装飾画像として表示し、USB操作を行わない', () => {
+  const view = render()
+  const header = find(view, element => element.type === 'header')
+  const icon = find(header, element => element.props.className === 'brand-mark')
+  expect(icon.type).toBe('img')
+  expect(icon.props).toMatchObject({
+    src: `${import.meta.env.BASE_URL}favicon.svg`,
+    alt: '',
+    'aria-hidden': 'true',
+    width: 48,
+    height: 48,
+  })
+  assertNoUsbOperations()
+})
+
 it('既存コードがない初回は作品づくりを入口にし、4つのタブを関連付ける', () => {
   const view = render()
   expect(byId(view, 'tab-maker').props).toMatchObject({ role: 'tab', 'aria-selected': true, 'aria-controls': 'panel-maker', tabIndex: 0 })

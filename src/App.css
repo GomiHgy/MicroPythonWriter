@@ -8,7 +8,7 @@
 .app { max-width: 1440px; margin: auto; padding: 24px; }
 .hero { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 18px; }
 .brand { display: flex; align-items: center; gap: 14px; }
-.brand-mark { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: linear-gradient(135deg, #0867cb, #57b6ff); font-size: 1.5rem; box-shadow: 0 8px 20px #1671c433; }
+.brand-mark { display: block; width: 48px; height: 48px; border-radius: 14px; box-shadow: 0 8px 20px #1671c433; }
 .eyebrow { margin: 0 0 3px; color: #46627e; font-size: .78rem; font-weight: 750; letter-spacing: .06em; }
 .hero h1 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.05rem); letter-spacing: -.03em; }
 .hero p:not(.eyebrow) { margin: .28rem 0 0; color: #50677f; }
