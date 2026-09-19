@@ -112,7 +112,14 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
         <label>{t('設定の表示名')}<input value={draft.displayName} maxLength={200} onChange={event => setField('displayName', event.target.value)} /></label>
       </div>
       <p className="ai-help">{t('最大輝度が範囲内でも電源の安全性は保証されません。LED数と電源に合わせて確認してください。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。')}</p>
-      <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1/v2）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={draft.features[key]} onChange={event => setField('features', { ...draft.features, [key]: event.target.checked })} />{t(label)}</label>)}</fieldset>
+      <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1/v2）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={key === 'ble' ? draft.features.ble || draft.features.controller : draft.features[key]} disabled={key === 'ble' && draft.features.controller} aria-describedby={key === 'ble' && draft.features.controller ? 'ai-controller-ble-help' : undefined} onChange={event => {
+        if (key === 'ble' && draft.features.controller) return
+        const features = { ...draft.features, [key]: event.target.checked }
+        if (features.controller) features.ble = true
+        setField('features', features)
+      }} />{t(label)}</label>)}
+        {draft.features.controller && <p id="ai-controller-ble-help" className="ai-help">{t('WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。')}</p>}
+      </fieldset>
       <details className="ai-baseline"><summary>{t('基準コードと実機確認')}</summary><p className="ai-help">{t('任意の基準コードです。Bluetoothには対象UIFlow2版の実機で動作を確認したコードが必要です。入力・読込だけでは確認済みになりません。コードは実行されません。')}</p>
         <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
         <label className="ai-baseline-code">{t('基準コード（全文）')}<textarea value={draft.baseline.code} spellCheck={false} onChange={event => { setField('baseline', { code: event.target.value, verification: null }); setTestedOnDevice(false) }} /></label>

@@ -6,7 +6,7 @@ import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
-import { setLocale } from '../i18n'
+import { setLocale, translate } from '../i18n'
 
 const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as Array<() => void>, focus: vi.fn(), select: vi.fn() }))
 vi.mock('react', async () => ({
@@ -53,6 +53,55 @@ beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harn
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  function featureSettings(prep: WorkshopPreparation) {
+    const teacher = find(render(prep), element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0
+    const advanced = (teacher.type as (props: typeof teacher.props) => ReactNode)(teacher.props)
+    return find(advanced, element => element.type === 'fieldset' && element.props.className === 'ai-features')
+  }
+  function featureInput(node: ReactNode, label: string) {
+    return find(find(node, element => element.type === 'label' && content(element) === label), element => element.type === 'input')
+  }
+  it('WebコントローラをONにするとBluetoothも同時にONにする', () => {
+    const prep = preparation()
+    const node = featureSettings(prep)
+    expect(featureInput(node, 'Bluetooth').props).toMatchObject({ checked: false, disabled: false })
+    event(featureInput(node, 'Webコントローラ（NanoLED v1/v2）'), 'onChange', { target: { checked: true } })
+    expect(prep.editDraft).toHaveBeenCalledExactlyOnceWith({ features: { button: true, ble: true, controller: true } })
+    expect(prep.applyDraft).not.toHaveBeenCalled()
+    expect(prep.confirmBaseline).not.toHaveBeenCalled()
+  })
+  it.each(['ja', 'en', 'zh'] as const)('%s でBluetoothをON固定し、理由をチェック欄に関連付ける', locale => {
+    setLocale(locale)
+    const prep = { ...preparation(), draft: { ...profile, features: { button: true, ble: true, controller: true } } }
+    const node = featureSettings(prep)
+    const bluetooth = featureInput(node, 'Bluetooth')
+    expect(bluetooth.props).toMatchObject({ checked: true, disabled: true, 'aria-describedby': 'ai-controller-ble-help' })
+    const hint = find(node, element => element.props.id === 'ai-controller-ble-help')
+    expect(content(hint)).toBe(translate(locale, 'WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。'))
+    if (locale !== 'ja') expect(content(hint)).not.toMatch(/[ぁ-んァ-ヶ]/)
+    event(bluetooth, 'onChange', { target: { checked: false } })
+    expect(prep.editDraft).not.toHaveBeenCalled()
+    const controller = featureInput(node, translate(locale, 'Webコントローラ（NanoLED v1/v2）'))
+    expect(controller.props.disabled).toBe(false)
+    event(controller, 'onChange', { target: { checked: false } })
+    expect(prep.editDraft).toHaveBeenCalledExactlyOnceWith({ features: { button: true, ble: true, controller: false } })
+  })
+  it('WebコントローラがOFFならBluetoothを利用者がOFFにできる', () => {
+    const prep = { ...preparation(), draft: { ...profile, features: { button: false, ble: true, controller: false } } }
+    const node = featureSettings(prep)
+    const bluetooth = featureInput(node, 'Bluetooth')
+    expect(bluetooth.props).toMatchObject({ checked: true, disabled: false })
+    expect(bluetooth.props['aria-describedby']).toBeUndefined()
+    expect(all(node, element => element.props.id === 'ai-controller-ble-help')).toHaveLength(0)
+    event(bluetooth, 'onChange', { target: { checked: false } })
+    expect(prep.editDraft).toHaveBeenCalledExactlyOnceWith({ features: { button: false, ble: false, controller: false } })
+  })
+  it('旧設定のBluetooth OFF／コントローラONも、表示をON固定として扱う', () => {
+    const prep = { ...preparation(), draft: { ...profile, features: { button: true, ble: false, controller: true } } }
+    expect(featureInput(featureSettings(prep), 'Bluetooth').props).toMatchObject({ checked: true, disabled: true })
+    expect(prep.editDraft).not.toHaveBeenCalled()
+  })
   it.each(['ja', 'en', 'zh'] as const)('%s の書き込み案内は選択機種のページだけを開き、版やコードを変更しない', locale => {
     setLocale(locale)
     for (const [boardId, name, path] of [['m5nanoc6', 'M5NanoC6', 'nanoc6'], ['atoms3lite', 'AtomS3Lite', 'atoms3-lite']] as const) {

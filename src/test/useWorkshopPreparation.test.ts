@@ -4,6 +4,7 @@ import { workshopPresets } from '../config/workshops'
 import { setLocale } from '../i18n'
 import { ledSettingsKey } from '../services/workshop/LedSettings'
 import { createProject } from '../services/projects/ProjectStorage'
+import { workshopStorageKey } from '../services/workshop/WorkshopStorage'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }))
 vi.mock('react', () => ({
@@ -36,6 +37,92 @@ function verifyBaseline() {
 
 beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubGlobal('localStorage', { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+describe('WebコントローラとBluetoothの依存関係', () => {
+  it('WebコントローラをONにするとBluetoothもONにし、明示適用までは編集中の設定にとどめる', () => {
+    render().selectProfile(workshopPresets[0].id)
+    render().editDraft({ firmwareVersion: 'test-ui-2', ledModel: 'WS2812B' })
+    render().applyDraft()
+    render().editDraft({ features: { button: false, ble: false, controller: true } })
+    expect(render().draft?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().selectedProfile?.features).toEqual({ button: true, ble: false, controller: false })
+    expect(render().hasPendingChanges).toBe(true)
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+    expect(render().applyDraft()).toBe(true)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().hasPendingChanges).toBe(false)
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+
+  it('コントローラONの間はBluetoothをOFFにできず、コントローラOFF後は個別にOFFにできる', () => {
+    prepare()
+    const before = structuredClone(render().draft!)
+    render().editDraft({ features: { ...render().draft!.features, ble: false } })
+    expect(render().draft?.features).toEqual({ button: true, ble: true, controller: true })
+    expect(render().draft).toEqual(before)
+    render().editDraft({ features: { ...render().draft!.features, controller: false } })
+    expect(render().draft?.features).toEqual({ button: true, ble: true, controller: false })
+    render().editDraft({ features: { ...render().draft!.features, ble: false } })
+    expect(render().draft?.features).toEqual({ button: true, ble: false, controller: false })
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+
+  it.each(workshopPresets)('$profile.boardId: 自動ONしたBluetoothを明示保存し、再読込後も両方ONで復元する', preset => {
+    const values = new Map<string, string>()
+    const setItem = vi.fn((key: string, value: string) => values.set(key, value))
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem, removeItem: (key: string) => values.delete(key) })
+    render().selectProfile(preset.id)
+    render().editDraft({ firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', features: { button: false, ble: false, controller: true } })
+    expect(setItem).not.toHaveBeenCalled()
+    render().saveDraft(false)
+    const saved = JSON.parse(values.get(workshopStorageKey(preset))!)
+    expect(saved.profile.features).toEqual({ button: false, ble: true, controller: true })
+    setItem.mockClear()
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(preset.id)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().draft?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().hasPendingChanges).toBe(false)
+    expect(setItem).not.toHaveBeenCalled()
+  })
+
+  it.each(workshopPresets)('$profile.boardId: 旧設定のコントローラON・BluetoothOFFは保存せず補正し、未確認コードを確認済みにしない', preset => {
+    const legacy = {
+      ...structuredClone(preset.profile), firmwareVersion: 'test-ui-2', ledModel: 'WS2812B',
+      features: { button: false, ble: false, controller: true },
+      baseline: { code: 'print("not verified")', verification: null },
+    }
+    const raw = JSON.stringify({ schemaVersion: 1, presetId: preset.id, materialId: legacy.materialId, revision: legacy.revision, profile: legacy })
+    const values = new Map([[workshopStorageKey(preset), raw]])
+    const setItem = vi.fn((key: string, value: string) => values.set(key, value))
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem, removeItem: vi.fn() })
+    render().selectProfile(preset.id)
+    expect(render().selectedProfile).toEqual({ ...legacy, features: { ...legacy.features, ble: true } })
+    expect(render().draft).toEqual(render().selectedProfile)
+    expect(render().hasPendingChanges).toBe(false)
+    expect(render().context?.bleEnabled).toBe(false)
+    expect(render().context?.controllerEnabled).toBe(false)
+    expect(render().draft?.baseline.verification).toBeNull()
+    expect(values.get(workshopStorageKey(preset))).toBe(raw)
+    expect(setItem).not.toHaveBeenCalled()
+    expect(legacy.features.ble).toBe(false)
+    expect(preset.profile.features).toEqual({ button: true, ble: false, controller: false })
+  })
+
+  it('Bluetoothの自動ONは基準コードや実機確認情報を作成せず、未確認BLEの準備文を有効化しない', () => {
+    render().selectProfile(workshopPresets[0].id)
+    render().editDraft({ firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', baseline: { code: 'print("not verified")', verification: null } })
+    const before = structuredClone(render().draft!.baseline)
+    render().editDraft({ features: { ...render().draft!.features, controller: true } })
+    expect(render().draft?.features.ble).toBe(true)
+    expect(render().draft?.baseline).toEqual(before)
+    render().applyDraft()
+    expect(render().context?.bleEnabled).toBe(false)
+    expect(render().context?.controllerEnabled).toBe(false)
+    expect(render().selectedProfile?.baseline).toEqual(before)
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+})
 
 describe('AI準備用hookは講師設定だけを扱う', () => {
   it('作品設定の引き継ぎは機種・LED値を採用しても基準コードの確認情報を流用しない', () => {

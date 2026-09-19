@@ -8,11 +8,18 @@ import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { cloneWorkshopProfile, getBlePreparationReasons, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile } from '../services/workshop/WorkshopStorage'
 
+function withControllerBluetooth(profile: WorkshopProfile): WorkshopProfile {
+  // WebコントローラはBLE通信を使う。保存済みの旧設定も、保存を伴わず画面上で補正する。
+  return profile.features.controller && !profile.features.ble
+    ? { ...profile, features: { ...profile.features, ble: true } }
+    : profile
+}
+
 function initialSettings() {
   const loaded = workshopPresets.map(preset => {
     const saved = restoreWorkshopProfile(preset)
     const led = restoreLedSettings(preset, saved.profile)
-    return { preset, restored: { profile: led.profile, notice: saved.notice || led.notice } }
+    return { preset, restored: { profile: withControllerBluetooth(led.profile), notice: saved.notice || led.notice } }
   })
   return {
     profiles: loaded.map(({ preset, restored }) => ({ id: preset.id, profile: restored.profile })),
@@ -72,7 +79,7 @@ export function useWorkshopPreparation() {
     setDraft(previous => {
       if (!previous) return previous
       // 機器の変更はプリセット選択で行う。別機器の配線・実機確認を混ぜない。
-      const next = { ...previous, ...patch, materialId: previous.materialId, revision: previous.revision, boardId: previous.boardId }
+      const next = withControllerBluetooth({ ...previous, ...patch, materialId: previous.materialId, revision: previous.revision, boardId: previous.boardId })
       if (next.firmwareVersion !== previous.firmwareVersion || next.ledModel !== previous.ledModel || next.ledCount !== previous.ledCount || next.ledPin !== previous.ledPin || next.ledBpp !== previous.ledBpp || next.maxBrightnessPercent !== previous.maxBrightnessPercent || next.baseline.code !== previous.baseline.code) next.baseline = { ...next.baseline, verification: null }
       return next
     })

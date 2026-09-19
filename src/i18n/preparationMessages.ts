@@ -1,6 +1,7 @@
 import type { MessageCatalog } from './types'
 
 export const preparationMessages: MessageCatalog = {
+  'WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。': { en: 'The web controller uses Bluetooth, so Bluetooth stays on while the web controller is enabled. To turn Bluetooth off, first turn the web controller off.', zh: '网页控制器通过 Bluetooth 通信，因此启用网页控制器时，Bluetooth 会自动开启并保持开启。若要关闭 Bluetooth，请先关闭网页控制器。' },
   'Webコントローラを使う場合は、NanoLED v1またはv2対応の実機確認が必要です。': { en: 'The web controller requires hardware-verified NanoLED v1 or v2 support.', zh: '网页控制器需要经过实机验证的 NanoLED v1 或 v2 支持。' },
   'Webコントローラ（NanoLED v1/v2）': { en: 'Web controller (NanoLED v1/v2)', zh: '网页控制器（NanoLED v1/v2）' },
   'NanoLED v2対応確認あり': { en: 'NanoLED v2 compatibility confirmed', zh: '已验证 NanoLED v2 兼容性' },
