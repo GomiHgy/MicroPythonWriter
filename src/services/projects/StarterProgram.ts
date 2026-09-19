@@ -35,7 +35,7 @@ function validate(settings: ProjectSettings, recipe: ProjectRecipe) {
     if (!Number.isInteger(mode.speed) || mode.speed < 0 || mode.speed > 100 || !Number.isInteger(mode.repeats) || mode.repeats < 0 || mode.repeats > 100) throw new Error('速さ・繰り返し回数は0〜100の整数にしてください。')
     if (!['hold', 'off'].includes(mode.endState)) throw new Error('終了時の状態を選んでください。')
   }
-  if (!['next', 'toggle', 'none'].includes(recipe.shortPress) || !['off', 'none'].includes(recipe.longPress) || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') throw new Error('ボタン・無線の操作設定が不正です。')
+  if (!['next', 'toggle', 'none'].includes(recipe.shortPress) || !['next', 'toggle', 'none'].includes(recipe.doublePress) || !['next', 'toggle', 'none', 'off'].includes(recipe.longPress) || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') throw new Error('ボタン・無線の操作設定が不正です。')
 }
 
 /** 提供側の実機確認状況。コード準備・試行の可否とは別で、利用者の「動作OK」保存でも昇格しない。 */
@@ -58,7 +58,7 @@ export function buildStarterProgram(settings: ProjectSettings, recipe: ProjectRe
     button_pin: boardDefinitions[settings.boardId].buttonPin,
     name: settings.boardId === 'm5nanoc6' ? 'NanoLED-M5NanoC6' : 'NanoLED-AtomS3Lite',
     modes: recipe.modes.map(mode => ({ id: mode.id, label: mode.label.trim(), kind: mode.kind, color: mode.color.slice(1), speed: mode.speed, repeats: mode.repeats, end: mode.endState })),
-    short_press: recipe.shortPress, long_press: recipe.longPress, while_held: recipe.whileHeld, wireless: recipe.wireless,
+    short_press: recipe.shortPress, double_press: recipe.doublePress, long_press: recipe.longPress, while_held: recipe.whileHeld, wireless: recipe.wireless,
   }
   // JSONをPython文字列のデータとして埋め込む。ラベルや版名をコードへ展開しない。
   const literal = JSON.stringify(config).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')

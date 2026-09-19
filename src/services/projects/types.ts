@@ -21,10 +21,13 @@ export interface ProjectEffect {
   repeats: number
   endState: 'hold' | 'off'
 }
+export type ButtonAction = 'next' | 'toggle' | 'none'
 export interface ProjectRecipe {
   modes: ProjectEffect[]
-  shortPress: 'next' | 'toggle' | 'none'
-  longPress: 'off' | 'none'
+  shortPress: ButtonAction
+  doublePress: ButtonAction
+  // off は保存済み作品との互換用。新規の選択肢では使わない。
+  longPress: ButtonAction | 'off'
   whileHeld: boolean
   wireless: boolean
 }

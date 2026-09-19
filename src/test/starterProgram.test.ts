@@ -5,7 +5,7 @@ import { buildStarterProgram, providerVerifiedStarters, starterAvailability } fr
 import type { ProjectRecipe, ProjectSettings } from '../services/projects/types'
 
 const settings = (): ProjectSettings => ({ boardId: 'm5nanoc6', firmwareVersion: 'provider-test-only', ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20 })
-const recipe = (): ProjectRecipe => ({ modes: [{ id: 'WARM', label: 'あたたかい光', icon: 'light', kind: 'solid', color: '#ffcc00', speed: 50, repeats: 0, endState: 'hold' }], shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false })
+const recipe = (): ProjectRecipe => ({ modes: [{ id: 'WARM', label: 'あたたかい光', icon: 'light', kind: 'solid', color: '#ffcc00', speed: 50, repeats: 0, endState: 'hold' }], shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false })
 const pythonCommands = ['python3', 'python', ...(process.platform === 'win32' ? ['py', `${process.env.USERPROFILE}/.platformio/penv/Scripts/python.exe`] : [])]
 const python = pythonCommands.find(command => spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 5000 }).status === 0)
 
@@ -26,6 +26,8 @@ describe('starter generator', () => {
     expect(source).toContain('HARDWARE NOT VERIFIED')
     expect(source).toContain('WS2812_TIMING_NS = (400, 850, 800, 450)')
     expect(source).toContain('FADE_IN_MS = 200')
+    expect(source).toContain('DOUBLE_PRESS_MS = 350')
+    expect(source).toContain('LONG_PRESS_MS = 800')
     expect(source).toContain('machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)')
     expect(source).not.toContain('import neopixel')
     expect(source).not.toContain('import random')
@@ -40,6 +42,37 @@ describe('starter generator', () => {
     expect(source).toContain('NanoLED-AtomS3Lite')
     expect(source).toContain('"wireless":true')
     expect(source).not.toContain('"button_pin":9')
+  })
+
+  it('encodes independent actions for all three gestures without changing verification', () => {
+    for (const shortPress of ['next', 'toggle', 'none'] as const) {
+      for (const doublePress of ['next', 'toggle', 'none'] as const) {
+        for (const longPress of ['next', 'toggle', 'none'] as const) {
+          const value = { ...recipe(), shortPress, doublePress, longPress }
+          const source = buildStarterProgram(settings(), value)
+          expect(source).toContain(`"short_press":"${shortPress}"`)
+          expect(source).toContain(`"double_press":"${doublePress}"`)
+          expect(source).toContain(`"long_press":"${longPress}"`)
+          expect(starterAvailability(settings(), value).verified).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('preserves the old long-press off operation without reinterpreting it as toggle', () => {
+    const source = buildStarterProgram(settings(), { ...recipe(), longPress: 'off' })
+    expect(source).toContain('"long_press":"off"')
+    expect(source).toContain('"double_press":"none"')
+  })
+
+  it.each([
+    { shortPress: 'off' }, { shortPress: undefined },
+    { doublePress: 'off' }, { doublePress: 'invalid' }, { doublePress: undefined }, { doublePress: null },
+    { longPress: 'invalid' }, { longPress: undefined },
+  ])('rejects invalid or incomplete gesture settings %j', patch => {
+    const value = { ...recipe(), ...patch } as unknown as ProjectRecipe
+    expect(() => buildStarterProgram(settings(), value)).toThrow('ボタン・無線の操作設定が不正です。')
+    expect(starterAvailability(settings(), value).verified).toBe(false)
   })
 
   it.each([

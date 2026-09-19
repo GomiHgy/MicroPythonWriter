@@ -12,6 +12,7 @@
 .maker-step h3 { font-size: 1.35rem; margin: 5px 0 18px; }
 .maker-panel p, .maker-panel li { line-height: 1.85; }
 .maker-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.maker-button-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .maker-panel label:not(.maker-check):not(.maker-import) { display: flex; flex-direction: column; gap: 7px; font-size: .9rem; }
 .maker-panel input:not([type=checkbox]), .maker-panel select { max-width: 100%; box-sizing: border-box; min-width: 0; }
 .maker-panel input:not([type=checkbox]):not([type=range]):not([type=file]), .maker-panel select { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid #bbcddd; border-radius: 8px; background: #fff; color: #203d59; font: inherit; }

@@ -46,8 +46,14 @@ function snapshot(value: unknown): ProjectSnapshot {
     || !integer(settings.ledCount, 1, 300) || !integer(settings.ledPin, 0, 48)
     || typeof settings.maxBrightnessPercent !== 'number' || !Number.isFinite(settings.maxBrightnessPercent)
     || settings.maxBrightnessPercent <= 0 || settings.maxBrightnessPercent > 100) fail('機器・UIFlow2版・LED設定を確認してください。')
-  const recipe = record(draft.recipe, ['modes', 'shortPress', 'longPress', 'whileHeld', 'wireless'])
-  if (!['next', 'toggle', 'none'].includes(recipe.shortPress as string) || !['off', 'none'].includes(recipe.longPress as string)
+  // 旧版の5項目だけを移行対象にする。値を読む前に形を検証し、アクセサーも実行しない。
+  const hasDoublePress = !!draft.recipe && typeof draft.recipe === 'object' && Object.hasOwn(draft.recipe, 'doublePress')
+  const recipeKeys = ['modes', 'shortPress', 'longPress', 'whileHeld', 'wireless']
+  const recipe = record(draft.recipe, hasDoublePress ? [...recipeKeys, 'doublePress'] : recipeKeys)
+  const longPressActions = hasDoublePress ? ['next', 'toggle', 'none', 'off'] : ['off', 'none']
+  if (!['next', 'toggle', 'none'].includes(recipe.shortPress as string)
+    || (hasDoublePress && !['next', 'toggle', 'none'].includes(recipe.doublePress as string))
+    || !longPressActions.includes(recipe.longPress as string)
     || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') fail('ボタン・無線の設定が正しくありません。')
   if (!Array.isArray(recipe.modes) || recipe.modes.length < 1 || recipe.modes.length > 8) fail('光り方は1〜8個で設定してください。')
   const modes = recipe.modes as unknown[]
@@ -72,7 +78,10 @@ function snapshot(value: unknown): ProjectSnapshot {
     remoteIds[kind].add(id)
   }
   // 受信したコードや名前は実行せず、そのまま保存する。HTMLとしても扱わない。
-  return structuredClone(draft) as unknown as ProjectSnapshot
+  const result = structuredClone(draft) as unknown as ProjectSnapshot
+  // 既存のコードや「動作OK版」の記録は変えず、新しい操作だけを「何もしない」で補う。
+  if (!hasDoublePress) result.recipe.doublePress = 'none'
+  return result
 }
 
 export function createProject(): ArtworkProject {
@@ -83,7 +92,7 @@ export function createProject(): ArtworkProject {
       settings: { boardId: 'm5nanoc6', firmwareVersion: '', ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20 },
       recipe: {
         modes: [{ id: 'LIGHT', label: 'あたたかい光', icon: 'light', kind: 'solid', color: '#ffcc00', speed: 50, repeats: 0, endState: 'hold' }],
-        shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false,
+        shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false,
       },
       remoteButtons: [],
     },

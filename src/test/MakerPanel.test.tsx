@@ -231,7 +231,7 @@ describe('選択式レシピとプレビュー', () => {
     const { recipe, remoteButtons } = props.project.draft
     expect(recipe.modes).toHaveLength(2)
     expect(new Set(recipe.modes.map(mode => mode.color)).size).toBe(2)
-    expect(recipe).toMatchObject({ shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false })
+    expect(recipe).toMatchObject({ shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false })
     expect(remoteButtons.map(button => button.label)).toEqual(recipe.modes.map(mode => mode.label))
     for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
   })
@@ -258,9 +258,54 @@ describe('選択式レシピとプレビュー', () => {
     expect(text(preview)).toContain('保証するものではありません')
     expect(all(preview, element => element.type === 'span')).toHaveLength(10)
   })
-  it('押している間の操作が優先され、短押し長押し欄を無効にする', () => {
+  it('押している間の操作が優先され、3種類の操作欄を無効にする', () => {
     designStep(); click('押している間だけ光る'); click('次へ：操作を選ぶ')
-    expect(all(render(), element => element.type === 'select').every(select => select.props.disabled)).toBe(true)
+    const selectors = all(render(), element => element.type === 'select')
+    expect(selectors).toHaveLength(3)
+    expect(selectors.every(select => select.props.disabled)).toBe(true)
+    const before = structuredClone(props.project.draft.recipe)
+    for (const key of ['shortPress', 'doublePress', 'longPress']) event(input(`maker-button-${key}`), 'onChange', { target: { value: 'next' } })
+    expect(props.project.draft.recipe).toEqual(before)
+  })
+  it.each(['shortPress', 'doublePress', 'longPress'] as const)('%sで同じ3つの動作を選べ、以前の消灯設定は新規に選べない', key => {
+    controlsStep()
+    const choices = all(input(`maker-button-${key}`), element => element.type === 'option')
+    expect(choices.map(option => option.props.value)).toEqual(['next', 'toggle', 'none'])
+    expect(choices.map(option => text(option))).toEqual(['次の光り方にする', '点灯・消灯を切り替える', '何もしない'])
+    const before = structuredClone(props.project.draft.recipe)
+    event(input(`maker-button-${key}`), 'onChange', { target: { value: 'off' } })
+    expect(props.project.draft.recipe).toEqual(before)
+  })
+  it.each((['shortPress', 'doublePress', 'longPress'] as const).flatMap(key => (['next', 'toggle', 'none'] as const).map(action => [key, action] as const)))('%sを%sへ変更しても別の操作とコードは変更せず、実機確認は失効する', (key, action) => {
+    controlsStep(); props.canMarkWorking = true; check('maker-tested')
+    const before = structuredClone(props.project.draft.recipe)
+    event(input(`maker-button-${key}`), 'onChange', { target: { value: action } })
+    expect(props.project.draft.recipe).toEqual({ ...before, [key]: action })
+    expect(props.project.draft.source).toBe('print("test")')
+    expect(input('maker-tested').props.checked).toBe(false)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('旧作品の長押し消灯を表示・保持し、明示変更した場合だけ共通3択へ移行する', () => {
+    props.project.draft.recipe.longPress = 'off'
+    controlsStep()
+    expect(input('maker-button-longPress').props.value).toBe('off')
+    const legacy = all(input('maker-button-longPress'), element => element.type === 'option' && element.props.value === 'off')
+    expect(legacy).toHaveLength(1)
+    expect(legacy[0].props.disabled).toBe(true)
+    expect(text(render())).toContain('以前の作品の「長押しで消灯」を保持')
+    expect(props.onChange).not.toHaveBeenCalled()
+    event(input('maker-button-longPress'), 'onChange', { target: { value: 'toggle' } })
+    expect(props.project.draft.recipe.longPress).toBe('toggle')
+    expect(all(input('maker-button-longPress'), element => element.type === 'option')).toHaveLength(3)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it.each(['ja', 'en', 'zh'] as const)('%sでも1回・2回・長押しを区別し、判定時間と共通の値を保持する', locale => {
+    controlsStep(); harness.locale = locale
+    for (const label of ['短く1回押したら', '短く2回押したら', '長く押したら']) expect(text(render())).toContain(locale === 'ja' ? label : makerMessages[label][locale])
+    expect(text(render())).toContain('0.35')
+    expect(text(render())).toContain('0.8')
+    for (const key of ['shortPress', 'doublePress', 'longPress']) expect(all(input(`maker-button-${key}`), element => element.type === 'option').map(option => option.props.value)).toEqual(['next', 'toggle', 'none'])
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
   })
   it('既存コードの実機確認は生成コードと一致しなくても許可し、相違を案内する', () => {
     controlsStep(); props.canMarkWorking = true; props.sourceMatches = false

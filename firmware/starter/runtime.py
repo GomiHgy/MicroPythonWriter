@@ -8,6 +8,7 @@ WS2812_TIMING_NS = (400, 850, 800, 450)
 FADE_IN_MS = 200
 DEBOUNCE_MS = 40
 LONG_PRESS_MS = 800
+DOUBLE_PRESS_MS = 350
 
 
 class LedProgram:
@@ -38,6 +39,8 @@ class LedProgram:
         self.raw_changed = self.last
         self.pressed_at = self.last
         self.long_handled = False
+        self.pending_short_at = None
+        self.second_press = False
         self.write()
 
     def write(self):
@@ -150,7 +153,35 @@ class LedProgram:
             return True
         return False
 
+    def button_action(self, operation):
+        if operation == "next":
+            self.select(self.index if self.playback == "off" else (self.index + 1) % len(self.modes))
+        elif operation == "toggle":
+            if self.playback == "off":
+                self.play()
+            else:
+                self.off()
+        elif operation == "off":
+            # 以前に保存した作品の「長く押すと消灯」は意味を変えずに維持する。
+            self.off()
+
     def button_step(self, now):
+        if self.config["while_held"]:
+            # 押している間だけ光る設定は、3種類の押し方より優先する。
+            self.pending_short_at = None
+            self.second_press = False
+        else:
+            # 1回目を離してから、2回目の押下が安定するまで350ms未満なら2回押し。
+            # 350msちょうどは1回押しを確定する。待機中も描画・BLEを止めない。
+            if self.pending_short_at is not None and time.ticks_diff(now, self.pending_short_at) >= DOUBLE_PRESS_MS:
+                self.pending_short_at = None
+                self.button_action(self.config["short_press"])
+            if self.stable == 0 and not self.long_handled and time.ticks_diff(now, self.pressed_at) >= LONG_PRESS_MS:
+                self.long_handled = True
+                self.pending_short_at = None
+                self.second_press = False
+                self.button_action(self.config["long_press"])
+
         raw = self.button.value()
         if raw != self.raw:
             self.raw = raw
@@ -162,21 +193,19 @@ class LedProgram:
                 self.long_handled = False
                 if self.config["while_held"]:
                     self.select(self.index)
+                else:
+                    # 2回目は離すまで確定しない。長押しに変われば1回目も取り消す。
+                    self.second_press = self.pending_short_at is not None
+                    self.pending_short_at = None
             elif self.config["while_held"]:
                 self.off()
             elif not self.long_handled:
-                operation = self.config["short_press"]
-                if operation == "next":
-                    self.select(self.index if self.playback == "off" else (self.index + 1) % len(self.modes))
-                elif operation == "toggle":
-                    if self.playback == "off":
-                        self.play()
-                    else:
-                        self.off()
-        if not self.config["while_held"] and self.stable == 0 and not self.long_handled and time.ticks_diff(now, self.pressed_at) >= LONG_PRESS_MS:
-            self.long_handled = True
-            if self.config["long_press"] == "off":
-                self.off()
+                if self.second_press:
+                    self.second_press = False
+                    self.button_action(self.config.get("double_press", "none"))
+                else:
+                    # 2回押しが「何もしない」でも1回押しへ読み替えない。
+                    self.pending_short_at = now
 
     @staticmethod
     def wheel(position):

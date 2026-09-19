@@ -17,7 +17,7 @@ describe('作品の形式・保存・読み込み', () => {
   it('安全な初期値を毎回独立した参照で作る', () => {
     const project = createProject()
     expect(project.draft.settings).toEqual({ boardId: 'm5nanoc6', firmwareVersion: '', ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20 })
-    expect(project.draft.recipe).toMatchObject({ shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false })
+    expect(project.draft.recipe).toMatchObject({ shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false })
     expect(project.draft.recipe.modes).toHaveLength(1)
     expect(project.draft.source).toBe('')
     expect(project.working).toBeNull()
@@ -68,6 +68,8 @@ describe('作品の形式・保存・読み込み', () => {
     ['modes excess', (p: ArtworkProject) => { p.draft.recipe.modes = Array.from({ length: 9 }, (_, i) => ({ ...p.draft.recipe.modes[0], id: `M${i}` })) }],
     ['mode duplicate', (p: ArtworkProject) => { p.draft.recipe.modes.push({ ...p.draft.recipe.modes[0] }) }],
     ['short button', (p: ArtworkProject) => { (p.draft.recipe as unknown as { shortPress: string }).shortPress = 'exec' }],
+    ['double button', (p: ArtworkProject) => { (p.draft.recipe as unknown as { doublePress: string }).doublePress = 'off' }],
+    ['long button', (p: ArtworkProject) => { (p.draft.recipe as unknown as { longPress: string }).longPress = 'exec' }],
     ['wireless type', (p: ArtworkProject) => { (p.draft.recipe as unknown as { wireless: number }).wireless = 1 }],
     ['speed', (p: ArtworkProject) => { p.draft.recipe.modes[0].speed = -1 }],
     ['repeats', (p: ArtworkProject) => { p.draft.recipe.modes[0].repeats = 101 }],
@@ -165,6 +167,154 @@ describe('作品の形式・保存・読み込み', () => {
     expect(loadProject().notice).toContain('保存領域')
     expect(saveProject(project)).toContain('書き出して')
     expect(parseProject(serializeProject(project)).draft.source).toBe(project.draft.source)
+  })
+})
+
+describe('3種類のボタン操作と旧版作品の互換読み込み', () => {
+  const actions = ['next', 'toggle', 'none'] as const
+  const combinations = actions.flatMap(shortPress => actions.flatMap(doublePress => actions.map(longPress => ({ shortPress, doublePress, longPress }))))
+
+  function legacyProject() {
+    const project = createProject()
+    project.updatedAt = '2026-09-19T01:02:03.000Z'
+    project.draft.source = '# 既存コードは再生成しない\r\nprint("編集中")\n'
+    project.draft.recipe.longPress = 'off'
+    Reflect.deleteProperty(project.draft.recipe, 'doublePress')
+    project.working = {
+      confirmedAt: '2026-09-18T01:02:03.000Z',
+      snapshot: structuredClone(project.draft),
+    }
+    project.working.snapshot.source = '# 動作を確認したコード\r\nprint("そのまま保持")\n'
+    project.working.snapshot.recipe.longPress = 'none'
+    return project
+  }
+
+  it.each(combinations)('短押し $shortPress / 2回押し $doublePress / 長押し $longPress を独立して保存する', buttons => {
+    const project = createProject()
+    Object.assign(project.draft.recipe, buttons)
+    const original = structuredClone(project)
+    expect(parseProject(serializeProject(project))).toEqual(original)
+    expect(saveProjectDraft(project)).toBe('')
+    expect(loadProject().project).toEqual(original)
+    expect(project).toEqual(original)
+  })
+
+  it.each([undefined, null, '', 'off', 'NEXT', 0, false, [], {}])('doublePressが存在する場合は不正値 %j を旧版扱いしない', value => {
+    const project = createProject()
+    Object.defineProperty(project.draft.recipe, 'doublePress', { value, enumerable: true, configurable: true })
+    expect(() => validateProject(project)).toThrow('作品データ')
+    expect(saveProjectDraft(project)).not.toBe('')
+    expect(target.setItem).not.toHaveBeenCalled()
+  })
+
+  it.each(['next', 'toggle'])('doublePressのない旧5項目で、新しい長押し操作 %s を受け付けない', longPress => {
+    const project = legacyProject()
+    Object.defineProperty(project.draft.recipe, 'longPress', { value: longPress, enumerable: true })
+    expect(() => validateProject(project)).toThrow('ボタン・無線')
+  })
+
+  it.each(['extra', 'missing shortPress', 'missing whileHeld', 'missing modes', 'inherited doublePress'])('旧版の既知スキーマ以外を補完しない: %s', variant => {
+    const project = legacyProject()
+    if (variant === 'extra') Object.defineProperty(project.draft.recipe, 'extra', { value: true, enumerable: true })
+    else if (variant === 'inherited doublePress') Object.setPrototypeOf(project.draft.recipe, { doublePress: 'none' })
+    else Reflect.deleteProperty(project.draft.recipe, variant.replace('missing ', ''))
+    expect(() => validateProject(project)).toThrow('作品データ')
+  })
+
+  it.each(['doublePress', 'longPress'])('操作項目 %s のアクセサーを一度も実行せずに拒否する', property => {
+    const project = legacyProject()
+    const getter = vi.fn(() => 'none')
+    Object.defineProperty(project.draft.recipe, property, { get: getter, enumerable: true })
+    expect(() => validateProject(project)).toThrow('作品データ')
+    expect(getter).not.toHaveBeenCalled()
+  })
+
+  it('旧版は2回押しだけを補い、コード・設定・長押し消灯・日時・確認記録を維持する', () => {
+    const project = legacyProject()
+    const original = structuredClone(project)
+    const normalized = validateProject(project)
+    expect(normalized).toEqual({
+      ...original,
+      draft: { ...original.draft, recipe: { ...original.draft.recipe, doublePress: 'none' } },
+      working: {
+        ...original.working!,
+        snapshot: { ...original.working!.snapshot, recipe: { ...original.working!.snapshot.recipe, doublePress: 'none' } },
+      },
+    })
+    expect(normalized.draft.recipe.longPress).toBe('off')
+    expect(project).toEqual(original)
+    expect(project.draft.recipe).not.toHaveProperty('doublePress')
+    normalized.draft.recipe.modes[0].label = '変更した下書き'
+    normalized.draft.recipe.doublePress = 'toggle'
+    expect(normalized.working!.snapshot.recipe.doublePress).toBe('none')
+    expect(normalized.working!.snapshot.recipe.modes[0].label).toBe(original.working!.snapshot.recipe.modes[0].label)
+    expect(project).toEqual(original)
+  })
+
+  it.each([PROJECT_STORAGE_KEY, PROJECT_DRAFT_STORAGE_KEY])('旧ローカル保存 %s を書き換えず、確認記録付きで読み込む', key => {
+    const project = legacyProject()
+    const serialized = JSON.stringify(project)
+    target.values.set(key, serialized)
+    const loaded = loadProject()
+    expect(loaded).toEqual({ project: validateProject(project), notice: '', sourceAuthoritative: key === PROJECT_DRAFT_STORAGE_KEY })
+    expect(loaded.project.working!.confirmedAt).toBe(project.working!.confirmedAt)
+    expect(target.values.get(key)).toBe(serialized)
+    expect(target.setItem).not.toHaveBeenCalled()
+  })
+
+  it('旧ファイルを取り込むと2回押しは無操作となり、外部の動作確認だけを解除する', () => {
+    const project = legacyProject()
+    const imported = parseProject(JSON.stringify(project))
+    expect(imported).toEqual({ ...validateProject(project), working: null })
+    expect(imported.draft.source).toBe(project.draft.source)
+    expect(imported.draft.recipe.longPress).toBe('off')
+    expect(project.working).not.toBeNull()
+    expect(target.setItem).not.toHaveBeenCalled()
+  })
+
+  it('旧動作OK版を復元してもコード・確認日時・長押し動作を変えず、2回押しだけを補う', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-20T01:02:03.000Z'))
+    const project = legacyProject()
+    const original = structuredClone(project)
+    const restored = restoreWorking(project)
+    expect(restored.draft).toEqual(validateProject(project).working!.snapshot)
+    expect(restored.draft.source).toBe(original.working!.snapshot.source)
+    expect(restored.draft.recipe).toMatchObject({ doublePress: 'none', longPress: 'none' })
+    expect(restored.working!.confirmedAt).toBe(original.working!.confirmedAt)
+    expect(restored.updatedAt).toBe('2026-09-20T01:02:03.000Z')
+    restored.draft.recipe.doublePress = 'next'
+    expect(restored.working!.snapshot.recipe.doublePress).toBe('none')
+    expect(project).toEqual(original)
+  })
+
+  it('旧版の書き出しは両スナップショットを新形に正規化し、入力と既存コードを変更しない', () => {
+    const project = legacyProject()
+    const original = structuredClone(project)
+    const exported = JSON.parse(serializeProject(project))
+    expect(exported).toEqual(validateProject(original))
+    expect(exported.version).toBe(1)
+    expect(exported.draft.recipe.doublePress).toBe('none')
+    expect(exported.working.snapshot.recipe.doublePress).toBe('none')
+    expect(exported.draft.source).toBe(original.draft.source)
+    expect(exported.working.snapshot.source).toBe(original.working!.snapshot.source)
+    expect(exported.working.confirmedAt).toBe(original.working!.confirmedAt)
+    expect(project).toEqual(original)
+  })
+
+  it.each(['draft', 'working'] as const)('新旧が混ざった作品でも%sの旧レシピだけを補い、もう一方の2回押しを変えない', legacyLocation => {
+    const project = legacyProject()
+    const modern = legacyLocation === 'draft' ? project.working!.snapshot : project.draft
+    modern.recipe.doublePress = 'next'
+    modern.recipe.longPress = 'toggle'
+    const normalized = validateProject(project)
+    const legacyResult = legacyLocation === 'draft' ? normalized.draft : normalized.working!.snapshot
+    const modernResult = legacyLocation === 'draft' ? normalized.working!.snapshot : normalized.draft
+    expect(legacyResult.recipe.doublePress).toBe('none')
+    expect(modernResult.recipe.doublePress).toBe('next')
+    expect(modernResult.recipe.longPress).toBe('toggle')
+    expect(normalized.draft.source).toBe(project.draft.source)
+    expect(normalized.working!.snapshot.source).toBe(project.working!.snapshot.source)
   })
 })
 

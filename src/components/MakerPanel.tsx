@@ -43,6 +43,11 @@ export interface MakerPanelProps {
 const stages = ['機器を選ぶ', '配線を確認', '試しに光らせる', '光り方を作る', 'ボタン・無線を試す', '完成して持ち出す'] as const
 const kinds: Record<ProjectEffect['kind'], string> = { solid: '一色の光', rainbow: 'にじいろ', chase: '流れる光', twinkle: '星空' }
 const icons: Record<ProjectEffect['icon'], string> = { light: 'ライト', star: '星', rainbow: '虹', heart: 'ハート' }
+const buttonGestures = [
+  { key: 'shortPress', label: '短く1回押したら' },
+  { key: 'doublePress', label: '短く2回押したら' },
+  { key: 'longPress', label: '長く押したら' },
+] as const
 type Progress = { stage: number; settingsKey: string; confirmationKey: string; wired: boolean; seen: boolean; tested: boolean; unplugged: boolean }
 
 export function MakerPanel(props: MakerPanelProps) {
@@ -138,9 +143,9 @@ export function MakerPanel(props: MakerPanelProps) {
       {stage === 3 && <>
         <p>{t('よく使う光り方を選んで組み合わせよう。ここを変更しても、機器の動作はまだ変わりません。')}</p>
         <div className="maker-presets" role="group" aria-label={t('入門プログラムを選ぶ')}>
-          <button onClick={() => updateRecipe({ shortPress: 'next', longPress: 'off', whileHeld: false, wireless: false, modes: [{ id: 'M1', label: t('ピンク'), icon: 'heart', kind: 'solid', color: '#ff4080', speed: 50, repeats: 0, endState: 'hold' }, { id: 'M2', label: t('ブルー'), icon: 'light', kind: 'solid', color: '#0080ff', speed: 50, repeats: 0, endState: 'hold' }] })}>{t('ボタンで色を切り替える')}</button>
-          <button onClick={() => updateRecipe({ shortPress: 'none', longPress: 'none', whileHeld: true, wireless: false })}>{t('押している間だけ光る')}</button>
-          <button onClick={() => updateRecipe({ shortPress: 'next', longPress: 'off', whileHeld: false, wireless: true })}>{t('スマホで光り方を変える')}</button>
+          <button onClick={() => updateRecipe({ shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false, modes: [{ id: 'M1', label: t('ピンク'), icon: 'heart', kind: 'solid', color: '#ff4080', speed: 50, repeats: 0, endState: 'hold' }, { id: 'M2', label: t('ブルー'), icon: 'light', kind: 'solid', color: '#0080ff', speed: 50, repeats: 0, endState: 'hold' }] })}>{t('ボタンで色を切り替える')}</button>
+          <button onClick={() => updateRecipe({ shortPress: 'none', doublePress: 'none', longPress: 'none', whileHeld: true, wireless: false })}>{t('押している間だけ光る')}</button>
+          <button onClick={() => updateRecipe({ shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: true })}>{t('スマホで光り方を変える')}</button>
         </div>
         <div className="maker-preview" role="img" aria-label={t('光り方のイメージ。実機の状態ではありません。')}><div aria-hidden="true">{Array.from({ length: Math.min(settings.ledCount, 16) }, (_, index) => <span key={index} style={{ backgroundColor: current?.kind === 'rainbow' ? `hsl(${index * 30} 90% 55%)` : current?.color ?? '#ffcc00' }} />)}</div><p>{t('画面のイメージです。動き・配線・実機での色や明るさを保証するものではありません。')}</p></div>
         {recipe.modes.map((mode, index) => <fieldset className="maker-mode" key={mode.id}><legend>{t('光り方 {number}', { number: index + 1 })}</legend><div className="maker-fields">
@@ -156,8 +161,16 @@ export function MakerPanel(props: MakerPanelProps) {
         <button className="primary maker-next" disabled={recipe.modes.some(mode => !mode.label.trim())} onClick={() => { if (recipe.modes.every(mode => mode.label.trim())) setStep({ stage: 4 }) }}>{t('次へ：操作を選ぶ')}</button>
       </>}
       {stage === 4 && <>
-        <div className="maker-fields"><label>{t('短く押したら')}<select value={recipe.shortPress} disabled={recipe.whileHeld} onChange={event => updateRecipe({ shortPress: event.target.value as ProjectRecipe['shortPress'] })}><option value="next">{t('次の光り方にする')}</option><option value="toggle">{t('点灯・消灯を切り替える')}</option><option value="none">{t('何もしない')}</option></select></label><label>{t('長く押したら')}<select value={recipe.longPress} disabled={recipe.whileHeld} onChange={event => updateRecipe({ longPress: event.target.value as ProjectRecipe['longPress'] })}><option value="off">{t('消灯する')}</option><option value="none">{t('何もしない')}</option></select></label></div>
-        <label className="maker-check"><input id="maker-held" type="checkbox" checked={recipe.whileHeld} onChange={event => updateRecipe({ whileHeld: event.target.checked })} />{t('押している間だけ光る（短押し・長押しより優先）')}</label>
+        <div className="maker-fields maker-button-fields">{buttonGestures.map(({ key, label }) => <label key={key}>{t(label)}<select id={`maker-button-${key}`} value={recipe[key]} disabled={recipe.whileHeld} onChange={event => {
+          const action = event.target.value
+          if (!recipe.whileHeld && (action === 'next' || action === 'toggle' || action === 'none')) updateRecipe({ [key]: action })
+        }}>
+          {key === 'longPress' && recipe.longPress === 'off' && <option value="off" disabled>{t('消灯する（以前の設定）')}</option>}
+          <option value="next">{t('次の光り方にする')}</option><option value="toggle">{t('点灯・消灯を切り替える')}</option><option value="none">{t('何もしない')}</option>
+        </select></label>)}</div>
+        <p className="maker-note">{t('短く2回押すときは、1回目を離してから約0.35秒以内にもう一度押してください。1回押しは約0.35秒待ってから動きます。長押しは約0.8秒です。')}</p>
+        {recipe.longPress === 'off' && <p className="maker-note">{t('以前の作品の「長押しで消灯」を保持しています。変更する場合は、上の3つの動作から選んでください。機器のコードは自動では変わりません。')}</p>}
+        <label className="maker-check"><input id="maker-held" type="checkbox" checked={recipe.whileHeld} onChange={event => updateRecipe({ whileHeld: event.target.checked })} />{t('押している間だけ光る（1回押し・2回押し・長押しより優先）')}</label>
         <label className="maker-check"><input id="maker-wireless" type="checkbox" checked={recipe.wireless} onChange={event => updateRecipe({ wireless: event.target.checked })} />{t('Bluetoothリモコンも使う')}</label>
         {recipe.wireless && <p className="maker-note">{t('無線にはNanoLED v2対応プログラムと、Web Bluetooth対応環境が必要です。実機未検証の場合は、接続・状態受信・操作も機器で確かめてください。')}</p>}
         {starterGuidance}
