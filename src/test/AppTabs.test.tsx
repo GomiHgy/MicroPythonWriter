@@ -5,6 +5,8 @@ import { CodeEditor } from '../components/CodeEditor'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
+import { ProgramResult } from '../components/ProgramResult'
+import type { ProgramFeedback } from '../types/programFeedback'
 import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
 import type { ArtworkProject } from '../services/projects/types'
 import type { AppError } from '../types'
@@ -24,6 +26,7 @@ const harness = vi.hoisted(() => ({
     state: 'running', source: 'print("keep this draft")', log: 'existing log', supported: true,
     runningSource: 'print("keep this draft")' as string | null, writtenSource: 'print("keep this draft")' as string | null,
     bootConfigured: null as { mode: 0 | 1; source: string | null } | null,
+    programFeedback: null as ProgramFeedback | null,
     info: { bootOption: 1, deviceName: 'NanoC6', nanoC6Confirmed: true, microPythonVersion: 'test', boardId: 'm5nanoc6', bootOptionSupported: true, nvsFallbackSupported: false },
     error: undefined as AppError | undefined, baudRate: 115200,
     connect: vi.fn(), disconnect: vi.fn(), stop: vi.fn(), run: vi.fn(), write: vi.fn(),
@@ -113,6 +116,7 @@ beforeEach(() => {
   harness.programmer.state = 'running'; harness.programmer.supported = true; harness.programmer.source = 'print("keep this draft")'
   harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
   harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
+  harness.programmer.programFeedback = null
   harness.programmer.info.boardId = 'm5nanoc6'; harness.programmer.info.bootOptionSupported = true; harness.programmer.info.nvsFallbackSupported = false
   harness.starterVerified = false; harness.starterSource = 'print("starter")\n'; harness.starterThrows = false; harness.values = new Map()
   vi.clearAllMocks()
@@ -130,6 +134,42 @@ beforeEach(() => {
 })
 
 afterEach(() => { setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it.each(['running', 'error', 'connection-lost', 'disconnected'])('操作結果を %s でも操作ボタンの近くに残す', state => {
+  harness.programmer.state = state
+  const feedback: ProgramFeedback = { id: 4, operation: 'run', phase: state === 'running' ? 'running' : state === 'error' ? 'failed' : 'disconnected', saved: true, source: 'old source' }
+  harness.programmer.programFeedback = feedback
+  const view = render()
+  const card = find(view, element => element.props.className === 'action-card')
+  const result = find(card, element => element.type === ProgramResult)
+  expect(result.props).toMatchObject({ feedback, source: harness.programmer.source, connected: state === 'running' || state === 'error' })
+  expect(result.props.onRecover).toBe(state === 'error' ? harness.programmer.normalMode : undefined)
+  const run = find(card, element => element.props.className === 'run-button')
+  expect(run.props.disabled).toBe(state !== 'running')
+  expect(all(card, element => element.props.className === 'action-tip')).toHaveLength(0)
+  assertNoUsbOperations()
+})
+
+it('初回接続だけでは書込み成功を表示しない', () => {
+  harness.programmer.state = 'raw-repl-ready'
+  expect(all(render(), element => element.type === ProgramResult)).toHaveLength(0)
+  assertNoUsbOperations()
+})
+
+it('結果の対処ボタンからエラー詳細へ移動できる', () => {
+  harness.programmer.state = 'error'
+  harness.programmer.programFeedback = { id: 4, operation: 'run', phase: 'failed', saved: false, source: 'known', failedAt: 'write' }
+  harness.programmer.error = { exceptionType: 'Error', message: 'test failure', traceback: 'test failure', intentionalInterrupt: false, stage: '実行', repairPrompt: 'test prompt' }
+  const scrollIntoView = vi.fn()
+  harness.getElementById.mockReturnValue({ focus: harness.focus, scrollIntoView })
+  const view = render()
+  expect(byId(view, 'program-error-details').props.tabIndex).toBe(-1)
+  event(find(view, element => element.type === ProgramResult), 'onShowError')
+  expect(harness.getElementById).toHaveBeenCalledWith('program-error-details')
+  expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+  expect(harness.focus).toHaveBeenCalledWith({ preventScroll: true })
+  assertNoUsbOperations()
+})
 
 it('ヘッダーに共有のフルカラーLEDアイコンを装飾画像として表示し、USB操作を行わない', () => {
   const view = render()

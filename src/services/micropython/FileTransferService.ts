@@ -28,17 +28,23 @@ export class FileTransferService {
 
   async writeMain(source: string, keepTempOnSyntaxError = true): Promise<number> {
     const bytes = new TextEncoder().encode(source); const base64 = (data: Uint8Array) => btoa(String.fromCharCode(...data))
-    await this.repl.execute(`import os\ntry: os.remove(${quote(this.tempPath)})\nexcept OSError: pass\nopen(${quote(this.tempPath)},'wb').close()`)
+    await this.executeWrite(`import os\ntry: os.remove(${quote(this.tempPath)})\nexcept OSError: pass\nopen(${quote(this.tempPath)},'wb').close()`)
     for (let offset = 0; offset < bytes.length; offset += this.chunkBytes) {
       const encoded = base64(bytes.slice(offset, offset + this.chunkBytes))
-      await this.repl.execute(`import binascii\nf=open(${quote(this.tempPath)},'ab');f.write(binascii.a2b_base64(b'${encoded}'));f.close()`)
+      await this.executeWrite(`import binascii\nf=open(${quote(this.tempPath)},'ab');f.write(binascii.a2b_base64(b'${encoded}'));f.close()`)
     }
     const validate = await this.repl.execute(`s=open(${quote(this.tempPath)},'rb').read()\nprint('__SIZE__'+str(len(s)))\ncompile(s,${quote(this.mainPath)},'exec')`)
     const reported = Number(validate.stdout.match(/__SIZE__(\d+)/)?.[1]); if (reported !== bytes.length) throw new FileSystemError(`書込みサイズが一致しません: PC=${bytes.length}, device=${reported}`)
     if (validate.stderr) { if (!keepTempOnSyntaxError) await this.repl.execute(`import os\ntry: os.remove(${quote(this.tempPath)})\nexcept OSError: pass`); throw new FileSystemError(`main.py.tmp の構文確認に失敗しました。\n${validate.stderr}`) }
-    try { await this.repl.execute(`import os\ntry: os.remove(${quote(this.backupPath)})\nexcept OSError: pass\ntry: os.rename(${quote(this.mainPath)},${quote(this.backupPath)})\nexcept OSError: pass\nos.rename(${quote(this.tempPath)},${quote(this.mainPath)})\ntry: os.sync()\nexcept AttributeError: pass`) } catch (error) { await this.repl.execute(`import os\ntry: os.rename(${quote(this.backupPath)},${quote(this.mainPath)})\nexcept OSError: pass`).catch(() => undefined); throw error }
+    try { await this.executeWrite(`import os\ntry: os.remove(${quote(this.backupPath)})\nexcept OSError: pass\ntry: os.rename(${quote(this.mainPath)},${quote(this.backupPath)})\nexcept OSError: pass\nos.rename(${quote(this.tempPath)},${quote(this.mainPath)})\ntry: os.sync()\nexcept AttributeError: pass`) } catch (error) { await this.repl.execute(`import os\ntry: os.rename(${quote(this.backupPath)},${quote(this.mainPath)})\nexcept OSError: pass`).catch(() => undefined); throw error }
     await this.verifyMainSize(bytes.length)
     return bytes.length
+  }
+
+  private async executeWrite(command: string) {
+    const { stderr } = await this.repl.execute(command)
+    // Raw REPLの機器側例外はPromiseのrejectではなくstderrで返る。
+    if (stderr) throw new FileSystemError(stderr)
   }
 
   async verifyMainSize(expectedBytes: number) {

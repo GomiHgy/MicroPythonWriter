@@ -507,3 +507,256 @@ describe('実行・編集・再実行（実際のhook・状態機械、機器通
     expect(render().state).toBe('running-no-marker')
   })
 })
+
+describe('書込み・実行結果の構造化フィードバック', () => {
+  it('接続だけでは結果を作らず、受け付けた操作から準備・書込み・構文確認・起動へ進む', async () => {
+    expect(render().programFeedback).toBeNull()
+    await render().run()
+    expect(render().programFeedback).toBeNull()
+    await render().connect()
+    expect(render().programFeedback).toBeNull()
+    render().setSource('print("snapshot")')
+    const prepare = deferred(), write = deferred(), verify = deferred(), start = deferred()
+    const preparing = deferred(), writing = deferred(), verifying = deferred(), starting = deferred()
+    vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockImplementationOnce(async () => { preparing.resolve(); await prepare.promise })
+    vi.mocked(FileTransferService.prototype.writeMain).mockImplementationOnce(async () => { writing.resolve(); await write.promise; return 100 })
+    vi.mocked(MicroPythonDevice.prototype.validateMain).mockImplementationOnce(async () => { verifying.resolve(); await verify.promise })
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(async (_code, nextCallbacks = {}) => {
+      callbacks.push(nextCallbacks); starting.resolve(); await start.promise
+      return { state: 'running', confirmedBy: 'startup-marker', initialOutput: '', stderr: '', session: { state: 'running', stop: async () => stopped, dispose: () => {} } }
+    })
+    const operation = render().run()
+    await preparing.promise
+    const id = render().programFeedback!.id
+    expect(render().programFeedback).toEqual({ id, operation: 'run', source: 'print("snapshot")', phase: 'preparing', saved: false })
+    render().setSource('print("later-edit")')
+    prepare.resolve(); await writing.promise
+    expect(render().programFeedback).toMatchObject({ id, phase: 'writing', saved: false })
+    write.resolve(); await verifying.promise
+    expect(render().programFeedback).toMatchObject({ id, phase: 'verifying', saved: true })
+    verify.resolve(); await starting.promise
+    expect(render().programFeedback).toMatchObject({ id, phase: 'starting', saved: true })
+    start.resolve(); await operation
+    expect(render().programFeedback).toEqual({ id, operation: 'run', source: 'print("snapshot")', phase: 'running', saved: true, confirmation: 'startup-marker' })
+  })
+
+  it.each(['prepare', 'write', 'verify', 'start'] as const)('%s失敗は成功と表示せず、保存完了前後を区別する', async stage => {
+    await render().connect()
+    render().setSource('attempted-code')
+    const failure = new Error(`${stage}-failed`)
+    if (stage === 'prepare') vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockRejectedValueOnce(failure)
+    if (stage === 'write') vi.mocked(FileTransferService.prototype.writeMain).mockRejectedValueOnce(failure)
+    if (stage === 'verify') vi.mocked(MicroPythonDevice.prototype.validateMain).mockRejectedValueOnce(failure)
+    if (stage === 'start') vi.mocked(RawReplClient.prototype.startLongRunning).mockRejectedValueOnce(failure)
+    await render().run()
+    expect(render().programFeedback).toMatchObject({ operation: 'run', phase: 'failed', failedAt: stage, message: `${stage}-failed`, saved: stage === 'verify' || stage === 'start', source: 'attempted-code' })
+    expect(render().state).toBe('error')
+    expect(render().runningSource).toBeNull()
+  })
+
+  it.each(['startup-marker', 'still-running', 'execution-accepted'] as const)('%sを保持し、後から届いた実行エラーで成功表示を置き換える', async confirmation => {
+    confirmedBy = confirmation
+    await startProgram()
+    const feedback = render().programFeedback!
+    expect(feedback).toMatchObject({ phase: 'running', saved: true, confirmation })
+    render().setSource('not-the-running-source')
+    callbacks[0].onComplete?.({ state: 'error', stdout: '', stderr: 'ValueError: runtime-error', intentionalStop: false })
+    expect(render().programFeedback).toMatchObject({ id: feedback.id, source: feedback.source, phase: 'failed', saved: true, failedAt: 'runtime', confirmation })
+    expect(render().programFeedback?.message).toContain('runtime-error')
+    expect(render().runningSource).toBeNull()
+  })
+
+  it.each(['host', 'empty-stderr'] as const)('常駐処理の%sエラーも終了成功と混同しない', async kind => {
+    await startProgram()
+    callbacks[0].onComplete?.({ state: 'error', stdout: '', stderr: '', intentionalStop: false, hostError: kind === 'host' ? new Error('host failed') : undefined })
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'runtime' })
+    expect(render().state).toBe('error')
+  })
+
+  it.each(['completed', 'error'] as const)('起動Promiseより先に%s通知が届いても、遅い起動結果で実行中へ戻さない', async finalState => {
+    await render().connect()
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(async (_code, nextCallbacks) => {
+      nextCallbacks?.onComplete?.({ state: finalState, stdout: '', stderr: finalState === 'error' ? 'RuntimeError: early-failure' : '', intentionalStop: false })
+      return { state: 'running', confirmedBy: 'startup-marker', initialOutput: '', stderr: '', session: { state: finalState, stop: async () => stopped, dispose: () => {} } }
+    })
+    await render().run()
+    expect(render().programFeedback).toMatchObject({ phase: finalState === 'error' ? 'failed' : 'completed', saved: true, confirmation: 'startup-marker' })
+    expect(render().state).toBe(finalState === 'error' ? 'error' : 'raw-repl-ready')
+    expect(render().runningSource).toBeNull()
+  })
+
+  it.each([true, false])('短いプログラムの正常終了を表示する（終了通知あり=%s）', async notify => {
+    await render().connect()
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(async (_code, nextCallbacks) => {
+      if (notify) nextCallbacks?.onComplete?.({ state: 'completed', stdout: 'done', stderr: '', intentionalStop: false })
+      return { state: 'completed', confirmedBy: 'execution-accepted', initialOutput: 'done', stderr: '', session: { state: 'completed', stop: async () => stopped, dispose: () => {} } }
+    })
+    await render().run()
+    expect(render().programFeedback).toMatchObject({ phase: 'completed', saved: true, confirmation: 'execution-accepted' })
+    expect(render().state).toBe('raw-repl-ready')
+  })
+
+  it('起動後の自然終了で実行中表示を終了へ変える', async () => {
+    await startProgram()
+    callbacks[0].onComplete?.({ state: 'completed', stdout: 'done', stderr: '', intentionalStop: false })
+    expect(render().programFeedback).toMatchObject({ phase: 'completed', saved: true })
+    expect(render().runningSource).toBeNull()
+  })
+
+  it('意図した停止のKeyboardInterruptは失敗ではなく停止済みとして保持する', async () => {
+    await startProgram()
+    const previous = render().programFeedback!
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockResolvedValueOnce({ ...stopped, stderr: 'Traceback:\nKeyboardInterrupt:' })
+    await render().stop()
+    expect(render().programFeedback).toEqual({ ...previous, id: previous.id + 1, phase: 'stopped' })
+    expect(render().error).toBeUndefined()
+    expect(render().runningSource).toBeNull()
+    callbacks[0].onComplete?.({ state: 'error', stdout: '', stderr: 'late error', intentionalStop: false })
+    expect(render().programFeedback?.phase).toBe('stopped')
+  })
+
+  it.each(['throw', 'host', 'runtime'] as const)('手動停止の%sエラーは保存成功と停止失敗を別に保持する', async kind => {
+    await startProgram()
+    if (kind === 'throw') vi.mocked(RawReplClient.prototype.stopLongRunning).mockRejectedValueOnce(new Error('stop-failed'))
+    else vi.mocked(RawReplClient.prototype.stopLongRunning).mockResolvedValueOnce({ ...stopped, state: 'error', hostError: kind === 'host' ? new Error('stop-failed') : undefined, stderr: kind === 'runtime' ? 'RuntimeError: stop-failed' : '', intentionalStop: false })
+    await render().stop()
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'stop' })
+    expect(render().programFeedback?.message).toContain('stop-failed')
+  })
+
+  it('保存だけの操作は実行成功と区別し、結果を次の操作まで保持する', async () => {
+    await render().connect()
+    render().setSource('saved-program')
+    await render().write()
+    const feedback = render().programFeedback
+    expect(feedback).toMatchObject({ operation: 'write', phase: 'saved', saved: true, source: 'saved-program' })
+    expect(feedback?.confirmation).toBeUndefined()
+    expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+    expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+    render().setSource('later-edit'); render().setLog('log-cleared')
+    expect(render().programFeedback).toEqual(feedback)
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    await render().write()
+    expect(render().programFeedback).toEqual(feedback)
+  })
+
+  it('保存確認の取消・起動中の連打では最後の結果を消さない', async () => {
+    await startProgram()
+    const previous = render().programFeedback
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    await render().write()
+    expect(render().programFeedback).toEqual(previous)
+    const barrier = deferred(), entered = deferred()
+    vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockImplementationOnce(async () => { entered.resolve(); await barrier.promise })
+    const operation = render().run()
+    await entered.promise
+    const inProgress = render().programFeedback
+    await Promise.all([render().run(), render().write(), render().stop()])
+    expect(render().programFeedback).toEqual(inProgress)
+    barrier.resolve(); await operation
+  })
+
+  it.each(['prepare', 'write', 'verify', 'start'] as const)('%s待機中のUSB切断を表示し、遅い成功では上書きしない', async stage => {
+    await render().connect()
+    const barrier = deferred(), entered = deferred()
+    const wait = async () => { entered.resolve(); await barrier.promise }
+    if (stage === 'prepare') vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockImplementationOnce(wait)
+    if (stage === 'write') vi.mocked(FileTransferService.prototype.writeMain).mockImplementationOnce(async () => { await wait(); return 100 })
+    if (stage === 'verify') vi.mocked(MicroPythonDevice.prototype.validateMain).mockImplementationOnce(wait)
+    if (stage === 'start') vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(async (_code, nextCallbacks) => {
+      await wait()
+      nextCallbacks?.onComplete?.({ state: 'completed', stdout: '', stderr: '', intentionalStop: false })
+      return { state: 'running', confirmedBy: 'still-running', initialOutput: '', stderr: '', session: { state: 'running', stop: async () => stopped, dispose: () => {} } }
+    })
+    const operation = render().run()
+    await entered.promise
+    disconnectDetected()
+    const disconnected = render().programFeedback
+    expect(disconnected).toMatchObject({ phase: 'disconnected', saved: stage === 'verify' || stage === 'start' })
+    barrier.resolve(); await operation
+    expect(render().programFeedback).toEqual(disconnected)
+    expect(render().state).toBe('connection-lost')
+  })
+
+  it.each(['event', 'runtime-error', 'manual'] as const)('実行中のUSB切断（%s）で現在も実行中と表示しない', async kind => {
+    await startProgram()
+    if (kind === 'event') disconnectDetected()
+    if (kind === 'runtime-error') callbacks[0].onComplete?.({ state: 'error', stdout: '', stderr: '', intentionalStop: false, hostError: new SerialDisconnectedError() })
+    if (kind === 'manual') await render().disconnect()
+    expect(render().programFeedback).toMatchObject({ phase: 'disconnected', saved: true })
+    expect(render().runningSource).toBeNull()
+  })
+
+  it.each(['connect', 'reconnect'] as const)('%sで古い結果を消し、古い通知は新しい結果へ影響しない', async method => {
+    vi.spyOn(WebSerialTransport.prototype, 'reconnect').mockResolvedValue()
+    await startProgram()
+    const oldCallbacks = callbacks[0]
+    disconnectDetected(); active = false
+    await render()[method]()
+    expect(render().programFeedback).toBeNull()
+    await render().run()
+    const current = render().programFeedback
+    oldCallbacks.onComplete?.({ state: 'error', stdout: '', stderr: 'old-error', intentionalStop: false })
+    expect(render().programFeedback).toEqual(current)
+  })
+
+  it('USBイベントなしの書込み中の切断エラーも切断として表示する', async () => {
+    await render().connect()
+    vi.mocked(FileTransferService.prototype.writeMain).mockRejectedValueOnce(new SerialDisconnectedError())
+    await render().write()
+    expect(render().programFeedback).toMatchObject({ phase: 'disconnected', saved: false, failedAt: 'write' })
+  })
+
+  it('再接続後に旧操作が失敗しても新しい準備表示を壊さない', async () => {
+    await render().connect()
+    const oldBarrier = deferred(), oldEntered = deferred()
+    vi.mocked(FileTransferService.prototype.writeMain).mockImplementationOnce(async () => { oldEntered.resolve(); await oldBarrier.promise; throw new Error('old failure') })
+    const oldOperation = render().run()
+    await oldEntered.promise
+    disconnectDetected(); await render().connect()
+    const newBarrier = deferred(), newEntered = deferred()
+    vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockImplementationOnce(async () => { newEntered.resolve(); await newBarrier.promise })
+    const newOperation = render().run()
+    await newEntered.promise
+    const current = render().programFeedback
+    oldBarrier.resolve(); await oldOperation
+    expect(render().programFeedback).toEqual(current)
+    expect(current?.phase).toBe('preparing')
+    newBarrier.resolve(); await newOperation
+    expect(render().programFeedback).toMatchObject({ id: current?.id, phase: 'running', saved: true })
+  })
+
+  it('同期操作で停止したプログラムを実行中と表示し続けない', async () => {
+    await startProgram()
+    await render().normalMode()
+    expect(render().programFeedback).toMatchObject({ phase: 'stopped', saved: true })
+    expect(render().runningSource).toBeNull()
+  })
+
+  it('同期操作の停止失敗も保存成功と分ける', async () => {
+    await startProgram()
+    vi.mocked(MicroPythonDevice.prototype.enterNormalMode).mockRejectedValueOnce(new Error('cannot stop'))
+    await render().normalMode()
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'stop' })
+  })
+
+  it('リセット後は停止済みを示し、取消なら元の実行結果を保持する', async () => {
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+    await startProgram()
+    const previous = render().programFeedback
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    await render().reset()
+    expect(render().programFeedback).toEqual(previous)
+    await render().reset()
+    expect(render().programFeedback).toMatchObject({ phase: 'stopped', saved: true })
+    expect(render().state).toBe('disconnected')
+  })
+
+  it.each(['reset', 'setBoot'] as const)('%s前の停止失敗も実行中の成功表示のままにしない', async operation => {
+    await startProgram()
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockRejectedValueOnce(new Error('reset stop failed'))
+    if (operation === 'reset') await render().reset()
+    else await render().setBoot(0)
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'stop', message: 'reset stop failed' })
+  })
+})

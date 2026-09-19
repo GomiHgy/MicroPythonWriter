@@ -128,6 +128,10 @@ export const appMessages: MessageCatalog = {
     "en": "See “Need help?” and check the indicated line.",
     "zh": "请查看“遇到问题？”并检查所提示的行。"
   },
+  '操作欄の結果と「困ったとき」で、エラー内容を確認してください。': {
+    en: 'Check the result beside the controls and “Need help?” for error details.',
+    zh: '请查看操作区的结果和“遇到问题？”中的错误详情。'
+  },
   "機器を準備中": {
     "en": "Preparing the device",
     "zh": "正在准备设备"
@@ -287,6 +291,104 @@ export const appMessages: MessageCatalog = {
   "まずは「実行」を押そう": {
     "en": "Start with “Run”",
     "zh": "先点击“运行”"
+  },
+  '機器への書き込みと実行': { en: 'Save to your device and run', zh: '写入设备并运行' },
+  '書き込み・実行の結果': { en: 'Save and run result', zh: '写入与运行结果' },
+  '今回の操作': { en: 'This operation', zh: '本次操作' },
+  '機器への書き込み': { en: 'Save to device', zh: '写入设备' },
+  'プログラムの実行': { en: 'Program execution', zh: '程序运行' },
+  '書き込みの準備中です': { en: 'Preparing to save', zh: '正在准备写入' },
+  '動作中のプログラムがあれば停止してから、書き込みます。USBケーブルを抜かずに待ってください。': {
+    en: 'Any running program will be stopped before saving. Please wait and keep the USB cable connected.',
+    zh: '如有程序正在运行，将先停止再写入。请等待，不要拔出 USB 线。'
+  },
+  '機器へ書き込んでいます…': { en: 'Saving to your device…', zh: '正在写入设备…' },
+  'プログラムの転送と保存の確認をしています。USBケーブルを抜かずに待ってください。': {
+    en: 'Transferring the program and checking that it was saved. Please wait and keep the USB cable connected.',
+    zh: '正在传输程序并确认保存结果。请等待，不要拔出 USB 线。'
+  },
+  '書き込み成功・実行前の確認中です': { en: 'Saved successfully · checking before starting', zh: '写入成功 · 正在进行运行前检查' },
+  '機器への保存は完了しました。プログラムを実行できるか確認しています。': {
+    en: 'The program is saved on your device. Checking that it can be started.',
+    zh: '程序已保存到设备。正在检查是否可以运行。'
+  },
+  '書き込み成功・実行を開始しています…': { en: 'Saved successfully · starting…', zh: '写入成功 · 正在启动…' },
+  '機器への保存は完了しました。実行開始の応答を待っています。': {
+    en: 'The program is saved on your device. Waiting for a startup response.',
+    zh: '程序已保存到设备。正在等待启动响应。'
+  },
+  '書き込みに成功しました': { en: 'Saved successfully', zh: '写入成功' },
+  'プログラムを機器に保存しました。今回は保存だけで、実行はしていません。試すときは「実行」を押してください。': {
+    en: 'Your program is saved on the device. It was not started this time. Click “Run” when you want to try it.',
+    zh: '程序已保存到设备。本次仅保存，尚未运行。想试运行时请点击“运行”。'
+  },
+  '書き込み成功・実行を開始しました': { en: 'Saved successfully · program started', zh: '写入成功 · 程序已启动' },
+  '起動メッセージを受信しました。LEDやボタンが意図どおり動くか、機器を見て確認してください。': {
+    en: 'A startup message was received. Check the device to see whether the LEDs and button work as intended.',
+    zh: '已收到启动消息。请查看实机，确认 LED 和按钮是否按预期工作。'
+  },
+  '実行開始として扱っていますが、起動メッセージは未確認です。LEDやボタンが意図どおり動くか、機器を見て確認してください。': {
+    en: 'The program is treated as started, but no startup message has been confirmed. Check the device to see whether the LEDs and button work as intended.',
+    zh: '当前按已启动处理，但尚未确认启动消息。请查看实机，确认 LED 和按钮是否按预期工作。'
+  },
+  '書き込み成功・プログラムが終了しました': { en: 'Saved successfully · program finished', zh: '写入成功 · 程序已结束' },
+  'エラーの報告なく処理が終了しました。LEDが意図どおり光ったかは、機器を見て確認してください。': {
+    en: 'The program finished without reporting an error. Check the device to see whether the LEDs lit as intended.',
+    zh: '程序已结束，未报告错误。请查看实机，确认 LED 是否按预期点亮。'
+  },
+  '書き込み済み・実行を停止しました': { en: 'Program saved · execution stopped', zh: '已写入 · 运行已停止' },
+  '停止操作が完了しました。編集して、もう一度「実行」で試せます。': {
+    en: 'The stop operation is complete. You can edit your code and click “Run” to try again.',
+    zh: '停止操作已完成。可以编辑代码，然后再次点击“运行”进行尝试。'
+  },
+  '書き込み済み・停止を確認できませんでした': { en: 'Program saved · could not confirm it stopped', zh: '已写入 · 无法确认是否已停止' },
+  '書き込み成功・実行でエラーが発生しました': { en: 'Saved successfully · execution error', zh: '写入成功 · 运行出错' },
+  '書き込みを開始できませんでした': { en: 'Could not start saving', zh: '无法开始写入' },
+  '書き込みを完了できませんでした': { en: 'Could not finish saving', zh: '未能完成写入' },
+  '機器への保存はできていますが、操作は正常に完了していません。下のエラー内容を確認してください。': {
+    en: 'The program is saved on your device, but the operation did not finish successfully. Check the error details below.',
+    zh: '程序已保存到设备，但操作未正常完成。请查看下方的错误详情。'
+  },
+  '今回の書き込みは成功していません。エラー内容とUSB接続を確認してから、もう一度試してください。': {
+    en: 'This save did not succeed. Check the error details and USB connection, then try again.',
+    zh: '本次写入未成功。请检查错误详情和 USB 连接，然后重试。'
+  },
+  '書き込み済み・USB接続が切れました': { en: 'Program saved · USB disconnected', zh: '已写入 · USB 连接已断开' },
+  'USB切断・書き込み完了を確認できません': { en: 'USB disconnected · save completion unknown', zh: 'USB 已断开 · 无法确认写入是否完成' },
+  '切断前の保存完了は確認済みです。現在の機器の動作は確認できません。操作を続けるにはUSBをつなぎ直してください。': {
+    en: 'Saving was confirmed before disconnection. The device’s current behavior is unknown. Reconnect USB to continue.',
+    zh: '已确认断开前保存完成。目前无法确认设备的运行情况。请重新连接 USB 以继续操作。'
+  },
+  '保存が完了したか確認できません。USBをつなぎ直してから、もう一度書き込んでください。': {
+    en: 'It is not known whether saving finished. Reconnect USB, then save the program again.',
+    zh: '无法确认保存是否完成。请重新连接 USB，然后再次写入程序。'
+  },
+  '成功': { en: 'Successful', zh: '成功' },
+  '準備中': { en: 'Preparing', zh: '准备中' },
+  '書き込み中': { en: 'Saving', zh: '写入中' },
+  '未完了': { en: 'Not completed', zh: '未完成' },
+  '未確認': { en: 'Not confirmed', zh: '未确认' },
+  '今回は実行しません': { en: 'Not run this time', zh: '本次不运行' },
+  '実行開始': { en: 'Started', zh: '已启动' },
+  '終了': { en: 'Finished', zh: '已结束' },
+  '停止済み': { en: 'Stopped', zh: '已停止' },
+  'エラー': { en: 'Error', zh: '错误' },
+  '確認中': { en: 'Checking', zh: '确认中' },
+  'まだ実行していません': { en: 'Not started yet', zh: '尚未运行' },
+  'エラー内容': { en: 'Error details', zh: '错误详情' },
+  'エラーの詳細・対処を見る': { en: 'View error details and help', zh: '查看错误详情与解决方法' },
+  '再試行の準備': { en: 'Prepare to retry', zh: '准备重试' },
+  '機器を停止・再初期化します。編集中のコードは変えません。準備後に「実行」または「プログラム更新」を押してください。': {
+    en: 'Stop and reinitialize the device without changing your edited code. When ready, click “Run” or “Update program”.',
+    zh: '停止并重新初始化设备，不会更改正在编辑的代码。准备就绪后，请点击“运行”或“更新程序”。'
+  },
+  'この結果は変更前のコードのものです。現在の編集内容はまだ機器に反映されていません。': {
+    en: 'This result is for the code before your latest edits. The current edits have not been saved to the device.',
+    zh: '此结果对应修改前的代码。当前编辑内容尚未写入设备。'
+  },
+  'これは切断前の操作結果です。現在の機器の動作は確認できません。': {
+    en: 'This is the result from before disconnection. The device’s current behavior cannot be confirmed.',
+    zh: '这是断开连接前的操作结果。目前无法确认设备的运行情况。'
   },
   "実行すると、編集内容を機器へ保存してから動かします。": {
     "en": "“Run” saves your edited code to the device, then starts it.",
