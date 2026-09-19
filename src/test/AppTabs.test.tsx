@@ -17,7 +17,7 @@ const harness = vi.hoisted(() => ({
   preparation: { context: null as unknown, hasPendingChanges: false, adoptProjectSettings: vi.fn() },
   contexts: [] as unknown[],
   initialSources: [] as unknown[], sourceAuthorities: [] as unknown[], effects: [] as (() => void)[], runDependentEffects: false,
-  starterVerified: false, starterSource: 'print("starter")\n',
+  starterVerified: false, starterSource: 'print("starter")\n', starterThrows: false,
   values: new Map<string, string>(), getItem: vi.fn(), setItem: vi.fn(), confirm: vi.fn(),
   anchor: { href: '', download: '', click: vi.fn() },
   programmer: {
@@ -56,7 +56,7 @@ vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
 vi.mock('../components/AiPreparationPanel', () => ({ AiPreparationPanel: () => null }))
 vi.mock('../components/MakerPanel', () => ({ MakerPanel: () => null }))
-vi.mock('../services/projects/StarterProgram', () => ({ buildStarterProgram: () => harness.starterSource, starterAvailability: () => ({ verified: harness.starterVerified, reason: '実機未確認です。' }) }))
+vi.mock('../services/projects/StarterProgram', () => ({ buildStarterProgram: () => { if (harness.starterThrows) throw new Error('設定が不正です'); return harness.starterSource }, starterAvailability: () => ({ verified: harness.starterVerified, reason: '実機未確認です。' }) }))
 
 function render(): ReactNode {
   harness.cursor = 0; harness.effects = []
@@ -114,7 +114,7 @@ beforeEach(() => {
   harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
   harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
   harness.programmer.info.boardId = 'm5nanoc6'; harness.programmer.info.bootOptionSupported = true; harness.programmer.info.nvsFallbackSupported = false
-  harness.starterVerified = false; harness.starterSource = 'print("starter")\n'; harness.values = new Map()
+  harness.starterVerified = false; harness.starterSource = 'print("starter")\n'; harness.starterThrows = false; harness.values = new Map()
   vi.clearAllMocks()
   harness.programmer.setSource.mockImplementation((value: string) => { harness.programmer.source = value })
   harness.getElementById.mockReturnValue({ focus: harness.focus })
@@ -303,21 +303,27 @@ it.each([['en', 'Program', 'Language'], ['zh', '程序', '显示语言']])('言�
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset'] as const) expect(harness.programmer[operation]).not.toHaveBeenCalled()
 })
 
-it('未確認の入門コードは準備・実行コールバックを直接呼んでも機器へ送らない', () => {
-  harness.programmer.source = harness.starterSource
+it('実機未確認でも入門コードを編集画面だけに準備し、確認済み表示・動作OK記録には変えない', () => {
+  harness.programmer.state = 'disconnected'
   expect(maker().props.verifiedStarter).toBe(false)
-  event(maker(), 'onPrepare'); event(maker(), 'onRun')
-  expect(maker().props.notice).toBe('実機未確認です。')
-  expect(harness.programmer.setSource).not.toHaveBeenCalled()
-  expect(harness.setItem).not.toHaveBeenCalled()
+  expect(maker().props.canPrepareStarter).toBe(true)
+  event(maker(), 'onPrepare')
+  expect(harness.programmer.setSource).toHaveBeenCalledExactlyOnceWith(harness.starterSource)
+  expect(maker().props.sourceMatches).toBe(true)
+  expect(maker().props.verifiedStarter).toBe(false)
+  expect(currentProject().working).toBeNull()
+  expect(maker().props.notice).toContain('機器には送っていません')
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!).draft.source).toBe('print("keep this draft")')
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft.source).toBe(harness.starterSource)
   assertNoUsbOperations()
 })
 
-it('入門準備は確認を断ると現在コードを置き換えず、承認時も機器には送信しない', () => {
-  harness.starterVerified = true
+it.each([false, true])('確認済み=%sの入門準備もコード上書き確認を断ると変更せず、承認時も機器へ送信しない', verified => {
+  harness.starterVerified = verified
   harness.confirm.mockReturnValue(false)
   event(maker(), 'onPrepare')
   expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.values.has('mpw-artwork-before-replace-v1')).toBe(false)
   harness.confirm.mockReturnValue(true)
   event(maker(), 'onPrepare')
   expect(harness.programmer.source).toBe(harness.starterSource)
@@ -327,20 +333,176 @@ it('入門準備は確認を断ると現在コードを置き換えず、承認�
   assertNoUsbOperations()
 })
 
-it.each(['source', 'board', 'state'])('入門実行は %s 不一致時にfail-closedにする', reason => {
-  harness.starterVerified = true
+it('空の編集欄へ未確認コードを準備するときもUSBへ送らず、空の元コードを退避する', () => {
+  harness.programmer.source = ''
+  event(maker(), 'onPrepare')
+  expect(harness.programmer.source).toBe(harness.starterSource)
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!).draft.source).toBe('')
+  assertNoUsbOperations()
+})
+
+it.each(['backup', 'draft'])('未確認コード準備で%s保存に失敗したら元の編集を保持する', failure => {
+  const previous = currentProject()
+  harness.setItem.mockImplementation((key: string, value: string) => {
+    if (key === (failure === 'backup' ? 'mpw-artwork-before-replace-v1' : PROJECT_DRAFT_STORAGE_KEY)) throw new Error('保存できません')
+    harness.values.set(key, value)
+  })
+  event(maker(), 'onPrepare')
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(maker().props.verifiedStarter).toBe(false)
+  assertNoUsbOperations()
+})
+
+it.each(['empty', 'throw'])('生成結果が%sの場合は準備・実行のコールバックを直接呼んでも変更しない', failure => {
+  if (failure === 'empty') harness.starterSource = ''
+  else harness.starterThrows = true
+  expect(maker().props.canPrepareStarter).toBe(false)
+  event(maker(), 'onPrepare'); event(maker(), 'onRun')
+  expect(maker().props.sourceMatches).toBe(false)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(harness.values.has(PROJECT_DRAFT_STORAGE_KEY)).toBe(false)
+  assertNoUsbOperations()
+})
+
+it.each([false, true].flatMap(verified => ['source', 'board', 'state'].map(reason => [verified, reason] as const)))('確認済み=%sでも入門実行は%s不一致時に確認も送信もしない', (verified, reason) => {
+  harness.starterVerified = verified
   harness.programmer.source = harness.starterSource
   if (reason === 'source') harness.programmer.source = 'manual edit'
   if (reason === 'board') harness.programmer.info.boardId = 'atoms3lite'
   if (reason === 'state') harness.programmer.state = 'disconnected'
   event(maker(), 'onRun')
-  expect(harness.programmer.run).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  if (reason === 'board') expect(maker().props.boardMatches).toBe(false)
+  assertNoUsbOperations()
+})
+
+it.each(['disconnected', 'connection-lost', 'unsupported', 'error', 'connecting', 'stopping', 'writing', 'interrupting'])('状態%sでは未確認プログラムの実行を承認することもできない', state => {
+  harness.programmer.state = state; harness.programmer.source = harness.starterSource
+  event(maker(), 'onRun')
+  expect(harness.confirm).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each(['raw-repl-ready', 'stopped', 'running', 'running-no-marker'])('状態%sで未確認実行を承認した時だけ安全な実行入口を1回呼ぶ', state => {
+  harness.programmer.state = state; harness.programmer.source = harness.starterSource
+  event(maker(), 'onRun')
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  expect(harness.programmer.run).toHaveBeenCalledOnce()
+  for (const operation of ['connect', 'disconnect', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation]).not.toHaveBeenCalled()
+  expect(currentProject().working).toBeNull()
+  expect(maker().props.verifiedStarter).toBe(false)
+})
+
+it('未確認の実行は毎回確認し、キャンセル時は通信も動作OK登録も行わない', () => {
+  harness.programmer.source = harness.starterSource
+  harness.programmer.runningSource = harness.starterSource
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onRun')
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  expect(maker().props.canMarkWorking).toBe(false)
+  event(maker(), 'onMarkWorking')
+  expect(currentProject().working).toBeNull()
+  assertNoUsbOperations()
+  harness.confirm.mockReturnValue(true)
+  event(maker(), 'onRun')
+  expect(harness.confirm).toHaveBeenCalledTimes(2)
+  expect(harness.programmer.run).toHaveBeenCalledOnce()
+  expect(currentProject().working).toBeNull()
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onRun')
+  expect(harness.confirm).toHaveBeenCalledTimes(3)
+  expect(harness.programmer.run).toHaveBeenCalledOnce()
+  expect(maker().props.verifiedStarter).toBe(false)
+})
+
+const trialConfirmation = 'このコードは提供側の実機検証が未完了です。動作は保証されません。\n\n機器: {board}\nUIFlow2: {firmware}\nLED: {model} × {count}個 / GPIO {pin}\n最大輝度: {brightness}%\n\n電源を外して配線・電源容量を確認し、上記が実機と一致することを確かめましたか？\n実行すると、実行中のプログラムを停止し、機器のmain.pyを書き換えます。未検証コードを試しますか？'
+
+it.each(['ja', 'en', 'zh'] as const)('未確認実行の確認文は%s表示で現在の機種・版・LED設定と上書き対象を明示する', locale => {
+  const next = structuredClone(currentProject())
+  Object.assign(next.draft.settings, { boardId: 'atoms3lite', firmwareVersion: 'TEST-2.3.7', ledModel: 'SK6812MINI', ledCount: 37, ledPin: 8, maxBrightnessPercent: 35 })
+  event(maker(), 'onChange', next)
+  harness.programmer.info.boardId = 'atoms3lite'; harness.programmer.source = harness.starterSource
+  setLocale(locale)
+  harness.confirm.mockReturnValue(false)
+  event(maker(), 'onRun')
+  const expected = translate(locale, trialConfirmation, { board: 'AtomS3Lite', firmware: 'TEST-2.3.7', model: 'SK6812MINI', count: 37, pin: 8, brightness: 35 })
+  expect(harness.confirm).toHaveBeenCalledExactlyOnceWith(expected)
+  if (locale !== 'ja') expect(expected).not.toContain('このコードは提供側')
+  for (const value of ['AtomS3Lite', 'TEST-2.3.7', 'SK6812MINI', '37', 'GPIO 8', '35%', 'main.py']) expect(expected).toContain(value)
+  expect(expected).not.toMatch(/\{(?:board|firmware|model|count|pin|brightness)\}/)
+  assertNoUsbOperations()
+  const changed = structuredClone(currentProject()); changed.draft.settings.ledCount = 42; changed.draft.settings.maxBrightnessPercent = 12
+  event(maker(), 'onChange', changed); event(maker(), 'onRun')
+  expect(harness.confirm).toHaveBeenLastCalledWith(translate(locale, trialConfirmation, { board: 'AtomS3Lite', firmware: 'TEST-2.3.7', model: 'SK6812MINI', count: 42, pin: 8, brightness: 12 }))
+  expect(harness.confirm).toHaveBeenCalledTimes(2)
+  assertNoUsbOperations()
+})
+
+it.each(['button', 'editor'])('未確認候補をプログラム画面の%sから実行しても確認を省略しない', entry => {
+  harness.programmer.source = harness.starterSource
+  const run = () => {
+    const view = render()
+    if (entry === 'editor') event(find(view, element => element.type === CodeEditor), 'onRun')
+    else event(find(view, element => element.props.className === 'run-button'), 'onClick')
+  }
+  harness.confirm.mockReturnValue(false)
+  run()
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  assertNoUsbOperations()
+  harness.confirm.mockReturnValue(true)
+  run()
+  expect(harness.confirm).toHaveBeenCalledTimes(2)
+  expect(harness.programmer.run).toHaveBeenCalledOnce()
+  expect(currentProject().working).toBeNull()
+})
+
+it.each([false, true].flatMap(verified => ['button', 'editor'].map(entry => [verified, entry] as const)))('確認済み=%sでも%sから機種不一致の生成コードを送らず作品画面で設定を案内する', (verified, entry) => {
+  harness.starterVerified = verified; harness.programmer.source = harness.starterSource
+  harness.programmer.info.boardId = 'atoms3lite'
+  event(byId(render(), 'tab-program'), 'onClick')
+  const view = render()
+  if (entry === 'editor') event(find(view, element => element.type === CodeEditor), 'onRun')
+  else event(find(view, element => element.props.className === 'run-button'), 'onClick')
+  expect(byId(render(), 'panel-maker').props.hidden).toBe(false)
+  expect(maker().props.notice).not.toBe('')
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(currentProject().working).toBeNull()
+  assertNoUsbOperations()
+})
+
+it('未確認コードを準備・保存・実行・利用者の動作OK登録しても提供側の確認済みには昇格しない', () => {
+  event(maker(), 'onPrepare'); event(maker(), 'onSave')
+  expect(maker().props.verifiedStarter).toBe(false)
+  expect(currentProject().working).toBeNull()
+  assertNoUsbOperations()
+  harness.programmer.runningSource = harness.starterSource
+  event(maker(), 'onRun')
+  expect(maker().props.canMarkWorking).toBe(true)
+  expect(currentProject().working).toBeNull()
+  event(maker(), 'onMarkWorking')
+  expect(currentProject().working?.snapshot.source).toBe(harness.starterSource)
+  expect(maker().props.verifiedStarter).toBe(false)
+})
+
+it('設定変更・保存・言語変更・再描画だけでは未確認コードを準備も実行もしない', () => {
+  render()
+  const next = structuredClone(currentProject()); next.draft.settings.firmwareVersion = 'TEST-UNVERIFIED'; next.draft.settings.ledCount = 24
+  event(maker(), 'onChange', next); event(maker(), 'onSave')
+  setLocale('en'); render(); setLocale('zh'); render()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(currentProject().working).toBeNull()
+  assertNoUsbOperations()
 })
 
 it('確認済み条件が一致すると入門実行から既存の安全な実行入口を1回呼ぶ', () => {
   harness.starterVerified = true
   harness.programmer.source = harness.starterSource
   event(maker(), 'onRun')
+  expect(harness.confirm).not.toHaveBeenCalled()
   expect(harness.programmer.run).toHaveBeenCalledOnce()
   expect(harness.programmer.write).not.toHaveBeenCalled()
   expect(harness.programmer.setBoot).not.toHaveBeenCalled()

@@ -4,6 +4,7 @@ import { Terminal } from './components/Terminal'
 import { BluetoothPanel } from './components/BluetoothPanel'
 import { AiPreparationPanel } from './components/AiPreparationPanel'
 import { MakerPanel } from './components/MakerPanel'
+import { getBoardDefinition } from './config/boards'
 import { loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
 import type { ArtworkProject, ProjectSnapshot, RemoteButton } from './services/projects/types'
 import { buildStarterProgram, starterAvailability } from './services/projects/StarterProgram'
@@ -163,23 +164,43 @@ export default function App() {
   }
   const runProject = () => {
     if (!canModifyProgram) return
+    if (sourceMatches && !boardMatches) {
+      setProjectNotice('接続した機器と、選択した機器が違います。正しい機器につなぎ直すか、最初のステップで機器を選び直し、配線を確認してください。')
+      openTab('maker')
+      return
+    }
+    // 作成直後の候補は、プログラム画面から試す場合も毎回確認する。
+    // 承認は保存せず、実機検証済みの記録や動作OKには昇格させない。
+    if (sourceMatches && !availability.verified) {
+      const settings = project.draft.settings
+      if (!confirm(t('このコードは提供側の実機検証が未完了です。動作は保証されません。\n\n機器: {board}\nUIFlow2: {firmware}\nLED: {model} × {count}個 / GPIO {pin}\n最大輝度: {brightness}%\n\n電源を外して配線・電源容量を確認し、上記が実機と一致することを確かめましたか？\n実行すると、実行中のプログラムを停止し、機器のmain.pyを書き換えます。未検証コードを試しますか？', {
+        board: getBoardDefinition(settings.boardId).name, firmware: settings.firmwareVersion,
+        model: settings.ledModel, count: settings.ledCount, pin: settings.ledPin, brightness: settings.maxBrightnessPercent,
+      }))) return
+    }
     setLastRunDraft(structuredClone(project.draft))
     return app.run()
+  }
+  const runStarter = () => {
+    if (!sourceMatches || !boardMatches || !canModifyProgram) return
+    return runProject()
   }
   const markProjectWorking = () => {
     if (!canMarkWorking || !confirm(t('今のコード・機器設定で、実際のLEDとボタンの動きを確認しましたか？無線を使う場合はリモコンも確認してください。実行開始だけでは動作OKにしません。'))) return
     try { persistProject(markWorking(project)) } catch (error) { reportProjectError(error) }
   }
   const prepareStarter = () => {
-    if (!availability.verified || !generatedSource) { setProjectNotice(availability.reason); return }
+    if (!generatedSource) { setProjectNotice(availability.reason); return }
     if (app.source.trim() && !sourceMatches && !confirm(t('入門プログラムを編集画面に準備します。現在のコードは一時退避します。機器にはまだ送りません。'))) return
-    replaceProject({ ...project, draft: { ...project.draft, source: generatedSource } })
+    if (replaceProject({ ...project, draft: { ...project.draft, source: generatedSource } })) {
+      setProjectNotice('試すコードを編集画面に準備しました。機器には送っていません。「コード・通信ログを見る」で確認し、作品として保存できます。')
+    }
   }
   const downloadCandidate = () => {
     if (!generatedSource) { setProjectNotice(availability.reason); return }
     try {
       download('main-unverified.py', generatedSource, 'text/x-python')
-      setProjectNotice('提供側の実機検証用コードを書き出しました。動作保証・検証済みの登録・機器への送信は行っていません。')
+      setProjectNotice('実機未確認のコードを書き出しました。動作保証・検証済みの登録・機器への送信は行っていません。')
     } catch (error) { reportProjectError(error) }
   }
   const finishProject = () => {
@@ -248,9 +269,9 @@ export default function App() {
           if (preparation.hasPendingChanges && !confirm(t('作品の機器設定をAIの準備に渡します。AI準備の未適用設定を置き換えますか？'))) return
           preparation.adoptProjectSettings(project.draft.settings, project.draft.recipe.wireless)
           openTab('preparation')
-        }} onOpenController={() => openTab('controller')} onConnect={app.connect} onRun={() => { if (availability.verified && sourceMatches && boardMatches) void runProject() }} onStop={app.stop} onFinish={finishProject} onDownloadCandidate={downloadCandidate}
+        }} onOpenController={() => openTab('controller')} onConnect={app.connect} onRun={runStarter} onStop={app.stop} onFinish={finishProject} onDownloadCandidate={downloadCandidate}
         state={app.state} error={app.error?.message ?? null} notice={projectNotice} verifiedStarter={availability.verified} starterReason={availability.reason}
-        sourceMatches={sourceMatches} canMarkWorking={canMarkWorking} canFinish={canFinish} canConfirmStandalone={canConfirmStandalone} bootOption={app.info.bootOption} bootSupported={app.info.bootOptionSupported || app.info.nvsFallbackSupported} />
+        sourceMatches={sourceMatches} canPrepareStarter={Boolean(generatedSource)} boardMatches={boardMatches} canMarkWorking={canMarkWorking} canFinish={canFinish} canConfirmStandalone={canConfirmStandalone} bootOption={app.info.bootOption} bootSupported={app.info.bootOptionSupported || app.info.nvsFallbackSupported} />
     </div>
 
     <div id="panel-preparation" role="tabpanel" aria-labelledby="tab-preparation" hidden={activeTab !== 'preparation'}>

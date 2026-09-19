@@ -38,7 +38,7 @@ function validate(settings: ProjectSettings, recipe: ProjectRecipe) {
   if (!['next', 'toggle', 'none'].includes(recipe.shortPress) || !['off', 'none'].includes(recipe.longPress) || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') throw new Error('ボタン・無線の操作設定が不正です。')
 }
 
-/** 通常利用の可否。利用者自身の「動作OK」保存は提供側の実機確認を代替しない。 */
+/** 提供側の実機確認状況。コード準備・試行の可否とは別で、利用者の「動作OK」保存でも昇格しない。 */
 export function starterAvailability(settings: ProjectSettings, recipe: ProjectRecipe): { verified: boolean; reason: string } {
   try { validate(settings, recipe) } catch (error) { return { verified: false, reason: error instanceof Error ? error.message : '設定を確認してください。' } }
   const source = buildStarterProgram(settings, recipe)
@@ -49,7 +49,7 @@ export function starterAvailability(settings: ProjectSettings, recipe: ProjectRe
   return { verified: false, reason: 'この機種・UIFlow2版・LED構成の提供側実機確認はまだ完了していません。入門プログラムは提供側の検証用候補です。' }
 }
 
-/** 提供側検証用。自動実行・書込み・確認済み登録は行わない。 */
+/** 編集・保存・明示的な試行用のコードを生成。自動実行・書込み・確認済み登録は行わない。 */
 export function buildStarterProgram(settings: ProjectSettings, recipe: ProjectRecipe): string {
   validate(settings, recipe)
   const config = {
@@ -62,5 +62,5 @@ export function buildStarterProgram(settings: ProjectSettings, recipe: ProjectRe
   }
   // JSONをPython文字列のデータとして埋め込む。ラベルや版名をコードへ展開しない。
   const literal = JSON.stringify(config).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
-  return `# PROVIDER VALIDATION CANDIDATE - HARDWARE NOT VERIFIED\n# docs/starter-validation.md の実機受入を完了するまで通常配布しないでください。\nimport json\nCONFIG = json.loads('${literal}')\n\n${runtime}`
+  return `# STARTER TEST CANDIDATE - HARDWARE NOT VERIFIED\n# 実機未検証です。配線・電源・設定を確認して試し、確認済みとして配布しないでください。\n# 提供側の実機受入: docs/starter-validation.md\nimport json\nCONFIG = json.loads('${literal}')\n\n${runtime}`
 }

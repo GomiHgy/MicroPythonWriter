@@ -29,6 +29,8 @@ export interface MakerPanelProps {
   error: string | null
   notice: string
   verifiedStarter: boolean
+  canPrepareStarter: boolean
+  boardMatches: boolean
   starterReason: string
   sourceMatches: boolean
   canMarkWorking: boolean
@@ -64,9 +66,9 @@ export function MakerPanel(props: MakerPanelProps) {
   const setStep = (patch: Partial<Progress>) => setProgress({ stage, settingsKey, confirmationKey, wired, seen, tested, unplugged, ...patch })
   const board = getBoardDefinition(settings.boardId)
   const disconnected = ['unsupported', 'disconnected', 'connection-lost'].includes(props.state)
-  const ready = ['connected', 'raw-repl-ready', 'running', 'running-no-marker', 'stopped', 'error'].includes(props.state)
+  const ready = ['raw-repl-ready', 'running', 'running-no-marker', 'stopped'].includes(props.state)
   const running = ['running', 'running-no-marker'].includes(props.state)
-  const canRun = ready && props.verifiedStarter && props.sourceMatches && wired
+  const canRun = ready && props.canPrepareStarter && props.sourceMatches && wired && props.boardMatches
   const settingsValid = settings.firmwareVersion.trim().length > 0 && Number.isInteger(settings.ledCount) && settings.ledCount >= 1 && settings.ledCount <= 300 && Number.isInteger(settings.ledPin) && settings.ledPin >= 0 && settings.ledPin <= 48 && settings.maxBrightnessPercent >= 1 && settings.maxBrightnessPercent <= 100
   const updateSettings = (patch: Partial<ProjectSettings>) => {
     props.onChange({ ...project, draft: { ...project.draft, settings: { ...settings, ...patch } } })
@@ -86,13 +88,17 @@ export function MakerPanel(props: MakerPanelProps) {
   }
   const current = recipe.modes[0]
   const primaryRun = () => {
-    if (!props.verifiedStarter) return
+    if (!props.canPrepareStarter) return
     if (!props.sourceMatches) return props.onPrepare()
     if (disconnected) { if (props.state !== 'unsupported') props.onConnect(); return }
     if (canRun) props.onRun()
   }
-  const runLabel = !props.sourceMatches ? '試すコードを準備' : disconnected ? 'USBでつなぐ' : '機器で実行する'
-  const runDisabled = !props.verifiedStarter || (props.sourceMatches && (disconnected ? props.state === 'unsupported' : !canRun))
+  const runLabel = !props.sourceMatches ? '試すコードを準備' : disconnected ? 'USBでつなぐ' : props.verifiedStarter ? '機器で実行する' : '未検証コードを機器で試す'
+  const runDisabled = !props.canPrepareStarter || (props.sourceMatches && (disconnected ? props.state === 'unsupported' : !canRun))
+  const starterGuidance = <>
+    {!props.canPrepareStarter ? <div className="maker-blocker" role="status"><strong>{t('設定を見直してからコードを準備してください')}</strong><p>{t(props.starterReason)}</p></div> : !props.verifiedStarter && <div className="maker-blocker" role="status"><strong>{t('この組み合わせの入門プログラムは実機未確認です')}</strong><p>{t('コードの準備・表示・保存は、USB接続なしでできます。機器で試す前に、未検証であることと配線・設定を確認します。')}</p><p>{t('機器で試して動いた場合も、提供側の実機確認済みプログラムにはなりません。')}</p></div>}
+    {!disconnected && !props.boardMatches && <p className="maker-blocker" role="status">{t('接続した機器と、選択した機器が違います。正しい機器につなぎ直すか、最初のステップで機器を選び直し、配線を確認してください。')}</p>}
+  </>
 
   return <section className="maker-panel" aria-labelledby="maker-title">
     <header className="maker-intro"><div><p className="eyebrow">{t('コードより先に、作品のアイデアから')}</p><h2 id="maker-title">{t('作品をつくる')}</h2><p>{t('機器の準備から、持ち出せる作品になるまで。一つずつ進めよう。')}</p></div><span className="small-badge">{project.working ? t('動作OK版を保存済み') : t('編集中・動作未確認')}</span></header>
@@ -123,7 +129,7 @@ export function MakerPanel(props: MakerPanelProps) {
       </>}
       {stage === 2 && <>
         <p>{t('まずは機器で光を確認。コードの準備・接続・実行は、それぞれボタンを押したときだけ行います。')}</p>
-        {!props.verifiedStarter && <div className="maker-blocker" role="status"><strong>{t('この組み合わせの入門プログラムは実機未確認です')}</strong><p>{t(props.starterReason)}</p><p>{t('提供側の実機検証が終わるまで、ここからの実行はできません。先に作品の設計・保存はできます。')}</p></div>}
+        {starterGuidance}
         <button className="primary maker-next" disabled={runDisabled} onClick={primaryRun}>{t(runLabel)}</button>
         {running && <p role="status">{t('プログラムは実行中です。実際に光ったかは、機器を見て確認してください。')}</p>}
         <label className="maker-check"><input id="maker-seen" type="checkbox" checked={seen} disabled={!props.canMarkWorking} onChange={event => { if (props.canMarkWorking) setStep({ seen: event.target.checked }) }} />{t('この設定・プログラムで、実際のLEDが意図どおり光った')}</label>
@@ -153,8 +159,8 @@ export function MakerPanel(props: MakerPanelProps) {
         <div className="maker-fields"><label>{t('短く押したら')}<select value={recipe.shortPress} disabled={recipe.whileHeld} onChange={event => updateRecipe({ shortPress: event.target.value as ProjectRecipe['shortPress'] })}><option value="next">{t('次の光り方にする')}</option><option value="toggle">{t('点灯・消灯を切り替える')}</option><option value="none">{t('何もしない')}</option></select></label><label>{t('長く押したら')}<select value={recipe.longPress} disabled={recipe.whileHeld} onChange={event => updateRecipe({ longPress: event.target.value as ProjectRecipe['longPress'] })}><option value="off">{t('消灯する')}</option><option value="none">{t('何もしない')}</option></select></label></div>
         <label className="maker-check"><input id="maker-held" type="checkbox" checked={recipe.whileHeld} onChange={event => updateRecipe({ whileHeld: event.target.checked })} />{t('押している間だけ光る（短押し・長押しより優先）')}</label>
         <label className="maker-check"><input id="maker-wireless" type="checkbox" checked={recipe.wireless} onChange={event => updateRecipe({ wireless: event.target.checked })} />{t('Bluetoothリモコンも使う')}</label>
-        {recipe.wireless && <p className="maker-note">{t('無線にはNanoLED v2対応の実機検証済みプログラムと、Web Bluetooth対応環境が必要です。現在、実機確認済みBLE基準コードは同梱されていません。')}</p>}
-        {!props.verifiedStarter && <p className="maker-blocker" role="status">{t('この組み合わせの入門プログラムは実機未確認です')} {t(props.starterReason)}</p>}
+        {recipe.wireless && <p className="maker-note">{t('無線にはNanoLED v2対応プログラムと、Web Bluetooth対応環境が必要です。実機未検証の場合は、接続・状態受信・操作も機器で確かめてください。')}</p>}
+        {starterGuidance}
         {!props.sourceMatches && <p className="maker-note">{t('現在の編集コードは、この画面の設定から作るコードと異なります。既存コードを使う場合は「プログラム」で実行し、実際の動きを確認してください。')}</p>}
         <p>{t('設定を変えたらコードを準備し直して実行します。作成しただけでは、機器は更新されません。')}</p>
         <button className="primary maker-next" disabled={runDisabled} onClick={primaryRun}>{t(runLabel)}</button>
@@ -183,6 +189,6 @@ export function MakerPanel(props: MakerPanelProps) {
       {props.canUndoReplacement && <button onClick={props.onUndoReplacement}>{t('直前の読み込み・復元を取り消す')}</button>}
     </section>
     <details className="panel maker-help"><summary>{t('うまくいかないとき')}</summary><h4>{t('機器が見つからない')}</h4><p>{t('電源とデータ通信対応のUSBケーブルを確認。他のアプリが機器につながっていたら接続を切り、もう一度つないでください。')}</p><h4>{t('つながったが状態が届かない')}</h4><p>{t('無線対応プログラムが動いているか確認。リモコンの「状態をもう一度受け取る」を試し、戻らなければ接続し直してください。')}</p><h4>{t('実行中なのに光らない')}</h4><p>{t('電源を外し、配線・LEDの向き・LED数・信号ピン・電源容量を確認。実行開始の表示だけでは、点灯した証拠にはなりません。')}</p><button onClick={props.onOpenAI}>{t('AIで自分好みに広げる')}</button></details>
-    <details className="panel maker-help"><summary>{t('開発者向け：未検証コードの確認')}</summary><p>{t('未検証候補は提供側の実機テスト用です。通常の入門プログラムとして案内したり、動作確認済みとして登録したりしないでください。')}</p><button onClick={props.onDownloadCandidate}>{t('未検証候補をダウンロード')}</button></details>
+    <details className="panel maker-help"><summary>{t('コードをファイルで確認する')}</summary><p>{t('生成コードを保存できます。ダウンロードだけでは機器に書き込みません。実機未検証のコードは、確認済みとして扱わないでください。')}</p><button disabled={!props.canPrepareStarter} onClick={() => { if (props.canPrepareStarter) props.onDownloadCandidate() }}>{t('生成コードをダウンロード')}</button></details>
   </section>
 }

@@ -49,7 +49,7 @@ beforeEach(() => {
   project.draft.source = 'print("test")'
   props = {
     project, onChange: vi.fn(next => { props.project = next }), onSave: vi.fn(), onExport: vi.fn(), onImport: vi.fn(async () => {}), onMarkWorking: vi.fn(), onRestore: vi.fn(), onPrepare: vi.fn(), onOpenProgram: vi.fn(), onOpenAI: vi.fn(), onOpenController: vi.fn(), onConnect: vi.fn(), onRun: vi.fn(), onStop: vi.fn(), onFinish: vi.fn(), onDownloadCandidate: vi.fn(), onUndoReplacement: vi.fn(),
-    state: 'disconnected', error: null, notice: '', verifiedStarter: false, starterReason: 'TEST UNVERIFIED', sourceMatches: false, canMarkWorking: false, canFinish: false, canConfirmStandalone: false, bootSupported: false,
+    state: 'disconnected', error: null, notice: '', verifiedStarter: false, canPrepareStarter: true, boardMatches: true, starterReason: 'TEST UNVERIFIED', sourceMatches: false, canMarkWorking: false, canFinish: false, canConfirmStandalone: false, bootSupported: false,
   }
 })
 
@@ -84,20 +84,21 @@ describe('作品づくりの順序と安全確認', () => {
     for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
     expect(input('maker-seen').props.checked).toBe(false)
   })
-  it.each([false, true])('未検証ならソース一致=%sでも準備・接続・実行を無効にする', matches => {
-    props.sourceMatches = matches; props.state = 'raw-repl-ready'
+  it('未検証でもコード準備・表示・保存を通信なしで許可し、検証済みにはしない', () => {
     testStep()
     expect(text(render())).toContain('実機未確認')
-    expect(text(render())).toContain('TEST UNVERIFIED')
-    const primary = find(element => element.type === 'button' && element.props.className === 'primary maker-next')
-    expect(primary.props.disabled).toBe(true)
-    event(primary, 'onClick')
-    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
-    click('実機確認は後で行い、先に光り方を作る')
-    expect(button('光り方を追加（最大8つ）')).toBeDefined()
+    expect(text(render())).toContain('USB接続なしでできます')
+    expect(text(render())).toContain('提供側の実機確認済みプログラムにはなりません')
+    expect(button('試すコードを準備').props.disabled).toBe(false)
+    click('試すコードを準備'); click('コード・通信ログを見る'); click('作品を保存')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1)
+    expect(props.onOpenProgram).toHaveBeenCalledTimes(1)
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    for (const callback of [props.onConnect, props.onRun, props.onMarkWorking]) expect(callback).not.toHaveBeenCalled()
+    expect(props.verifiedStarter).toBe(false)
   })
-  it('検証済みのコード準備・USB接続・実行を別々の明示操作にする', () => {
-    props.verifiedStarter = true
+  it.each([false, true])('検証済み=%sでもコード準備・USB接続・実行を別々の明示操作にする', verified => {
+    props.verifiedStarter = verified
     testStep()
     click('試すコードを準備')
     expect(props.onPrepare).toHaveBeenCalledTimes(1)
@@ -108,8 +109,91 @@ describe('作品づくりの順序と安全確認', () => {
     expect(props.onConnect).toHaveBeenCalledTimes(1)
     expect(props.onRun).not.toHaveBeenCalled()
     props.state = 'raw-repl-ready'
-    click('機器で実行する')
+    click(verified ? '機器で実行する' : '未検証コードを機器で試す')
     expect(props.onRun).toHaveBeenCalledTimes(1)
+  })
+  it.each([false, true])('生成できない設定はソース一致=%sでも準備・接続・実行を阻止する', matches => {
+    props.canPrepareStarter = false; props.sourceMatches = matches; props.state = 'raw-repl-ready'; props.starterReason = 'PIN CONFLICT'
+    testStep()
+    expect(text(render())).toContain('設定を見直してから')
+    expect(text(render())).toContain('PIN CONFLICT')
+    expect(text(render())).not.toContain('この組み合わせの入門プログラムは実機未確認です')
+    const primary = find(element => element.type === 'button' && element.props.className === 'primary maker-next')
+    expect(primary.props.disabled).toBe(true); event(primary, 'onClick')
+    expect(button('生成コードをダウンロード').props.disabled).toBe(true); click('生成コードをダウンロード')
+    expect(props.onDownloadCandidate).not.toHaveBeenCalled()
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('接続した機種が違うと機器実行を阻止するがコード準備は許可する', () => {
+    props.state = 'raw-repl-ready'; props.boardMatches = false
+    testStep()
+    expect(text(render())).toContain('接続した機器と、選択した機器が違います')
+    expect(button('試すコードを準備').props.disabled).toBe(false); click('試すコードを準備')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1)
+    props.sourceMatches = true
+    expect(button('未検証コードを機器で試す').props.disabled).toBe(true); click('未検証コードを機器で試す')
+    expect(props.onRun).not.toHaveBeenCalled()
+    props.boardMatches = true
+    expect(button('未検証コードを機器で試す').props.disabled).toBe(false)
+  })
+  it.each(['connected', 'error', 'reconnecting', 'requesting-port', 'opening', 'interrupting', 'entering-raw-repl', 'probing', 'uploading', 'verifying', 'starting', 'stopping', 'setting-boot-mode', 'resetting', 'unsupported'] as const)('%sでは一致するコードがあっても接続・機器実行をしない', state => {
+    props.state = state; props.sourceMatches = true
+    testStep()
+    const primary = find(element => element.type === 'button' && element.props.className === 'primary maker-next')
+    expect(primary.props.disabled).toBe(true); event(primary, 'onClick')
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it.each(['raw-repl-ready', 'stopped', 'running', 'running-no-marker'] as const)('%sでは未検証であることを示して実行確認を親に委ねる', state => {
+    props.state = state; props.sourceMatches = true
+    testStep()
+    expect(button('未検証コードを機器で試す').props.disabled).toBe(false)
+    click('未検証コードを機器で試す')
+    expect(props.onRun).toHaveBeenCalledTimes(1)
+  })
+  it('Web Serial非対応でも機器操作をせずコード準備はできる', () => {
+    props.state = 'unsupported'; testStep()
+    expect(button('試すコードを準備').props.disabled).toBe(false); click('試すコードを準備')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1)
+    props.sourceMatches = true
+    expect(button('USBでつなぐ').props.disabled).toBe(true); click('USBでつなぐ')
+    expect(props.onConnect).not.toHaveBeenCalled(); expect(props.onRun).not.toHaveBeenCalled()
+  })
+  it('ボタン・無線の段階でも未検証の説明を表示し、準備・接続・実行を分離する', () => {
+    controlsStep(); check('maker-wireless')
+    expect(text(render())).toContain('この組み合わせの入門プログラムは実機未確認です')
+    expect(text(render())).toContain('USB接続なしでできます')
+    expect(text(render())).toContain('接続・状態受信・操作も機器で確かめて')
+    click('試すコードを準備')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1)
+    expect(props.onConnect).not.toHaveBeenCalled(); expect(props.onRun).not.toHaveBeenCalled()
+    props.sourceMatches = true; click('USBでつなぐ')
+    expect(props.onConnect).toHaveBeenCalledTimes(1); expect(props.onRun).not.toHaveBeenCalled()
+    props.state = 'stopped'; click('未検証コードを機器で試す')
+    expect(props.onRun).toHaveBeenCalledTimes(1)
+    expect(props.onMarkWorking).not.toHaveBeenCalled()
+  })
+  it('ボタン・無線の段階でも不正な設定と機種不一致の理由を示す', () => {
+    controlsStep(); props.canPrepareStarter = false; props.starterReason = 'INVALID RECIPE'; props.boardMatches = false; props.state = 'stopped'
+    expect(text(render())).toContain('INVALID RECIPE')
+    expect(text(render())).toContain('接続した機器と、選択した機器が違います')
+    expect(button('試すコードを準備').props.disabled).toBe(true); click('試すコードを準備')
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+  it('ソース編集後は準備をやり直し、準備だけでは実行しない', () => {
+    props.state = 'raw-repl-ready'; props.sourceMatches = true; testStep()
+    props.project = { ...props.project, draft: { ...props.project.draft, source: 'changed' } }; props.sourceMatches = false
+    expect(button('試すコードを準備').props.disabled).toBe(false); click('試すコードを準備')
+    expect(props.onPrepare).toHaveBeenCalledTimes(1); expect(props.onRun).not.toHaveBeenCalled()
+  })
+  it('同じ機器設定に戻しても以前の配線確認を再利用しない', () => {
+    props.state = 'raw-repl-ready'; props.sourceMatches = true; testStep()
+    const original = structuredClone(props.project)
+    props.project = { ...props.project, draft: { ...props.project.draft, settings: { ...props.project.draft.settings, ledPin: 3 } } }; render()
+    props.project = original; render()
+    click('次へ：配線を確認')
+    expect(input('maker-wired').props.checked).toBe(false)
+    expect(button('次へ：試しに光らせる').props.disabled).toBe(true)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
   })
   it('実行中の表示を実際の点灯確認として扱わない', () => {
     props.state = 'running'; props.canMarkWorking = true
@@ -267,9 +351,9 @@ describe('完成・保存・読み込み', () => {
     click('直前の読み込み・復元を取り消す')
     expect(props.onUndoReplacement).toHaveBeenCalledTimes(1)
   })
-  it('未検証候補の開発者用ダウンロードを通常実行と分離する', () => {
-    expect(text(render())).toContain('未検証候補は提供側の実機テスト用')
-    click('未検証候補をダウンロード')
+  it('生成コードのダウンロードは実行と分離し、検証済みとは扱わない', () => {
+    expect(text(render())).toContain('実機未検証のコードは、確認済みとして扱わない')
+    click('生成コードをダウンロード')
     expect(props.onDownloadCandidate).toHaveBeenCalledTimes(1)
     for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
   })
