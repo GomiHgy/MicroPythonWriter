@@ -46,6 +46,12 @@ vi.mock('react', async () => ({
       scope.slots[index] = typeof next === 'function' ? (next as (previous: Value) => Value)(scope.slots[index] as Value) : next
     }]
   },
+  useRef: <Value,>(initial: Value) => {
+    const scope = harness.scopes.get(harness.scope)!
+    const index = harness.cursor++
+    if (!(index in scope.slots)) scope.slots[index] = { current: initial }
+    return scope.slots[index]
+  },
   useEffect: (effect: () => void | (() => void), dependencies: unknown[]) => {
     const scope = harness.scopes.get(harness.scope)!
     const index = harness.cursor++
@@ -128,6 +134,18 @@ function sliderView(command: 'BRIGHTNESS' | 'SPEED') {
 
 function slider(command: 'BRIGHTNESS' | 'SPEED') {
   return find(sliderView(command), element => element.type === 'input' && element.props.type === 'range')
+}
+
+function reportedSliderValue(command: 'BRIGHTNESS' | 'SPEED'): string {
+  return content(find(sliderView(command), element => String(element.props.className).split(' ').includes('slider-reported')))
+}
+
+function receiveSliderValue(command: 'BRIGHTNESS' | 'SPEED', value: number) {
+  harness.snapshot = {
+    ...harness.snapshot,
+    receivedAt: Date.now(),
+    status: { ...harness.snapshot.status!, [command === 'BRIGHTNESS' ? 'brightness' : 'speed']: value },
+  }
 }
 
 function connected(patch: Partial<BluetoothSnapshot> = {}) {
@@ -502,7 +520,7 @@ describe('作品専用の無線リモコン v2', () => {
     expect(button(panel(), '停止').props.disabled).toBe(false)
   })
 
-  it('モードの選択表示・明るさ・LEDは送信だけでは変更せず、機器の返信で更新する', () => {
+  it('スライダーの選択値は保持し、機器のモード・明るさ・LEDは返信でだけ更新する', () => {
     modern()
     event(button(panel(), '落ち着いた光'), 'onClick')
     expect(button(panel(), 'にじいろ散歩').props['aria-pressed']).toBe(true)
@@ -510,11 +528,13 @@ describe('作品専用の無線リモコン v2', () => {
     event(slider('BRIGHTNESS'), 'onChange', { target: { value: '12' } })
     event(slider('BRIGHTNESS'), 'onPointerUp')
     expect(harness.send).toHaveBeenLastCalledWith('BRIGHTNESS 12')
-    expect(slider('BRIGHTNESS').props.value).toBe(50)
+    expect(slider('BRIGHTNESS').props.value).toBe(12)
+    expect(reportedSliderValue('BRIGHTNESS')).toContain('50%')
     expect(find(panel(), element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
     modern({ mode: 'CALM', brightness: 12, pixels: '000306000306000306' })
     expect(button(panel(), '落ち着いた光').props['aria-pressed']).toBe(true)
     expect(slider('BRIGHTNESS').props.value).toBe(12)
+    expect(reportedSliderValue('BRIGHTNESS')).toContain('12%')
     expect(find(panel(), element => element.props.title === 'LED 1: #000306').props.style).toMatchObject({ backgroundColor: '#000306' })
   })
 
@@ -743,8 +763,8 @@ describe('スライダーと追加コマンド', () => {
   it.each(['disconnected', 'connected'] as const)('%sでも状態未受信ならスライダー初期値を機器の設定と表示しない', phase => {
     harness.snapshot = { ...harness.snapshot, phase }
     for (const command of ['BRIGHTNESS', 'SPEED'] as const) {
-      expect(content(sliderView(command))).toContain('未受信')
-      expect(content(sliderView(command))).not.toContain('機器の設定')
+      expect(reportedSliderValue(command)).toContain('未受信')
+      expect(reportedSliderValue(command)).not.toMatch(/\d+%/u)
       expect(slider(command).props['aria-valuetext']).toBe('未受信')
       expect(slider(command).props.disabled).toBe(true)
     }
@@ -755,21 +775,91 @@ describe('スライダーと追加コマンド', () => {
     const control = slider(command)
     expect(control.props).toMatchObject({ min: '0', max: '100', step: '1', disabled: false })
     expect(control.props.value).toBe(command === 'BRIGHTNESS' ? 80 : 20)
-    expect(content(sliderView(command))).toContain('機器の設定')
+    expect(content(sliderView(command))).toContain('設定したい値')
+    expect(reportedSliderValue(command)).toContain('機器から受信')
     event(control, 'onChange', { target: { value: '37' } })
     expect(harness.send).not.toHaveBeenCalled()
     expect(slider(command).props.value).toBe(37)
     event(slider(command), 'onPointerUp')
     expect(harness.send).toHaveBeenLastCalledWith(`${command} 37`)
+    expect(slider(command).props.value).toBe(37)
+    expect(reportedSliderValue(command)).toContain(command === 'BRIGHTNESS' ? '80%' : '20%')
   })
 
-  it('キーボード操作を確定でき、未編集の操作では送信しない', () => {
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sは未編集なら初回と後続の受信値で初期化し、自動送信しない', command => {
+    connected({ status: null, receivedAt: null })
+    expect(reportedSliderValue(command)).toContain('未受信')
     connected()
-    event(slider('SPEED'), 'onKeyUp')
+    expect(slider(command).props.value).toBe(command === 'BRIGHTNESS' ? 80 : 20)
+    receiveSliderValue(command, 64)
+    expect(slider(command).props.value).toBe(64)
+    expect(reportedSliderValue(command)).toContain('64%')
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sは送信後に遅延・一致・別の受信値が届いても選択値を戻さない', async command => {
+    modern()
+    const before = command === 'BRIGHTNESS' ? 50 : 30
+    event(slider(command), 'onChange', { target: { value: '37' } })
+    receiveSliderValue(command, before)
+    expect(slider(command).props.value).toBe(37)
+    expect(reportedSliderValue(command)).toContain(`${before}%`)
+    event(slider(command), 'onPointerUp')
+    await Promise.resolve()
+    expect(slider(command).props.value).toBe(37)
+    expect(reportedSliderValue(command)).toContain(`${before}%`)
+    for (const reported of [before, 37, 84, 37]) {
+      receiveSliderValue(command, reported)
+      expect(slider(command).props.value).toBe(37)
+      expect(reportedSliderValue(command)).toContain(`${reported}%`)
+    }
+    expect(harness.send.mock.calls).toEqual([[`${command} 37`]])
+  })
+
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sの送信に失敗しても選択値は保ち、受信値や成功表示を偽装しない', async command => {
+    connected()
+    harness.send.mockResolvedValueOnce(false)
+    event(slider(command), 'onChange', { target: { value: '37' } })
+    event(slider(command), 'onPointerUp')
+    await Promise.resolve()
+    expect(slider(command).props.value).toBe(37)
+    expect(reportedSliderValue(command)).toContain(command === 'BRIGHTNESS' ? '80%' : '20%')
+    expect(content(panel())).not.toContain('操作を送信しました。')
+    expect(harness.send.mock.calls).toEqual([[`${command} 37`]])
+  })
+
+  it.each(['onKeyUp', 'onBlur'] as const)('%sで確定しても選択値を維持し、未編集の操作では送信しない', handler => {
+    connected()
+    event(slider('SPEED'), handler)
     expect(harness.send).not.toHaveBeenCalled()
     event(slider('SPEED'), 'onChange', { target: { value: '55' } })
-    event(slider('SPEED'), 'onKeyUp')
+    event(slider('SPEED'), handler)
     expect(harness.send).toHaveBeenLastCalledWith('SPEED 55')
+    expect(slider('SPEED').props.value).toBe(55)
+    expect(reportedSliderValue('SPEED')).toContain('20%')
+    event(slider('SPEED'), handler)
+    expect(harness.send).toHaveBeenCalledTimes(1)
+  })
+
+  it('同じ描画の指離しとフォーカス離脱が続いても1回だけ送信する', () => {
+    connected()
+    event(slider('BRIGHTNESS'), 'onChange', { target: { value: '37' } })
+    const control = slider('BRIGHTNESS')
+    event(control, 'onPointerUp')
+    event(control, 'onBlur')
+    expect(harness.send.mock.calls).toEqual([['BRIGHTNESS 37']])
+    expect(slider('BRIGHTNESS').props.value).toBe(37)
+  })
+
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sは変更と確定の間に再描画がなくても最新の選択値を1回だけ送信する', command => {
+    connected()
+    const control = slider(command)
+    event(control, 'onChange', { target: { value: '37' } })
+    event(control, 'onChange', { target: { value: '38' } })
+    event(control, 'onPointerUp')
+    event(control, 'onBlur')
+    expect(harness.send.mock.calls).toEqual([[`${command} 38`]])
+    expect(slider(command).props.value).toBe(38)
   })
 
   it('スライダー外で指を離した場合も受け取れるようにポインターを捕捉する', () => {
@@ -780,22 +870,65 @@ describe('スライダーと追加コマンド', () => {
     expect(harness.send).not.toHaveBeenCalled()
   })
 
-  it('指操作をキャンセルした場合は送信せず機器の設定へ戻す', () => {
+  it('指操作をキャンセルしても選択値は戻さず、フォーカス離脱でも送信しない', () => {
     connected()
     event(slider('BRIGHTNESS'), 'onChange', { target: { value: '12' } })
-    event(slider('BRIGHTNESS'), 'onPointerCancel')
-    expect(slider('BRIGHTNESS').props.value).toBe(80)
+    const control = slider('BRIGHTNESS')
+    event(control, 'onPointerCancel')
+    event(control, 'onBlur')
+    expect(slider('BRIGHTNESS').props.value).toBe(12)
+    expect(reportedSliderValue('BRIGHTNESS')).toContain('80%')
     expect(harness.send).not.toHaveBeenCalled()
   })
 
-  it('編集中に受信が止まった場合、確定しても送信しない', () => {
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sの編集中に受信が止まっても選択値は維持し、復旧時に古い操作を送信しない', command => {
     connected()
-    event(slider('BRIGHTNESS'), 'onChange', { target: { value: '12' } })
+    event(slider(command), 'onChange', { target: { value: '12' } })
     vi.advanceTimersByTime(6000)
-    const control = slider('BRIGHTNESS')
+    const control = slider(command)
     expect(control.props.disabled).toBe(true)
-    expect(control.props.value).toBe(80)
+    expect(control.props.value).toBe(12)
+    expect(reportedSliderValue(command)).toContain('最後に受信')
+    expect(reportedSliderValue(command)).toContain(command === 'BRIGHTNESS' ? '80%' : '20%')
     event(control, 'onPointerUp')
+    expect(harness.send).not.toHaveBeenCalled()
+    receiveSliderValue(command, 64)
+    const recovered = slider(command)
+    expect(recovered.props.disabled).toBe(false)
+    expect(recovered.props.value).toBe(12)
+    expect(reportedSliderValue(command)).toContain('機器から受信')
+    expect(reportedSliderValue(command)).toContain('64%')
+    event(recovered, 'onBlur')
+    expect(harness.send).not.toHaveBeenCalled()
+    event(recovered, 'onChange', { target: { value: '13' } })
+    event(slider(command), 'onPointerUp')
+    expect(harness.send.mock.calls).toEqual([[`${command} 13`]])
+  })
+
+  it.each(['BRIGHTNESS', 'SPEED'] as const)('%sは切断・再接続で別の機器の受信値に初期化し、前の選択値を自動送信しない', command => {
+    connected()
+    event(slider(command), 'onChange', { target: { value: '12' } })
+    harness.snapshot = { phase: 'disconnected', deviceName: null, connectedAt: null, receivedAt: null, status: null, error: null, sending: false }
+    expect(slider(command).props.disabled).toBe(true)
+    expect(reportedSliderValue(command)).toContain('未受信')
+    connected({ connectedAt: Date.now() + 1, deviceName: 'NanoLED-NEW' })
+    receiveSliderValue(command, 64)
+    expect(slider(command).props.value).toBe(64)
+    expect(reportedSliderValue(command)).toContain('64%')
+    event(slider(command), 'onBlur')
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it('更新停止中に確定イベントがなくても保留操作を破棄し、復旧後のフォーカス離脱で送信しない', () => {
+    connected()
+    event(slider('SPEED'), 'onChange', { target: { value: '12' } })
+    vi.advanceTimersByTime(6000)
+    expect(slider('SPEED').props.disabled).toBe(true)
+    receiveSliderValue('SPEED', 64)
+    const recovered = slider('SPEED')
+    expect(recovered.props.value).toBe(12)
+    expect(recovered.props.disabled).toBe(false)
+    event(recovered, 'onBlur')
     expect(harness.send).not.toHaveBeenCalled()
   })
 
@@ -855,7 +988,7 @@ describe('Bluetooth画面の言語切り替え', () => {
     harness.locale = 'en'
     expect(slider('BRIGHTNESS').props.value).toBe(37)
     expect(slider('BRIGHTNESS').props['aria-valuetext']).toBe('37 percent')
-    expect(content(sliderView('BRIGHTNESS'))).toContain('Your selection')
+    expect(content(sliderView('BRIGHTNESS'))).toContain('Your setting')
     harness.locale = 'zh'
     expect(slider('BRIGHTNESS').props.value).toBe(37)
     expect(slider('BRIGHTNESS').props['aria-valuetext']).toBe('百分之37')
@@ -868,6 +1001,26 @@ describe('Bluetooth画面の言語切り替え', () => {
     expect(harness.send).toHaveBeenLastCalledWith('BRIGHTNESS 37')
     event(find(panel(), element => element.type === 'form'), 'onSubmit', { preventDefault: vi.fn() })
     expect(harness.send).toHaveBeenLastCalledWith('STAR_2')
+  })
+
+  it.each(['en', 'zh'] as const)('%sへの言語変更で確定済みの選択値と受信値を混ぜず、再送信しない', locale => {
+    modern()
+    for (const command of ['BRIGHTNESS', 'SPEED'] as const) {
+      event(slider(command), 'onChange', { target: { value: '37' } })
+      event(slider(command), 'onPointerUp')
+    }
+    harness.locale = locale
+    for (const command of ['BRIGHTNESS', 'SPEED'] as const) {
+      expect(slider(command).props.value).toBe(37)
+      expect(content(sliderView(command))).toContain(bluetoothMessages['設定したい値'][locale])
+      expect(reportedSliderValue(command)).toContain(bluetoothMessages['機器から受信'][locale])
+      expect(reportedSliderValue(command)).toContain(command === 'BRIGHTNESS' ? '50%' : '30%')
+      expect(content(sliderView(command))).not.toMatch(/[ぁ-んァ-ヶ]/u)
+      event(slider(command), 'onBlur')
+    }
+    expect(harness.send.mock.calls).toEqual([['BRIGHTNESS 37'], ['SPEED 37']])
+    expect(harness.instances).toBe(1)
+    expect(harness.disconnect).not.toHaveBeenCalled()
   })
 
   it('表示済みの接続エラーも切り替え直後に翻訳する', () => {

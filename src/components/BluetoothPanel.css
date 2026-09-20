@@ -58,12 +58,15 @@
 .slider-heading { margin: 26px 0 18px; }
 .slider-heading h3 { margin: 0; font-size: 1.07rem; }
 .control-slider { margin: 18px 0; }
-.control-slider label { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.control-slider label { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
 .control-slider label span { font-size: .78rem; color: #526b84; }
 .control-slider label b { color: #075fac; font-size: .95rem; margin-left: 5px; }
 .control-slider input { display: block; width: 100%; min-width: 0; height: 34px; padding: 0; margin: 8px 0 0; accent-color: #1675ce; cursor: pointer; }
 .control-slider input:disabled { cursor: not-allowed; opacity: .45; }
 .slider-scale { display: flex; justify-content: space-between; font-size: .75rem; color: #526b84; }
+.slider-reported { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0 0; padding: 8px 12px; border: 1px solid #d7e4ef; border-radius: 8px; background: #f5f9fd; color: #526b84; font-size: .8rem; }
+.slider-reported strong { font-variant-numeric: tabular-nums; }
+.slider-reported.stale { border-style: dashed; }
 .controller-note { color: #526b84; font-size: .8rem; line-height: 1.8; margin: 16px 0 0; }
 .led-placeholder { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 294px; text-align: center; padding: 20px; margin: 20px 0; border-radius: 16px; background: #f0f5fa; }
 .led-placeholder > span { color: #779cbd; font-size: 3rem; }
@@ -94,6 +97,7 @@
 :root[data-theme=dark] .mode-button { color: #eff7ff; background: #203246; border-color: #3c5268; }
 :root[data-theme=dark] .mode-button.selected { background: #143e65; border-color: #63b3ff; box-shadow: 0 0 0 1px #63b3ff; }
 :root[data-theme=dark] .playback-controls { background: #122031; border-color: #3c5268; }
+:root[data-theme=dark] .slider-reported { background: #122031; border-color: #3c5268; color: #adbed0; }
 :root[data-theme=dark] .playback-status strong { color: #82c2ff; }
 :root[data-theme=dark] .action-button { background: #302346; border-color: #765499; color: #e0c5ff; }
 :root[data-theme=dark] .action-status { color: #e0c5ff; }

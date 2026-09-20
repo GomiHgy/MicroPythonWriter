@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { BluetoothController } from '../services/bluetooth/BluetoothController'
 import { MAX_STATUS_AGE_MS } from '../services/bluetooth/protocol'
 import { useLocale } from '../i18n'
@@ -13,23 +13,28 @@ const modes = [
   { command: 'RAINBOW', name: 'にじいろ', description: '色がゆっくり変わる', icon: '🌈', color: '#ffca68' },
 ]
 
-function ControlSlider({ command, label, value, disabled, send }: { command: 'BRIGHTNESS' | 'SPEED'; label: string; value: number | null; disabled: boolean; send: (command: string) => Promise<boolean> }) {
+function ControlSlider({ command, label, value, disabled, stale, send }: { command: 'BRIGHTNESS' | 'SPEED'; label: string; value: number | null; disabled: boolean; stale: boolean; send: (command: string) => Promise<boolean> }) {
   const { t } = useLocale()
-  const [editing, setEditing] = useState<number | null>(null)
-  const chosen = editing ?? value ?? (command === 'BRIGHTNESS' ? 100 : 0)
+  const [selected, setSelected] = useState<number | null>(null)
+  const pending = useRef<number | null>(null)
+  const chosen = selected ?? value ?? (command === 'BRIGHTNESS' ? 100 : 0)
+  const unknown = selected === null && value === null
+  useEffect(() => { if (disabled) pending.current = null }, [disabled])
   const commit = () => {
-    if (editing === null) return
-    if (!disabled) void send(`${command} ${editing}`)
-    setEditing(null)
+    const next = pending.current
+    pending.current = null
+    if (next !== null && !disabled) void send(`${command} ${next}`)
   }
   return <div className="control-slider">
-    <label htmlFor={`ble-${command}`}><strong>{label}</strong><span>{value === null && editing === null ? t('未受信') : <>{t(editing === null ? '機器の設定' : '選択中')} <b>{chosen}%</b></>}</span></label>
+    <label htmlFor={`ble-${command}`}><strong>{label}</strong><span>{t('設定したい値')} <b>{unknown ? '—' : `${chosen}%`}</b></span></label>
     <input id={`ble-${command}`} type="range" min="0" max="100" step="1" value={chosen} disabled={disabled}
-      onChange={event => setEditing(Number(event.target.value))}
+      onChange={event => { if (!disabled) { const next = Number(event.target.value); setSelected(next); pending.current = next } }}
       onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)}
-      onPointerUp={commit} onKeyUp={commit} onBlur={commit} onPointerCancel={() => setEditing(null)}
-      aria-valuetext={value === null && editing === null ? t('未受信') : t('{value}パーセント', { value: chosen })} />
+      onPointerUp={commit} onKeyUp={commit} onBlur={commit} onPointerCancel={() => { pending.current = null }}
+      aria-describedby={`ble-${command}-reported`}
+      aria-valuetext={unknown ? t('未受信') : t('{value}パーセント', { value: chosen })} />
     <div className="slider-scale"><span>{t(command === 'BRIGHTNESS' ? '暗く' : 'ゆっくり')}</span><span>{t(command === 'BRIGHTNESS' ? '明るく' : 'はやく')}</span></div>
+    <p id={`ble-${command}-reported`} className={`slider-reported${stale && value !== null ? ' stale' : ''}`}><span>{t(stale && value !== null ? '最後に受信' : '機器から受信')}</span><strong>{value === null ? t('未受信') : `${value}%`}</strong></p>
   </div>
 }
 
@@ -133,8 +138,9 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
         </section>
         {sentNotice && connected && sentNotice.connectedAt === state.connectedAt && now - sentNotice.at < 5000 && <p className="controller-note command-notice" role="status">{t('操作を送信しました。実行完了の確認ではありません。機器から届く状態と実際の光を確認してください。')}</p>}
         <div className="slider-heading"><p className="eyebrow">{t('2. 好みに合わせる')}</p><h3>{t(showSpeed ? '明るさとスピード' : '明るさ')}</h3></div>
-        <ControlSlider key={`brightness-${canControl}`} command="BRIGHTNESS" label={t('明るさ')} value={state.status?.brightness ?? null} disabled={!canControl} send={send} />
-        {showSpeed && <ControlSlider key={`speed-${canControl}`} command="SPEED" label={t('スピード')} value={state.status?.speed ?? null} disabled={!canControl} send={send} />}
+        <p className="controller-note">{t('スライダーは選んだ値を保ちます。機器から届いた値は、その下に分けて表示します。')}</p>
+        <ControlSlider key={`brightness-${state.connectedAt}`} command="BRIGHTNESS" label={t('明るさ')} value={state.status?.brightness ?? null} disabled={!canControl} stale={!connected || stale} send={send} />
+        {showSpeed && <ControlSlider key={`speed-${state.connectedAt}`} command="SPEED" label={t('スピード')} value={state.status?.speed ?? null} disabled={!canControl} stale={!connected || stale} send={send} />}
         <p className="controller-note">{t(showSpeed ? 'スライダーは指を離すと送信します。明るさ100%でも、プログラムの安全な上限を超えません。スピードは動きのある光り方に使います。' : '指を離すと明るさを送信します。100%はプログラムで決めた安全上限です。消灯中に動かしても点灯しません。')}</p>
         {!artwork && <section className="remote-setup" aria-labelledby="remote-setup-title">
           <h3 id="remote-setup-title">{t('対応プログラムの準備')}</h3>
