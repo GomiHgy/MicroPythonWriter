@@ -4,6 +4,7 @@ import { DeviceProbe } from './DeviceProbe'
 import { FileTransferService } from './FileTransferService'
 import { RawReplClient, type LongRunningCallbacks, type LongRunningCompletion, type LongRunningStartResult } from './RawReplClient'
 import type { WebSerialTransport } from '../serial/WebSerialTransport'
+import { startPreparedProgramCommand, verifyPreparedProgramCommand } from './ProgramCommands'
 
 export class MicroPythonDevice {
   readonly repl: RawReplClient
@@ -12,7 +13,7 @@ export class MicroPythonDevice {
   readonly boot: BootModeService
   constructor(transport: WebSerialTransport) { this.repl = new RawReplClient(transport); this.files = new FileTransferService(this.repl); this.probe = new DeviceProbe(this.repl); this.boot = new BootModeService(this.repl) }
 
-  async enterNormalMode() { await this.stopMain().catch(() => undefined); await this.repl.interrupt(); await this.repl.enterRawRepl(); await this.repl.execute('import machine\nmachine.soft_reset()').catch(() => undefined); await this.repl.enterRawRepl() }
+  async enterNormalMode() { this.files.invalidatePreparedProgram(); await this.stopMain().catch(() => undefined); await this.repl.interrupt(); await this.repl.enterRawRepl(); await this.repl.execute('import machine\nmachine.soft_reset()').catch(() => undefined); await this.repl.enterRawRepl() }
   async prepareForWrite() {
     if (this.repl.hasLongRunningSession()) {
       const result = await this.stopMain()
@@ -24,13 +25,20 @@ export class MicroPythonDevice {
     this.repl.discardPendingInput()
   }
   async validateMain() {
-    const code = `source=open('/flash/main.py','r').read()\ncompile(source,'/flash/main.py','exec')\nprint('__M5_COMPILE_OK__')`
-    const result = await this.repl.execute(code)
-    if (result.stderr || !result.stdout.includes('__M5_COMPILE_OK__')) throw new DeviceCompileError(result.stderr || 'DEVICE_COMPILE_ERROR: /flash/main.py の構文確認に失敗しました。')
+    const prepared = this.files.peekPreparedProgram()
+    if (!prepared) throw new DeviceCompileError('DEVICE_COMPILE_ERROR: 実行準備がありません。もう一度「実行」を押してください。')
+    try {
+      const result = await this.repl.execute(verifyPreparedProgramCommand(prepared))
+      if (result.stderr || !result.stdout.includes('__M5_COMPILE_OK__')) throw new DeviceCompileError(result.stderr || 'DEVICE_COMPILE_ERROR: 保存したプログラムと実行準備を確認できませんでした。')
+    } catch (error) {
+      await this.files.discardPreparedProgram().catch(() => undefined)
+      throw error
+    }
   }
   async startMain(callbacks: LongRunningCallbacks = {}): Promise<LongRunningStartResult> {
-    const code = `namespace={'__name__':'__main__','__file__':'/flash/main.py'}\nsource=open('/flash/main.py','r').read()\nexec(compile(source,'/flash/main.py','exec'),namespace)`
-    return this.repl.startLongRunning(code, callbacks)
+    const prepared = this.files.takePreparedProgram()
+    if (!prepared) throw new DeviceCompileError('DEVICE_COMPILE_ERROR: 実行準備がありません。もう一度「実行」を押してください。')
+    return this.repl.startLongRunning(startPreparedProgramCommand(prepared), callbacks)
   }
   async stopMain(): Promise<LongRunningCompletion | undefined> { if (!this.repl.hasLongRunningSession()) return undefined; return this.repl.stopLongRunning() }
 }

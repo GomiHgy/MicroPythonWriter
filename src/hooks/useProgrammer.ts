@@ -140,7 +140,7 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
         appendLog(`\n===== ${execute ? '実行' : 'プログラム更新'}開始 #${id} ${new Date().toLocaleTimeString()} =====\n`)
         fileSnapshot.current = undefined
         setWrittenSource(null)
-        await target.files.writeMain(snapshot.source)
+        await target.files.writeMain(snapshot.source, true, execute)
         if (!isCurrent()) return
         fileSnapshot.current = snapshot
         setWrittenSource(snapshot.source)

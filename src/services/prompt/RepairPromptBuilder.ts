@@ -4,6 +4,7 @@ import type { Locale } from '../../i18n/types'
 import { appMessages } from '../../i18n/appMessages'
 import { serviceMessages } from '../../i18n/serviceMessages'
 import { createWorkshopContext, type WorkshopContext } from './WorkshopRules'
+import { buildMemoryPressureRules } from './MemoryPressureRules'
 
 const sensitive = /(?:password|passwd|pswd|api_key|token|secret|ssid)\s*=\s*[^\n#]+/i
 export const hasSensitiveAssignments = (source: string) => sensitive.test(source)
@@ -123,7 +124,7 @@ ${fenced(error.traceback)}
 ## ${text.log}
 ${fenced(terminalLog)}
 
-${codeSection}${workshopSection}
+${codeSection}${workshopSection}${context ? '' : `\n\n${buildMemoryPressureRules(locale, true)}`}
 
 ## ${text.constraints}
 ${text.rules}

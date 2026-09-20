@@ -5,6 +5,7 @@ import type { Locale } from '../../i18n/types'
 import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules, remoteOffFadeRules } from '../../i18n/promptMessages'
 import { translateWorkshop } from '../../i18n/workshopMessages'
 import { buildControllerStarter } from '../workshop/ControllerStarter'
+import { buildMemoryPressureRules } from './MemoryPressureRules'
 
 export interface WorkshopContext {
   locale: Locale
@@ -181,7 +182,7 @@ MAX_BRIGHTNESS_PERCENT: ${setting(profile.maxBrightnessPercent)}
       ? controllerUnavailableRules(locale)
       : `## BLEの利用制限\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : '- このキットではBLEを使用しない。'}\nBLE処理・UUID・未登録の基準コードを推測して新規生成しない。利用者にAPIや通信仕様を質問せず、必要なら「対象機器で確認した基準コードの登録が必要です」と伝える。利用可能なLED${profile.features.button ? 'とボタン' : ''}の相談は続けられる。`
   const invalid = errors.length ? `\n\n## 設定が未完成または不正です\n${errors.map(error => `- ${error}`).join('\n')}\n設定値を推測せず、利用者が上記を直すまで、このキットの完成コード生成・設定に依存する修正は保留する。汎用設定へ黙って切り替えない。` : ''
-  const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${availability}\n\n## 情報の扱い\n固定仕様、実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、実機と対象環境での確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
+  const rules = `${header}${invalid}\n\n${boardLedRules}\n\n${buildMemoryPressureRules(locale, bleEnabled)}\n\n${availability}\n\n## 情報の扱い\n固定仕様、実機確認した基準コード、M5Stack・MicroPython公式資料、一般知識の順に扱う。ただし仕様と基準コードに実質的な矛盾があれば勝手に補正せず該当機能を止め、実機と対象環境での確認が必要と伝える。外部ページを読めない場合に読んだふりをしない。必要情報はこの文面に含まれ、外部ページ取得や初期設定・URLの貼り直しを前提にしない。Arduino、C++、CircuitPython、PC用Pythonへ切り替えない。`
   return { ...context, rules }
 }
 
@@ -239,5 +240,5 @@ MAX_BRIGHTNESS_PERCENT: ${value(profile.maxBrightnessPercent)}
       ? controllerUnavailableRules(locale)
       : `## ${en ? 'BLE availability limits' : 'BLE 使用限制'}\n${bleReasons.length ? bleReasons.map(reason => `- ${reason}`).join('\n') : en ? '- This kit does not use BLE.' : '- 此套件不使用 BLE。'}\n${en ? `Do not invent BLE code, UUIDs or an unregistered baseline. Do not ask users about APIs or protocols; say a baseline verified on the target device must be registered. Continue discussing available LEDs${profile.features.button ? ' and buttons' : ''}.` : `不能猜测并新建 BLE 处理、UUID 或未登记的基准代码。不要向用户询问 API 或协议，需要时说明必须登记经目标设备验证的基准代码。可以继续讨论可用的 LED${profile.features.button ? '和按钮' : ''}功能。`}`
   const invalid = errors.length ? `\n\n## ${en ? 'Settings are incomplete or invalid' : '设置不完整或无效'}\n${errors.map(error => `- ${error}`).join('\n')}\n${en ? 'Do not guess values. Defer complete code generation and setting-dependent repairs until the user fixes these settings. Do not silently switch to generic settings.' : '不要猜测设置值。在用户修正上述设置前，暂缓生成完整代码和依赖设置的修复，不能擅自切换为通用设置。'}` : ''
-  return `${header}${invalid}\n\n${led}\n\n${availability}\n\n${block.information}`
+  return `${header}${invalid}\n\n${led}\n\n${buildMemoryPressureRules(locale, bleEnabled)}\n\n${availability}\n\n${block.information}`
 }
