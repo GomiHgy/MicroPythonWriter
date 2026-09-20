@@ -1,7 +1,7 @@
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
-import type { WorkshopPreparation } from '../hooks/useWorkshopPreparation'
+import { APPLY_DRAFT_SUCCESS_NOTICE, type WorkshopPreparation } from '../hooks/useWorkshopPreparation'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
@@ -120,6 +120,96 @@ describe('AIの準備パネル', () => {
   it('準備に失敗した理由をAIの準備画面にも表示する', () => {
     const panel = render(preparation(wirelessProfile()), vi.fn(), { controllerPreparationNotice: 'コードを準備できませんでした。' })
     expect(content(find(panel, element => element.props.role === 'alert'))).toBe('コードを準備できませんでした。')
+  })
+
+  function settingsRenderer(prep: WorkshopPreparation) {
+    const teacher = find(render(prep), element => typeof element.type === 'function')
+    harness.slots = []; harness.cursor = 0; harness.effects = []
+    return (next = prep) => {
+      harness.cursor = 0
+      const node = (teacher.type as (props: typeof teacher.props) => ReactNode)({ ...teacher.props, preparation: next })
+      harness.effects.splice(0).forEach(effect => effect())
+      return node
+    }
+  }
+  const applyNotice = (node: ReactNode) => all(node, element => String(element.props.className).split(' ').includes('ai-apply-notice'))
+  it('設定適用の成功を上部に重複表示せず、保存など別操作の通知は残す', () => {
+    const storageNotices = (node: ReactNode) => all(node, element => String(element.props.className).split(' ').includes('ai-storage-notice'))
+    expect(storageNotices(render({ ...preparation(), notice: APPLY_DRAFT_SUCCESS_NOTICE }))).toHaveLength(0)
+    const saved = '設定をこのブラウザに保存しました。基準コードは保存していません。'
+    const notices = storageNotices(render({ ...preparation(), notice: saved }))
+    expect(notices).toHaveLength(1)
+    expect(notices[0].props.role).toBe('status')
+    expect(content(notices[0])).toBe(saved)
+  })
+  it.each(['ja', 'en', 'zh'] as const)('%s で設定適用の成功をボタン直下に通知し、ブラウザ保存と区別する', locale => {
+    setLocale(locale)
+    const prep = preparation()
+    const renderSettings = settingsRenderer(prep)
+    const before = renderSettings()
+    const region = find(before, element => element.props.className === 'ai-apply-feedback')
+    expect(region.props).toMatchObject({ role: 'status', 'aria-live': 'polite' })
+    expect(String(region.props['aria-atomic'])).toBe('true')
+    expect(applyNotice(before)).toHaveLength(0)
+    event(button(before, translate(locale, '設定を適用')), 'onClick')
+    const after = renderSettings()
+    const [notice] = applyNotice(after)
+    expect(applyNotice(after)).toHaveLength(1)
+    expect(content(notice)).toContain(translate(locale, '設定を適用しました'))
+    expect(content(notice)).toContain(translate(locale, 'この画面に設定を適用しました。再読み込み後も使う場合は、ブラウザに保存してください。'))
+    if (locale !== 'ja') expect(content(notice)).not.toMatch(/[ぁ-んァ-ヶ]/u)
+    const body = find(after, element => element.props.className === 'advanced-body')
+    const children = all(body.props.children as ReactNode, element => element.props.className === 'ai-secondary-actions' || element.props.className === 'ai-apply-feedback')
+    expect(children.map(element => element.props.className)).toEqual(['ai-secondary-actions', 'ai-apply-feedback'])
+    expect(prep.applyDraft).toHaveBeenCalledOnce()
+    expect(prep.saveDraft).not.toHaveBeenCalled()
+    expect(prep.confirmBaseline).not.toHaveBeenCalled()
+    expect(content(notice)).not.toMatch(/機器.*(?:書き込み|送信).*しました|実機確認済み/u)
+  })
+  it('設定を繰り返し適用した場合も通知内容を更新する', () => {
+    const prep = preparation()
+    const renderSettings = settingsRenderer(prep)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    const first = applyNotice(renderSettings())[0]
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    const second = applyNotice(renderSettings())[0]
+    expect(first.key).not.toBeNull()
+    expect(second.key).not.toEqual(first.key)
+    expect(content(second)).toContain('設定を適用しました')
+    expect(prep.applyDraft).toHaveBeenCalledTimes(2)
+  })
+  it('適用失敗は成功と表示せず、以前の成功通知も取り下げる', () => {
+    const prep = preparation()
+    vi.mocked(prep.applyDraft).mockReturnValueOnce(false).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    const renderSettings = settingsRenderer(prep)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(0)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(1)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(0)
+    expect(prep.saveDraft).not.toHaveBeenCalled()
+  })
+  it.each(['draft', 'pending', 'importing'] as const)('%s 変更後は以前の設定適用を成功として表示しない', reason => {
+    const prep = preparation()
+    const renderSettings = settingsRenderer(prep)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(1)
+    const changed = { ...prep }
+    if (reason === 'draft') changed.draft = { ...profile, displayName: '変更した設定' }
+    if (reason === 'pending') changed.hasPendingChanges = true
+    if (reason === 'importing') changed.isImporting = true
+    expect(applyNotice(renderSettings(changed))).toHaveLength(0)
+  })
+  it.each(['save', 'reset'] as const)('%s 操作に進んだら設定適用の通知を取り下げる', operation => {
+    const prep = preparation()
+    const renderSettings = settingsRenderer(prep)
+    event(button(renderSettings(), '設定を適用'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(1)
+    event(button(renderSettings(), operation === 'save' ? 'このブラウザに設定を保存' : '初期設定に戻す'), 'onClick')
+    expect(applyNotice(renderSettings())).toHaveLength(0)
+    if (operation === 'save') expect(prep.saveDraft).toHaveBeenCalledExactlyOnceWith(false)
+    else expect(prep.resetProfile).toHaveBeenCalledOnce()
   })
 
   function featureSettings(prep: WorkshopPreparation) {

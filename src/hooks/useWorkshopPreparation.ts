@@ -8,6 +8,8 @@ import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { cloneWorkshopProfile, getBlePreparationReasons, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile } from '../services/workshop/WorkshopStorage'
 
+export const APPLY_DRAFT_SUCCESS_NOTICE = 'この画面に設定を適用しました。再読み込み後も使う場合は、ブラウザに保存してください。'
+
 function withControllerBluetooth(profile: WorkshopProfile): WorkshopProfile {
   // WebコントローラはBLE通信を使う。保存済みの旧設定も、保存を伴わず画面上で補正する。
   return profile.features.controller && !profile.features.ble
@@ -90,7 +92,7 @@ export function useWorkshopPreparation() {
     if (isImporting) { setNotice('基準コードを読み込み中です。完了してから設定を適用してください。'); return false }
     if (!draft || !selectedId) return false
     if (draftErrors.length) { setNotice('設定を適用できません。設定の確認項目を直してください。'); return false }
-    setSettings(previous => ({ profiles: previous.profiles.map(preset => preset.id === selectedId ? { ...preset, profile: cloneWorkshopProfile(draft) } : preset), notice: 'この画面に設定を適用しました。再読み込み後も使う場合は、ブラウザに保存してください。' }))
+    setSettings(previous => ({ profiles: previous.profiles.map(preset => preset.id === selectedId ? { ...preset, profile: cloneWorkshopProfile(draft) } : preset), notice: APPLY_DRAFT_SUCCESS_NOTICE }))
     return true
   }
 

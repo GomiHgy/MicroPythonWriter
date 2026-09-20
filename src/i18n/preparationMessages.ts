@@ -117,6 +117,7 @@ export const preparationMessages: MessageCatalog = {
   '利用者が入力した確認情報です。Writerがコードを検証したり、実機の動作確認を代行した結果ではありません。': { en: 'This is information entered by the user. It does not mean Writer has validated the code or tested the device.', zh: '这些是使用者输入的确认信息，并不表示 Writer 验证了代码或代为测试了实机。' },
   '設定の確認項目': { en: 'Settings to check', zh: '需检查的设置' },
   '設定を適用': { en: 'Apply settings', zh: '应用设置' },
+  '設定を適用しました': { en: 'Settings applied', zh: '设置已应用' },
   'このブラウザに設定を保存': { en: 'Save settings in this browser', zh: '将设置保存在此浏览器中' },
   '保存ボタンを押すとき、基準コードと確認情報も保存する': { en: 'Also save the baseline code and verification when I select Save', zh: '点击保存时，同时保存基准代码与确认信息' },
   'チェックなしでは基準コードはメモリ上だけで扱い、以前保存した基準コードも次の保存で除きます。共用PCでは保存内容の取り扱いに注意してください。': { en: 'If unchecked, the baseline stays in memory only. Saving again also removes any previously saved baseline. Take care with saved data on shared computers.', zh: '不勾选时，基准代码仅保留在内存中，下次保存也会移除之前保存的基准代码。在共用电脑上请谨慎处理保存内容。' },

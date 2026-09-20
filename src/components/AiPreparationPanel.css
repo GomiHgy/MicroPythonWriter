@@ -41,6 +41,12 @@
 .ai-file-label input { box-sizing: border-box; max-width: 100%; font-size: .8rem; }
 .ai-confirm-name { max-width: 380px; }
 .ai-teacher .notice { margin: 14px 0; }
+.ai-teacher .ai-apply-notice { display: flex; align-items: flex-start; gap: 12px; border-color: #91c9a8; background: #eaf6ee; color: #145b34; animation: ai-settings-applied .18s ease-out; }
+.ai-apply-check { flex-shrink: 0; font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+.ai-apply-notice p { margin: 6px 0 0; font-size: .88rem; line-height: 1.65; }
+@keyframes ai-settings-applied { from { opacity: .5; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .ai-teacher .ai-apply-notice { animation: none; } }
+:root[data-theme=dark] .ai-teacher .ai-apply-notice { border-color: #418665; background: #193d2d; color: #c0f0d2; }
 .ai-board-pins { display: block; font-size: .88rem; line-height: 1.6; overflow-wrap: anywhere; }
 .ai-board-pins p { margin: 5px 0; }
 .ai-teacher code { overflow-wrap: anywhere; }

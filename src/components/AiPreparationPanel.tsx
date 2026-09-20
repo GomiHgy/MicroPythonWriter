@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
 import { getBoardDefinition } from '../config/boards'
-import type { WorkshopPreparation } from '../hooks/useWorkshopPreparation'
+import { APPLY_DRAFT_SUCCESS_NOTICE, type WorkshopPreparation } from '../hooks/useWorkshopPreparation'
 import { copyPreparationPrompt, downloadPreparationPrompt } from '../services/prompt/PromptExport'
 import { LED_MODELS, MAX_BASELINE_CODE_LENGTH, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import './AiPreparationPanel.css'
@@ -101,7 +101,7 @@ export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareContro
       <details className="ai-preview" open={previewOpen} onToggle={event => setPreviewOpen(event.currentTarget.open)}><summary>{t('準備文の内容を見る')}</summary>{exportAllowed ? <><p className="ai-help">{t('{count}文字。コピー・ファイル保存も、この内容をそのまま使います。', { count: prompt.length.toLocaleString(locale) })}</p><textarea ref={preview} aria-label={t('AIに渡す準備文')} value={prompt} readOnly spellCheck={false} /><button className="quiet-button" onClick={() => { preview.current?.focus(); preview.current?.select() }}>{t('全文を選択（手動コピー用）')}</button><p className="ai-help">{t('選択したら Ctrl+C（Macは ⌘C）、または端末のコピー操作を使ってください。')}</p></> : <p className="ai-help">{t('機器を選び、必要な設定を入力するとここに準備文が表示されます。')}</p>}</details>
     </section>
     <p className="ai-privacy">{t('準備文はブラウザ内で作ります。Writerが自動で外部送信することはありません。自分でAIへ貼って送ると、その内容はAIサービスへ送られます。基準コードに秘密情報がないか確認してください。検出機能だけですべてを見つけられるわけではありません。')}</p>
-    {preparation.notice && <p role="status" className="notice ai-storage-notice">{t(preparation.notice)}</p>}
+    {preparation.notice && preparation.notice !== APPLY_DRAFT_SUCCESS_NOTICE && <p role="status" className="notice ai-storage-notice">{t(preparation.notice)}</p>}
     <TeacherSettings key={preparation.selectedId ?? 'none'} preparation={preparation} />
   </div>
 }
@@ -114,10 +114,13 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
   const [testedOnDevice, setTestedOnDevice] = useState(false)
   const [nanoLedV1, setNanoLedV1] = useState(false)
   const [nanoLedV2, setNanoLedV2] = useState(false)
+  const [applied, setApplied] = useState<{ draft: WorkshopProfile; sequence: number } | null>(null)
   const [confirmedCode, setConfirmedCode] = useState({ code: draft?.baseline.code, firmware: draft?.firmwareVersion, boardId: draft?.boardId, ledModel: draft?.ledModel, ledCount: draft?.ledCount, ledPin: draft?.ledPin, brightness: draft?.maxBrightnessPercent })
   const verificationMatches = confirmedCode.ledModel === draft?.ledModel && confirmedCode.ledCount === draft?.ledCount && confirmedCode.ledPin === draft?.ledPin && confirmedCode.brightness === draft?.maxBrightnessPercent && confirmedCode.code === draft?.baseline.code && confirmedCode.firmware === draft?.firmwareVersion && confirmedCode.boardId === draft?.boardId
   const board = draft ? getBoardDefinition(draft.boardId) : null
+  const showApplied = applied?.draft === draft && !preparation.hasPendingChanges && !preparation.isImporting
   const setField = <Key extends keyof WorkshopProfile,>(key: Key, value: WorkshopProfile[Key]) => {
+    setApplied(null)
     if (key === 'baseline' || key === 'firmwareVersion') { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false) }
     preparation.editDraft({ [key]: value })
   }
@@ -140,7 +143,7 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
       </fieldset>
       <details className="ai-baseline"><summary>{t('開発者向け：独自の基準コードと実機確認（通常は不要）')}</summary><p className="ai-help">{t('独自のBluetoothプログラムを使う人向けです。同梱プログラムを試すだけなら、入力や確認登録は不要です。実機確認していないコードを確認済みとして登録しないでください。')}</p>
         {!!preparation.context?.bleReasons.length && <ul className="ai-help">{preparation.context.bleReasons.map(reason => <li key={reason}>{t(reason)}</li>)}</ul>}
-        <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
+        <label className="ai-file-label">{t('.py ファイルから読む')}<input type="file" accept=".py,text/x-python" onChange={event => { const file = event.target.files?.[0]; if (file) { setApplied(null); setTestedOnDevice(false); setNanoLedV1(false); setNanoLedV2(false); void preparation.importBaseline(file) } event.target.value = '' }} /></label>
         <label className="ai-baseline-code">{t('基準コード（全文）')}<textarea value={draft.baseline.code} spellCheck={false} onChange={event => { setField('baseline', { code: event.target.value, verification: null }); setTestedOnDevice(false) }} /></label>
         {draft.baseline.code.length > MAX_BASELINE_CODE_LENGTH && <p className="notice warn">{t('基準コードが100,000文字を超えています。内容は省略していません。Bluetoothの準備とブラウザ保存には使えないため、登録内容を確認してください。')}</p>}
         {draft.baseline.verification ? <p className="ai-help">{t('実機確認の登録: {name} ／ {date} ／ 対象版 {firmware}', { name: draft.baseline.verification.confirmedBy, date: draft.baseline.verification.confirmedAt, firmware: draft.baseline.verification.firmwareVersion })}{draft.baseline.verification.nanoLedV1 ? ` ／ ${t('NanoLED v1対応確認あり')}` : ''}{draft.baseline.verification.nanoLedV2 ? ` ／ ${t('NanoLED v2対応確認あり')}` : ''} <button className="quiet-button" onClick={() => setField('baseline', { ...draft.baseline, verification: null })}>{t('確認登録を取り消す')}</button></p> : <p className="ai-help">{t('実機確認は未登録です。基準コードや対象版を変えたら、再確認が必要です。')}</p>}
@@ -153,10 +156,19 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
         <p className="ai-help">{t('利用者が入力した確認情報です。Writerがコードを検証したり、実機の動作確認を代行した結果ではありません。')}</p>
       </details>
       {preparation.draftErrors.length > 0 && <div className="notice warn"><strong>{t('設定の確認項目')}</strong><ul>{preparation.draftErrors.map(error => <li key={error}>{t(error)}</li>)}</ul></div>}
-      <div className="ai-secondary-actions"><button disabled={preparation.isImporting || !!preparation.draftErrors.length} onClick={() => preparation.applyDraft()}>{t('設定を適用')}</button><button className="quiet-button" disabled={preparation.isImporting || !!preparation.draftErrors.length} onClick={() => preparation.saveDraft(persistBaseline)}>{t('このブラウザに設定を保存')}</button></div>
+      <div className="ai-secondary-actions"><button disabled={preparation.isImporting || !!preparation.draftErrors.length} onClick={() => {
+        if (preparation.applyDraft()) setApplied(previous => ({ draft, sequence: (previous?.sequence ?? 0) + 1 }))
+        else setApplied(null)
+      }}>{t('設定を適用')}</button><button className="quiet-button" disabled={preparation.isImporting || !!preparation.draftErrors.length} onClick={() => { setApplied(null); preparation.saveDraft(persistBaseline) }}>{t('このブラウザに設定を保存')}</button></div>
+      <div className="ai-apply-feedback" role="status" aria-live="polite" aria-atomic={true}>
+        {showApplied && applied && <div key={applied.sequence} className="notice ai-apply-notice">
+          <span className="ai-apply-check" aria-hidden="true">✓</span>
+          <div><strong>{t('設定を適用しました')}</strong><p>{t(APPLY_DRAFT_SUCCESS_NOTICE)}</p></div>
+        </div>}
+      </div>
       <label className="ai-check"><input type="checkbox" checked={persistBaseline} onChange={event => setPersistBaseline(event.target.checked)} />{t('保存ボタンを押すとき、基準コードと確認情報も保存する')}</label>
       <p className="ai-help">{t('チェックなしでは基準コードはメモリ上だけで扱い、以前保存した基準コードも次の保存で除きます。共用PCでは保存内容の取り扱いに注意してください。')}</p>
-      <button className="quiet-button" onClick={() => { if (confirm(t('この機器のブラウザ保存と画面上の変更を削除し、初期設定に戻しますか？'))) preparation.resetProfile() }}>{t('初期設定に戻す')}</button>
+      <button className="quiet-button" onClick={() => { if (confirm(t('この機器のブラウザ保存と画面上の変更を削除し、初期設定に戻しますか？'))) { setApplied(null); preparation.resetProfile() } }}>{t('初期設定に戻す')}</button>
     </>}
   </div></details>
 }
