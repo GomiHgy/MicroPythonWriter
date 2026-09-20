@@ -248,7 +248,8 @@ export class BluetoothController {
     if (age < 0 || age > MAX_STATUS_AGE_MS) return '機器の状態を確認できていません。「状態をもう一度受け取る」を押してから、もう一度操作してください。'
     if (token === 'MODE' && !status.controls.modes.some(choice => choice.id === id)) return 'このモードは機器に登録されていません。「状態をもう一度受け取る」を押してください。'
     if (token === 'ACTION' && !status.controls.actions.some(choice => choice.id === id)) return 'このアクションは機器に登録されていません。「状態をもう一度受け取る」を押してください。'
-    if (token === 'ACTION' && (status.action !== null || this.currentCommand?.command.startsWith('ACTION ') || this.queue.some(item => item.command.startsWith('ACTION ')))) return 'アクションの送信・実行中です。完了してから、もう一度操作してください。'
+    // 演出中の再スタートは許可する。未送信・送信中のACTIONだけ重複して蓄積しない。
+    if (token === 'ACTION' && (this.currentCommand?.command.startsWith('ACTION ') || this.queue.some(item => item.command.startsWith('ACTION ')))) return 'アクションを送信中です。送信が終わってから、もう一度操作してください。'
     return null
   }
 

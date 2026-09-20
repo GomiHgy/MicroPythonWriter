@@ -387,7 +387,7 @@ describe('Web Bluetooth controller', () => {
     expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n'])
   })
 
-  it('アクションの送信待ち・送信中・機器での実行中は追加アクションを積まない', async () => {
+  it('送信待ち・送信中のACTIONは重ねず、送信後は機器で実行中でも再スタートを送る', async () => {
     const { client, rx, tx } = setup()
     await client.connect()
     tx.notify(line(stateV2))
@@ -397,6 +397,7 @@ describe('Web Bluetooth controller', () => {
     const status = client.send('STATUS')
     const action = client.send('ACTION SPARKLE')
     expect(await client.send('ACTION SPARKLE')).toBe(false)
+    expect(client.getSnapshot().error).toContain('送信が終わってから')
     blockingStatus.resolve(undefined)
     await status
     await flush()
@@ -404,10 +405,60 @@ describe('Web Bluetooth controller', () => {
     blockingAction.resolve(undefined)
     expect(await action).toBe(true)
     tx.notify(line({ ...stateV2, action: 'SPARKLE' }))
-    expect(await client.send('ACTION SPARKLE')).toBe(false)
-    expect(client.getSnapshot().error).toContain('アクションの送信・実行中')
+    const reported = client.getSnapshot().status
+    expect(await client.send('ACTION SPARKLE')).toBe(true)
+    expect(client.getSnapshot().status).toBe(reported)
     expect(await client.send('OFF')).toBe(true)
-    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n', 'ACTION SPARKLE\n', 'OFF\n'])
+    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n', 'ACTION SPARKLE\n', 'ACTION SPARKLE\n', 'OFF\n'])
+    expect(rx.maxActiveWrites).toBe(1)
+  })
+
+  it('演出中も同じIDの再押下と別の登録済みACTIONを送るが、実行確認を先取りしない', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line({ ...stateV2, action: 'SPARKLE', controls: { ...stateV2.controls, actions: [...stateV2.controls.actions, { id: 'BURST', label: '変身' }] } }))
+    const reported = client.getSnapshot()
+    for (const command of ['ACTION SPARKLE', 'ACTION SPARKLE', 'ACTION BURST']) expect(await client.send(command)).toBe(true)
+    expect(client.getSnapshot().status).toBe(reported.status)
+    expect(client.getSnapshot().receivedAt).toBe(reported.receivedAt)
+    expect(await client.send('ACTION MISSING')).toBe(false)
+    expect(rx.writes).toEqual(['STATUS\n', 'ACTION SPARKLE\n', 'ACTION SPARKLE\n', 'ACTION BURST\n'])
+    expect(rx.maxActiveWrites).toBe(1)
+  })
+
+  it('実行中の通知が届いても待機済みACTIONを捨てず、通信の待機後に1回だけ送る', async () => {
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line(stateV2))
+    const blocked = deferred<void>()
+    rx.write = command => command === 'STATUS\n' ? blocked.promise : Promise.resolve()
+    const status = client.send('STATUS')
+    const action = client.send('ACTION SPARKLE')
+    tx.notify(line({ ...stateV2, action: 'SPARKLE' }))
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    blocked.resolve(undefined)
+    expect(await Promise.all([status, action])).toEqual([true, true])
+    expect(rx.writes).toEqual(['STATUS\n', 'STATUS\n', 'ACTION SPARKLE\n'])
+    const reported = client.getSnapshot().status
+    expect(reported?.v === 2 && reported.action).toBe('SPARKLE')
+  })
+
+  it('演出中でも古い状態・切断・送信失敗では再スタートを予約も自動再送もしない', async () => {
+    vi.useFakeTimers()
+    const { client, rx, tx } = setup()
+    await client.connect()
+    tx.notify(line({ ...stateV2, action: 'SPARKLE' }))
+    await vi.advanceTimersByTimeAsync(MAX_STATUS_AGE_MS + 1)
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    tx.notify(line({ ...stateV2, action: 'SPARKLE' }))
+    rx.write = async () => { throw new Error('write failed') }
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    expect(client.getSnapshot().phase).toBe('disconnected')
+    expect(await client.send('ACTION SPARKLE')).toBe(false)
+    await vi.advanceTimersByTimeAsync(10000)
+    rx.write = async () => undefined
+    await client.connect()
+    expect(rx.writes).toEqual(['STATUS\n', 'ACTION SPARKLE\n', 'STATUS\n'])
   })
 
   it('v2のモード・アクション送信待ちもOFFで破棄し、切断後に持ち越さない', async () => {

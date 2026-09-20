@@ -433,8 +433,9 @@ class RuntimeTests(unittest.TestCase):
             self.assertFalse(self.program.command(command), command)
             self.assertEqual(self.program.status(), before, command)
 
-    def test_actions_return_to_every_playback_and_ignore_repeat(self):
+    def test_restarted_actions_return_to_first_base_state_after_latest_deadline(self):
         for playback in ("playing", "paused", "off"):
+            self.setUp()
             self.program.command("PLAY")
             self.step(400)
             if playback == "paused":
@@ -445,12 +446,382 @@ class RuntimeTests(unittest.TestCase):
             before = (self.program.phase, self.program.frame[:], self.program.playback)
             self.program.command("ACTION SPARKLE")
             self.step(400)
-            elapsed = self.program.action_elapsed
+            saved = self.program.saved
             self.program.command("ACTION SPARKLE")
-            self.assertEqual(self.program.action_elapsed, elapsed)
-            self.step(610)
+            self.assertEqual(self.program.action_elapsed, 0)
+            self.assertIs(self.program.saved, saved)
+            self.step(999)
+            self.assertEqual(self.program.action, "SPARKLE")
+            self.step(1)
             self.assertEqual(self.program.action, None)
             self.assertEqual((self.program.phase, self.program.frame, self.program.playback), before)
+
+    def test_action_restart_blends_last_actual_pixels_at_0_100_199_200_ms(self):
+        self.program.command("MODE FLOW")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        source = self.program.output[:]
+        old_frame = self.program.frame[:]
+        self.program.command("ACTION SPARKLE")
+        self.assertEqual(self.program.output, source)
+        self.assertEqual(self.program.action_blend_pixels, source)
+        self.assertNotEqual(self.program.frame, old_frame)
+        self.program.write()
+        self.assertEqual(self.program.output, source)
+        previous = 0
+        for elapsed in (100, 199, 200):
+            self.step(elapsed - previous)
+            previous = elapsed
+            rendered = self.program.render({"kind": "twinkle", "color": "ffffff"}, elapsed / 1000)
+            target = [tuple(int(c * 0.2) for c in rgb) for rgb in rendered]
+            expected = [tuple((old[c] * (200 - elapsed) + new[c] * elapsed) // 200 for c in range(3))
+                        for old, new in zip(source, target)]
+            self.assertEqual(self.program.output, expected, elapsed)
+            self.assertEqual(self.program.status()["pixels"], "".join("%02x%02x%02x" % rgb for rgb in expected))
+        self.assertIsNone(self.program.action_blend_pixels)
+        self.assertIsNone(self.program.action_blend_started)
+
+    def test_action_rapid_restarts_keep_only_latest_snapshot_and_original_saved_state(self):
+        self.program.command("MODE FLOW")
+        self.step(400)
+        base_phase = self.program.phase
+        self.program.command("ACTION SPARKLE")
+        saved = self.program.saved
+        for _ in range(20):
+            self.step(37)
+            source = self.program.output[:]
+            self.program.command("ACTION SPARKLE")
+            self.assertIs(self.program.saved, saved)
+            self.assertEqual(self.program.action_blend_pixels, source)
+            self.assertEqual(len(self.program.action_blend_pixels), self.program.count)
+            self.assertTrue(all(len(pixel) == 3 for pixel in self.program.action_blend_pixels))
+            self.assertEqual(self.program.action_elapsed, 0)
+            self.assertEqual(self.program.phase, base_phase)
+        self.step(999)
+        self.assertEqual(self.program.action, "SPARKLE")
+        self.step(1)
+        self.assertIsNone(self.program.action)
+        self.assertIsNone(self.program.saved)
+        self.assertIsNone(self.program.action_blend_pixels)
+        self.assertEqual(self.program.phase, base_phase)
+        self.step(1100)
+        self.assertIsNone(self.program.action)
+
+    def test_action_restart_uses_last_output_even_when_loop_is_late(self):
+        global NOW
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        source = self.program.output[:]
+        NOW += 137
+        self.program.command("ACTION SPARKLE")
+        self.assertEqual(self.program.output, source)
+        self.assertEqual(self.program.action_blend_pixels, source)
+        self.assertEqual(self.program.action_started, NOW)
+        self.step(1000)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_action_restart_during_initial_fade_does_not_reset_or_double_apply_cap(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(110)
+        fade = self.program.fade
+        source = self.program.output[:]
+        self.program.command("ACTION SPARKLE")
+        self.program.write()
+        self.assertEqual(self.program.fade, fade)
+        self.assertEqual(self.program.output, source)
+        self.step(200)
+        self.assertEqual(self.program.fade, 1)
+        self.assertEqual(max(max(rgb) for rgb in self.program.output), 51)
+        self.assertLessEqual(max(FRAMES[-1][2]), 51)
+
+    def test_action_restart_pause_holds_actual_blended_output_and_resumes_base_phase(self):
+        self.program.command("MODE FLOW")
+        self.step(400)
+        base_phase = self.program.phase
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        visible = self.program.output[:]
+        self.program.command("PAUSE")
+        self.assertEqual(self.program.output, visible)
+        self.assertIsNone(self.program.action_blend_pixels)
+        self.assertIsNone(self.program.action)
+        self.step(2000)
+        self.assertEqual(self.program.output, visible)
+        self.assertEqual(self.program.phase, base_phase)
+        self.program.command("BRIGHTNESS 50")
+        self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in visible])
+        self.program.command("PAUSE")
+        self.program.command("BRIGHTNESS 0")
+        self.program.command("PAUSE")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, visible)
+        self.program.command("PLAY")
+        self.assertIsNone(self.program.held_pixels)
+        self.assertEqual(self.program.frame, self.program.render(self.program.modes[1], base_phase))
+        self.step(500)
+        self.assertEqual(self.program.playback, "playing")
+
+    def test_action_restart_immediate_pause_does_not_jump_to_restart_target(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        source = self.program.output[:]
+        self.program.command("ACTION SPARKLE")
+        self.program.command("PAUSE")
+        self.program.write()
+        self.assertEqual(self.program.output, source)
+        self.step(2000)
+        self.assertEqual(self.program.output, source)
+
+    def test_normal_pause_at_zero_brightness_preserves_logical_frame(self):
+        for action in (False, True):
+            with self.subTest(action=action):
+                self.setUp()
+                self.program.command("ACTION SPARKLE" if action else "PLAY")
+                self.step(400)
+                visible = self.program.output[:]
+                self.program.command("BRIGHTNESS 0")
+                self.program.command("PAUSE")
+                self.assertIsNone(self.program.held_pixels)
+                self.program.command("PAUSE")
+                self.program.command("BRIGHTNESS 100")
+                self.assertEqual(self.program.output, visible)
+                self.program.command("BRIGHTNESS 0")
+                self.program.command("PAUSE")
+                self.program.command("BRIGHTNESS 100")
+                self.assertEqual(self.program.output, visible)
+
+    def test_action_restart_pause_at_zero_restores_last_blended_reference_without_advancing(self):
+        for zero_before_restart in (False, True):
+            with self.subTest(zero_before_restart=zero_before_restart):
+                self.setUp()
+                self.program.command("MODE FLOW")
+                self.step(400)
+                base_phase = self.program.phase
+                self.program.command("ACTION SPARKLE")
+                self.step(400)
+                if zero_before_restart:
+                    self.program.command("BRIGHTNESS 0")
+                self.program.command("ACTION SPARKLE")
+                self.step(100)
+                reference = self.program.output_reference[:]
+                self.assertTrue(any(any(rgb) for rgb in reference))
+                self.program.command("BRIGHTNESS 0")
+                self.program.command("PAUSE")
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+                self.program.command("PAUSE")
+                self.step(2000)
+                self.program.command("BRIGHTNESS 100")
+                self.assertEqual(self.program.output, reference)
+                self.assertEqual(self.program.phase, base_phase)
+                self.assertIsNone(self.program.action)
+                self.assertIsNone(self.program.action_blend_pixels)
+                self.program.command("BRIGHTNESS 50")
+                self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in reference])
+                self.program.command("BRIGHTNESS 0")
+                self.program.command("PAUSE")
+                self.program.command("BRIGHTNESS 100")
+                self.assertEqual(self.program.output, reference)
+
+    def test_action_restart_pause_at_low_brightness_recovers_quantized_frame(self):
+        self.program.command("PLAY")
+        self.step(400)
+        base_phase = self.program.phase
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        reference = self.program.output_reference[:]
+        self.program.command("BRIGHTNESS 1")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+        self.program.command("PAUSE")
+        self.assertEqual(self.program.held_brightness, 1)
+        self.program.command("BRIGHTNESS 1")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+        self.step(2000)
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, reference)
+        self.assertTrue(any(any(rgb) for rgb in self.program.output))
+        self.assertEqual(self.program.phase, base_phase)
+        self.program.command("BRIGHTNESS 50")
+        self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in reference])
+        self.program.command("BRIGHTNESS 1")
+        self.program.command("PAUSE")
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, reference)
+
+    def test_saved_output_recovers_partial_color_quantization_only_on_brightness_change(self):
+        pixels = [(1, 2, 0)] * self.program.count
+        reference = [(21, 45, 6)] * self.program.count
+        self.program.brightness = 5
+        self.assertEqual(self.program.rescale_output(pixels, 5, reference), pixels)
+        self.program.brightness = 100
+        self.assertEqual(self.program.rescale_output(pixels, 5, reference), reference)
+        self.program.brightness = 50
+        self.assertEqual(self.program.rescale_output(pixels, 5, reference), [(10, 22, 3)] * self.program.count)
+        self.program.brightness = 5
+        self.assertEqual(self.program.rescale_output(pixels, 5, reference), pixels)
+
+    def test_action_restart_brightness_zero_and_changes_preserve_safety_cap(self):
+        self.program.command("BRIGHTNESS 40")
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        for brightness in (100, 0, 20, 100):
+            self.program.command("BRIGHTNESS " + str(brightness))
+            cap = int(255 * 0.2 * brightness / 100)
+            self.assertLessEqual(max(FRAMES[-1][2]), cap)
+            if brightness == 0:
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+            self.step(10)
+            self.assertLessEqual(max(FRAMES[-1][2]), cap)
+        self.program.command("BRIGHTNESS 0")
+        self.program.command("ACTION SPARKLE")
+        self.step(200)
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
+    def test_action_after_paused_restart_restores_visible_hold_not_hidden_target(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        self.program.command("PAUSE")
+        visible = self.program.output[:]
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(1000)
+        self.assertEqual(self.program.playback, "paused")
+        self.assertEqual(self.program.output, visible)
+        self.program.command("BRIGHTNESS 0")
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, visible)
+
+    def test_action_restart_off_and_safety_off_cancel_all_restart_state(self):
+        for operation in ("OFF", "safety"):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.program.command("ACTION SPARKLE")
+                self.step(400)
+                self.program.command("ACTION SPARKLE")
+                self.step(100)
+                source = self.program.output[:]
+                if operation == "OFF":
+                    self.program.command("OFF")
+                    self.assertEqual(self.program.output, source)
+                    self.step(100)
+                    self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in source])
+                    self.step(100)
+                else:
+                    self.program.off()
+                self.assertEqual(self.program.playback, "off")
+                self.assertIsNone(self.program.action)
+                self.assertIsNone(self.program.action_blend_started)
+                self.assertIsNone(self.program.saved)
+                self.step(2000)
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
+    def test_action_restart_mode_and_new_action_replace_saved_base(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        self.program.command("MODE FLOW")
+        self.assertIsNone(self.program.saved)
+        self.assertIsNone(self.program.action_blend_pixels)
+        self.step(400)
+        base_phase = self.program.phase
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(1000)
+        self.assertEqual(self.program.index, 1)
+        self.assertEqual(self.program.phase, base_phase)
+        self.assertEqual(self.program.playback, "playing")
+
+    def test_action_restart_invalid_command_changes_nothing(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        before = copy.deepcopy(self.program.__dict__)
+        for command in ("ACTION ABSENT", "ACTION", "ACTION SPARKLE EXTRA", "BRIGHTNESS 101"):
+            self.assertFalse(self.program.command(command))
+            for key, value in before.items():
+                if key not in ("pin", "button"):
+                    self.assertEqual(self.program.__dict__[key], value, key)
+
+    def test_action_restart_ticks_wrap_and_delayed_completion(self):
+        global NOW
+        NOW = (1 << 30) - 600
+        self.program = runtime.LedProgram(self.config)
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(199)
+        self.assertIsNotNone(self.program.action_blend_started)
+        self.step(1)
+        self.assertIsNone(self.program.action_blend_started)
+        self.step(799)
+        self.assertEqual(self.program.action, "SPARKLE")
+        NOW = (NOW + 11) % (1 << 30)
+        self.program.step(NOW)
+        self.assertEqual(self.program.action_elapsed, 1010)
+        self.assertIsNone(self.program.action)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_action_restart_ble_processing_is_nonblocking_and_has_no_deferred_queue(self):
+        radio = self.radio()
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        radio.ble.incoming(b"ACTION SPARKLE\nACTION SPARKLE\nSTATUS\n")
+        sleep_ms = fake_time.sleep_ms
+        fake_time.sleep_ms = lambda value: self.fail("ACTION restart must not block on sleep_ms")
+        try:
+            radio.receive()
+            self.assertEqual(radio.rx, [])
+            self.step(100, radio)
+            self.assertTrue(radio.ble.notifications)
+            self.step(900, radio)
+            self.assertIsNone(self.program.action)
+            self.assertEqual(self.program.playback, "off")
+        finally:
+            fake_time.sleep_ms = sleep_ms
+
+    def test_main_exception_immediately_clears_action_restart_and_turns_off(self):
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(100)
+        program_factory = runtime.LedProgram
+        sleep_ms = fake_time.sleep_ms
+        had_config = hasattr(runtime, "CONFIG")
+        previous_config = getattr(runtime, "CONFIG", None)
+        runtime.LedProgram = lambda config: self.program
+        runtime.CONFIG = self.config
+
+        def fail_sleep(value):
+            raise RuntimeError("test loop failure")
+
+        fake_time.sleep_ms = fail_sleep
+        try:
+            with self.assertRaisesRegex(RuntimeError, "test loop failure"):
+                runtime.main()
+        finally:
+            runtime.LedProgram = program_factory
+            fake_time.sleep_ms = sleep_ms
+            if had_config:
+                runtime.CONFIG = previous_config
+            else:
+                del runtime.CONFIG
+        self.assertEqual(self.program.playback, "off")
+        self.assertEqual(FRAMES[-1][2], bytes(30))
+        self.assertIsNone(self.program.action_blend_pixels)
+        self.assertIsNone(self.program.saved)
 
     def test_action_pause_holds_action_frame_and_play_restores_base(self):
         self.program.command("MODE FLOW")

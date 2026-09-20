@@ -538,25 +538,83 @@ describe('作品専用の無線リモコン v2', () => {
     expect(find(panel(), element => element.props.title === 'LED 1: #000306').props.style).toMatchObject({ backgroundColor: '#000306' })
   })
 
-  it('アクション実行中は連打を防ぎ、モード変更・停止・消灯は使える', () => {
+  it('アクション実行中も再スタートを送信でき、モード変更・停止・消灯も使える', () => {
     modern({ action: 'SPARK' })
     const view = panel()
-    expect(button(view, '一度だけ光る').props.disabled).toBe(true)
+    expect(button(view, '一度だけ光る').props.disabled).toBe(false)
     expect(button(view, '落ち着いた光').props.disabled).toBe(false)
     expect(button(view, '停止').props.disabled).toBe(false)
     expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    event(button(view, '一度だけ光る'), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith('ACTION SPARK')
     event(button(view, '落ち着いた光'), 'onClick')
     expect(harness.send).toHaveBeenLastCalledWith('MODE CALM')
     modern({ action: null })
     expect(button(panel(), '一度だけ光る').props.disabled).toBe(false)
   })
 
-  it('送信処理中はアクションの追加送信を無効にする', () => {
-    modern()
+  it.each([null, 'SPARK'])('現在の演出=%sでも送信処理中はアクションの追加送信を無効にする', action => {
+    modern({ action })
     harness.snapshot = { ...harness.snapshot, sending: true }
     const view = panel()
     expect(button(view, '一度だけ光る').props.disabled).toBe(true)
     expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    event(button(view, '一度だけ光る'), 'onClick')
+    expect(harness.send).not.toHaveBeenCalled()
+    harness.snapshot = { ...harness.snapshot, sending: false }
+    panel()
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it('演出中の同じアクション・別アクションはクリックごとに1回送信し、ブラウザで表示を先取りしない', async () => {
+    modern({
+      action: 'SPARK',
+      controls: {
+        speed: true,
+        modes: [{ id: 'RAINBOW', label: 'にじいろ散歩' }],
+        actions: [{ id: 'SPARK', label: '一度だけ光る' }, { id: 'FLASH', label: '別の演出' }],
+      },
+    })
+    const before = structuredClone(harness.snapshot.status)
+    const view = panel()
+    expect(button(view, '一度だけ光る').props.disabled).toBe(false)
+    expect(button(view, '別の演出').props.disabled).toBe(false)
+    event(button(view, '一度だけ光る'), 'onClick')
+    event(button(panel(), '一度だけ光る'), 'onClick')
+    event(button(panel(), '別の演出'), 'onClick')
+    await Promise.resolve()
+    expect(harness.send.mock.calls).toEqual([['ACTION SPARK'], ['ACTION SPARK'], ['ACTION FLASH']])
+    expect(harness.snapshot.status).toEqual(before)
+    expect(content(panel())).toContain('機器からの報告: 「一度だけ光る」を実行中')
+    expect(content(panel())).not.toContain('機器からの報告: 「別の演出」を実行中')
+    expect(content(panel())).toContain('操作を送信しました。実行完了の確認ではありません。')
+    expect(find(panel(), element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+    await vi.advanceTimersByTimeAsync(1000)
+    panel()
+    expect(harness.send).toHaveBeenCalledTimes(3)
+    harness.snapshot = { ...harness.snapshot, status: { ...(harness.snapshot.status as ModernStatus), action: 'FLASH' } }
+    expect(content(panel())).toContain('機器からの報告: 「別の演出」を実行中')
+  })
+
+  it.each(['stale', 'disconnected'] as const)('%sでは演出中でもアクションを送信しない', phase => {
+    modern({ action: 'SPARK' })
+    panel()
+    if (phase === 'stale') vi.advanceTimersByTime(6000)
+    else harness.snapshot = { ...harness.snapshot, phase: 'disconnected' }
+    const view = panel()
+    const action = button(view, '一度だけ光る')
+    expect(action.props.disabled).toBe(true)
+    event(action, 'onClick')
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%sで再操作の対応プログラム条件と旧プログラムの制限を案内する', locale => {
+    modern({ action: 'SPARK' })
+    harness.locale = locale
+    const guide = '対応プログラムでは、演出中に同じボタンを押すと今の光からやり直し、別のボタンで演出を切り替えられます。以前のプログラムでは再操作が無視されることがあります。'
+    const view = panel()
+    expect(content(view)).toContain(locale === 'ja' ? guide : bluetoothMessages[guide][locale])
+    expect(harness.send).not.toHaveBeenCalled()
   })
 
   it('スピード非対応の作品ではスピードスライダーを表示しない', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { workshopPresets } from '../config/workshops'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
@@ -6,7 +7,7 @@ import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, LED_
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { boardDefinitions, identifyBoard, identifySoc } from '../config/boards'
 import { buildControllerStarter } from '../services/workshop/ControllerStarter'
-import { remoteOffFadeRules } from '../i18n/promptMessages'
+import { nanoLedV2Rules, remoteOffFadeRules } from '../i18n/promptMessages'
 
 function profile(): WorkshopProfile {
   return {
@@ -439,6 +440,42 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const rules = createWorkshopContext(profile()).rules
     expect(rules).toContain('起動時は共通の送信処理で全LEDへ0を送って')
     expect(rules).toContain('起動演出が指定されていても、その後の最初の点灯にはOFFから点灯する最低200msの条件を適用')
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s のv2と同梱候補は現在の実出力からアクションを再スタートし、最初の復帰元を保持する', locale => {
+    const required = {
+      ja: ['有効な追加ACTIONを即時に受け付け', '同じIDなら再スタート、別のIDなら置換', '実行待ちの演出キューを作らない', '最後に実際に送信した全LEDのRGB出力', '有限時間で非ブロッキング', '同梱候補は200ms', '補間途中の再押下', '輝度係数を二重に掛けず', '基底モード・位相・playback', '復帰元を更新しない', '不正・未登録ID', 'PAUSEは補間途中でも', '開始・再スタート・置換・終了', 'v2に要求ID付きACKはない'],
+      en: ['Accept valid additional ACTION commands immediately', 'restart the same ID or replace it with a different ID', 'never build an effect-execution backlog', "last actually transmitted RGB output", 'over a finite duration', 'bundled candidate uses 200ms', 'A retrigger during interpolation', 'Never apply brightness factors twice', 'base mode, phase and playback', 'must not overwrite this return state', 'Invalid or unregistered IDs', 'PAUSE holds the frame actually visible', 'start/restart/replacement/end', 'v2 has no request-ID ACK'],
+      zh: ['立即接受有效的额外 ACTION', '相同 ID 重新开始，不同 ID 替换', '不建立等待执行的演出队列', '最后实际发送的 RGB 输出', '有限时间内非阻塞', '内置候选程序使用 200ms', '插值中再次按下', '不要对已应用安全上限的输出重复乘以亮度系数', '基础模式、相位和 playback', '不能覆盖该恢复状态', '无效或未登记 ID', 'PAUSE 即使在插值中', '动作开始、重新开始、替换及结束', 'v2 没有请求 ID ACK'],
+    }
+    for (const source of ['v2', 'candidate'] as const) {
+      const value = bleProfile()
+      if (source === 'v2') {
+        value.baseline.verification!.nanoLedV1 = false
+        value.baseline.verification!.nanoLedV2 = true
+      } else value.baseline = { code: '', verification: null }
+      const original = structuredClone(value)
+      const prompt = buildStartPrompt(createWorkshopContext(value, locale))
+      expect(prompt).toContain(nanoLedV2Rules[locale])
+      for (const text of required[locale]) expect(prompt).toContain(text)
+      for (const safety of ['REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200', 'time.ticks_ms()', 'time.ticks_diff()', 'MODE/PLAY/PAUSE/OFF']) expect(prompt).toContain(safety)
+      expect(prompt).not.toMatch(/追加ACTIONは無視|Ignore additional ACTION commands|执行中忽略额外 ACTION/u)
+      expect(value).toEqual(original)
+    }
+    const legacy = buildStartPrompt(createWorkshopContext(bleProfile(), locale))
+    expect(legacy).not.toContain(nanoLedV2Rules[locale])
+    expect(legacy).not.toContain(required[locale][0])
+  })
+
+  it('手動プロンプトの共通仕様・v2移行・演出追加も再スタート契約を維持する', () => {
+    const manual = readFileSync(new URL('../../prompt.md', import.meta.url), 'utf8')
+    expect(manual).not.toMatch(/追加ACTIONは無視|連打無視/u)
+    const general = manual.split('Webコントローラ用のNanoLED v2固定仕様')[1].split('以下のNanoLED v1仕様')[0]
+    const migration = manual.split('## プロンプトE0：')[1].split('## プロンプトE-v2：')[0]
+    const addEffect = manual.split('## プロンプトE-v2：')[1].split('## プロンプトE（旧v1専用）')[0]
+    for (const text of [general, migration, addEffect]) {
+      for (const required of ['同じIDなら再スタート、別のIDなら置換', '実行待ちの演出キュー', '全LEDのRGB', '同梱候補は200ms', '復帰元', '不正・未登録ID', 'MODE/PLAY/PAUSE/OFF', 'Write応答']) expect(text).toContain(required)
+    }
   })
 
   it.each(['ja', 'en', 'zh'] as const)('%s のv1・v2・同梱候補にリモコン消灯200msの共通契約を含める', locale => {

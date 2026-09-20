@@ -7,6 +7,8 @@ import json
 WS2812_TIMING_NS = (400, 850, 800, 450)
 FADE_IN_MS = 200
 REMOTE_OFF_FADE_MS = 200
+ACTION_RESTART_BLEND_MS = 200
+ACTION_DURATION_MS = 1000
 DEBOUNCE_MS = 40
 LONG_PRESS_MS = 800
 DOUBLE_PRESS_MS = 350
@@ -26,6 +28,7 @@ class LedProgram:
         self.buffer = bytearray(self.count * 3)
         self.frame = [(0, 0, 0)] * self.count
         self.output = [(0, 0, 0)] * self.count
+        self.output_reference = [(0, 0, 0)] * self.count
         self.modes = config["modes"]
         self.index = 0
         self.brightness = 100
@@ -36,10 +39,19 @@ class LedProgram:
         self.fade = 0.0
         self.remote_off_started = None
         self.remote_off_pixels = None
+        self.remote_off_reference = None
         self.remote_off_fade = 0.0
         self.remote_off_brightness = 100
         self.action = None
         self.action_elapsed = 0
+        self.action_started = None
+        self.action_blend_started = None
+        self.action_blend_pixels = None
+        self.action_blend_reference = None
+        self.action_blend_brightness = 100
+        self.held_pixels = None
+        self.held_reference = None
+        self.held_brightness = 100
         self.saved = None
         self.just_started = False
         self.dirty = True
@@ -55,8 +67,8 @@ class LedProgram:
 
     def write(self, now=None):
         # すべての出力が同じ安全上限を通る。通知はこの最終値をRGBで報告する。
+        now = time.ticks_ms() if now is None else now
         if self.remote_off_started is not None:
-            now = time.ticks_ms() if now is None else now
             elapsed = max(0, time.ticks_diff(now, self.remote_off_started))
             remaining = max(0, REMOTE_OFF_FADE_MS - elapsed)
             if not remaining:
@@ -66,11 +78,36 @@ class LedProgram:
             # 上限適用済みの実出力を縮小する。設定変更で消灯途中に明るくしない。
             pixels = [tuple(c * remaining // REMOTE_OFF_FADE_MS for c in rgb)
                       for rgb in self.remote_off_pixels]
+            reference = [tuple(c * remaining // REMOTE_OFF_FADE_MS for c in rgb)
+                         for rgb in self.remote_off_reference]
+        elif self.held_pixels is not None and self.playback == "paused":
+            pixels = self.rescale_output(self.held_pixels, self.held_brightness, self.held_reference)
+            reference = self.held_reference
         else:
+            reference_scale = self.config["max_brightness"] / 100 * self.fade
             scale = self.config["max_brightness"] / 100 * self.brightness / 100 * self.fade
             if self.playback == "off":
                 scale = 0
+                reference_scale = 0
             pixels = [tuple(int(max(0, min(255, c)) * scale) for c in rgb) for rgb in self.frame]
+            # 輝度0でも「最後に書いた固定フレーム」の形を保持する。上限と点灯フェードは適用済み。
+            reference = [tuple(int(max(0, min(255, c)) * reference_scale) for c in rgb) for rgb in self.frame]
+            if self.action_blend_started is not None:
+                elapsed = max(0, time.ticks_diff(now, self.action_blend_started))
+                if elapsed >= ACTION_RESTART_BLEND_MS:
+                    self.action_blend_started = None
+                    self.action_blend_pixels = None
+                    self.action_blend_reference = None
+                else:
+                    source = self.rescale_output(self.action_blend_pixels, self.action_blend_brightness, self.action_blend_reference)
+                    # 実出力同士を補間する。最大輝度・点灯フェードを二重に掛けない。
+                    pixels = [tuple((old[c] * (ACTION_RESTART_BLEND_MS - elapsed) + new[c] * elapsed)
+                                    // ACTION_RESTART_BLEND_MS for c in range(3))
+                              for old, new in zip(source, pixels)]
+                    reference = [tuple((old[c] * (ACTION_RESTART_BLEND_MS - elapsed) + new[c] * elapsed)
+                                       // ACTION_RESTART_BLEND_MS for c in range(3))
+                                 for old, new in zip(self.action_blend_reference, reference)]
+        self.output_reference = reference
         for i, (r, g, b) in enumerate(pixels):
             self.output[i] = (r, g, b)
             self.buffer[3 * i:3 * i + 3] = bytes((g, r, b))
@@ -79,12 +116,30 @@ class LedProgram:
         # 同じループで複数コマンドを適用した場合にもリセット時間を確保する。
         time.sleep_us(80)
 
+    def rescale_output(self, pixels, original_brightness, reference=None):
+        # 保存した実出力には安全上限が適用済み。設定輝度の比だけ反映する。
+        cap = int(255 * self.config["max_brightness"] / 100 * self.brightness / 100)
+        if not self.brightness:
+            return [(0, 0, 0)] * self.count
+        if self.brightness == original_brightness:
+            # 同じ設定の再開始・停止では最後の実送信値をバイト単位で維持する。
+            return [tuple(min(cap, c) for c in rgb) for rgb in pixels]
+        if reference is not None:
+            # 輝度変更時は量子化前の基準を使い、0%や低輝度で消えた色成分も復元する。
+            pixels = reference
+            original_brightness = 100
+        elif not original_brightness:
+            return [(0, 0, 0)] * self.count
+        return [tuple(min(cap, c * self.brightness // original_brightness) for c in rgb) for rgb in pixels]
+
     def off(self):
         # 起動・例外・本体ボタン・有限再生終了の安全消灯は待たずに行う。
         self.remote_off_started = None
         self.remote_off_pixels = None
-        self.action = None
-        self.saved = None
+        self.remote_off_reference = None
+        self.cancel_action()
+        self.held_pixels = None
+        self.held_reference = None
         self.playback = "off"
         self.fade = 0.0
         self.frame = [(0, 0, 0)] * self.count
@@ -103,6 +158,9 @@ class LedProgram:
             return
         self.remote_off_started = time.ticks_ms()
         self.remote_off_pixels = self.output[:]
+        self.remote_off_reference = self.output_reference[:]
+        self.held_pixels = None
+        self.held_reference = None
         self.remote_off_fade = self.fade
         self.remote_off_brightness = self.brightness
         # PAUSE中の実出力も消灯する。黒を送信する前にoffとは報告しない。
@@ -118,15 +176,22 @@ class LedProgram:
                 self.fade = min(1.0, self.fade * self.remote_off_brightness / self.brightness) if self.brightness else 0.0
                 self.remote_off_started = None
                 self.remote_off_pixels = None
+                self.remote_off_reference = None
 
     def cancel_action(self):
         self.action = None
+        self.action_started = None
+        self.action_blend_started = None
+        self.action_blend_pixels = None
+        self.action_blend_reference = None
         self.saved = None
 
     def play(self):
         self.cancel_remote_off()
         was_off = self.playback == "off"
         self.cancel_action()
+        self.held_pixels = None
+        self.held_reference = None
         self.playback = "playing"
         self.just_started = True
         if was_off:
@@ -145,9 +210,19 @@ class LedProgram:
             self.write()
             self.dirty = True
             return
-        self.cancel_action()
         if self.playback != "off":
+            # 補間途中でも最後に実際に送った色を固定する。隠れた目標frameへ飛ばさない。
+            if self.playback != "paused":
+                if self.action_blend_started is not None:
+                    self.held_pixels = self.output[:]
+                    self.held_reference = self.output_reference[:]
+                    self.held_brightness = self.brightness
+                else:
+                    # 通常PAUSEは従来の論理frameを保持し、輝度0からも再調整できる。
+                    self.held_pixels = None
+                    self.held_reference = None
             self.playback = "paused"
+        self.cancel_action()
         self.dirty = True
 
     def select(self, index):
@@ -158,15 +233,30 @@ class LedProgram:
         self.play()
 
     def sparkle(self):
-        if self.action is not None:
-            return
         self.cancel_remote_off()
-        self.saved = (self.playback, self.frame[:], self.fade)
+        restarting = self.action is not None
+        if not restarting:
+            # 連打しても最初のACTION前の基底状態は上書きしない。
+            held = self.held_pixels[:] if self.held_pixels is not None else None
+            reference = self.held_reference[:] if self.held_reference is not None else None
+            self.saved = (self.index, self.phase, self.cycles, self.playback, self.frame[:], self.fade,
+                          held, self.held_brightness, reference)
+        now = time.ticks_ms()
+        if restarting:
+            self.action_blend_started = now
+            self.action_blend_pixels = self.output[:]
+            self.action_blend_reference = self.output_reference[:]
+            self.action_blend_brightness = self.brightness
+            self.frame = self.render({"kind": "twinkle", "color": "ffffff"}, 0.0)
         was_off = self.playback == "off"
+        self.held_pixels = None
+        self.held_reference = None
         self.action = "SPARKLE"
+        self.action_started = now
         self.action_elapsed = 0
         self.playback = "playing"
-        self.just_started = True
+        if not restarting:
+            self.just_started = True
         if was_off:
             self.fade = 0.0
         self.dirty = True
@@ -307,14 +397,15 @@ class LedProgram:
             self.just_started = False
         self.fade = min(1.0, self.fade + elapsed / FADE_IN_MS)
         if self.action is not None:
-            self.action_elapsed += elapsed
-            if self.action_elapsed >= 1000:
-                self.playback, self.frame, self.fade = self.saved
+            self.action_elapsed = max(0, time.ticks_diff(now, self.action_started))
+            if self.action_elapsed >= ACTION_DURATION_MS:
+                (self.index, self.phase, self.cycles, self.playback, self.frame, self.fade,
+                 self.held_pixels, self.held_brightness, self.held_reference) = self.saved
                 self.cancel_action()
                 self.dirty = True
             else:
                 mode = {"kind": "twinkle", "color": "ffffff"}
-                self.frame = self.render(mode, self.action_elapsed / 1000)
+                self.frame = self.render(mode, self.action_elapsed / ACTION_DURATION_MS)
         else:
             mode = self.modes[self.index]
             phase = self.phase + elapsed / (3000 - 29 * self.speed)

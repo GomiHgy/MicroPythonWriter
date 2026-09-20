@@ -5,6 +5,7 @@ import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import type { DeviceInfo } from '../types'
+import { nanoLedV2Rules } from '../i18n/promptMessages'
 
 const device: DeviceInfo = { deviceName: 'test-NanoC6', microPythonVersion: 'probe-micropython-version', firmwareInfo: 'probe-firmware-info', bootOption: 1, nanoC6Confirmed: true, bootOptionSupported: true, nvsFallbackSupported: false }
 const error = { exceptionType: 'ValueError', message: 'failed', traceback: 'Traceback (most recent call last):\n  File "main.py", line 3\nValueError: failed', intentionalInterrupt: false }
@@ -86,6 +87,26 @@ describe('ワークショップ修正依頼', () => {
     expect(repair).toContain('Notifyは1回20バイト以下')
     expect(repair).toContain('物理的な発光をセンサーで測定した結果ではない')
     expect(hasSensitiveAssignments(repair)).toBe(true)
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s の修正依頼も登録済みv2と同梱候補へ同じアクション再スタート仕様を渡す', locale => {
+    for (const registered of [true, false]) {
+      const input = profile()
+      input.features = { button: true, ble: true, controller: true }
+      const baselineCode = '# Synthetic baseline, not hardware verified by this test.\nprint("baseline")'
+      input.baseline = registered
+        ? { code: baselineCode, verification: { code: baselineCode, firmwareVersion: input.firmwareVersion!, confirmedBy: 'test-fixture', confirmedAt: '2026-09-15', nanoLedV1: false, nanoLedV2: true } }
+        : { code: '', verification: null }
+      const context = createWorkshopContext(input)
+      const before = structuredClone(context)
+      const source = 'print("captured-action-program")'
+      const repair = builder.build(error, source, device, 'captured-action-log', 'DEVICE_RUNTIME_ERROR', context, { locale })
+      expect(repair).toContain(nanoLedV2Rules[locale])
+      expect(repair.split(nanoLedV2Rules[locale])).toHaveLength(2)
+      expect(repair).not.toMatch(/追加ACTIONは無視|Ignore additional ACTION commands|执行中忽略额外 ACTION/u)
+      for (const required of [source, 'captured-action-log', error.traceback, 'REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200']) expect(repair).toContain(required)
+      expect(context).toEqual(before)
+    }
   })
 
   it.each(['ja', 'en', 'zh'] as const)('%s の修正依頼は同梱候補を参考と明記し、失敗したコードと未確認状態を維持する', locale => {
