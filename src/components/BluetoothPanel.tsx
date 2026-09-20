@@ -108,7 +108,8 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
           <p>{t(availabilityReason)}</p>
           {waitingTooLong && <p>{t('5秒以上届いていません。下の「状態をもう一度受け取る」を試してください。')}</p>}
         </div>
-        <button className="lights-off quiet-button" disabled={!connected} onClick={() => void send('OFF')}>◯ {t('ライトを消す')}</button>
+        <button className="lights-off quiet-button" disabled={!connected} aria-describedby="lights-off-help" onClick={() => void send('OFF')}>◯ {t('ライトを消す')}</button>
+        <p id="lights-off-help" className="controller-note">{t('対応プログラムでは、0.2秒かけてふわっと消灯します。以前のプログラムは更新が必要です。')}</p>
         <div className="playback-controls" aria-describedby="playback-help">
           <p className="playback-status"><span>{t('機器の再生状態')}</span><strong>{stale ? t('最後に届いた状態') : playbackName}</strong></p>
           <div className="playback-buttons">

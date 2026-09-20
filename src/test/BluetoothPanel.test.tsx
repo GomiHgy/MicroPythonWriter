@@ -217,6 +217,22 @@ describe('Bluetoothコントローラの接続と受信状態', () => {
     expect(harness.disconnect).toHaveBeenCalledTimes(1)
   })
 
+  it.each([1, 2])('v%sの消灯はOFFを1回だけ送り、フェードや輝度表示をブラウザで偽装しない', async version => {
+    if (version === 2) modern()
+    else connected()
+    const before = harness.snapshot.status
+    const view = panel()
+    const off = button(view, 'ライトを消す')
+    expect(off.props['aria-describedby']).toBe('lights-off-help')
+    expect(content(view)).toContain('0.2秒かけてふわっと消灯')
+    expect(content(view)).toContain('以前のプログラムは更新が必要')
+    event(off, 'onClick')
+    await vi.advanceTimersByTimeAsync(250)
+    expect(harness.send.mock.calls).toEqual([['OFF']])
+    expect(harness.snapshot.status).toEqual(before)
+    expect(slider('BRIGHTNESS').props.value).toBe(before?.brightness)
+  })
+
   it.each([['ピンク', 'PINK'], ['ブルー', 'BLUE'], ['マジック', 'MAGIC'], ['にじいろ', 'RAINBOW']])('%sボタンが対応するコマンドを送る', (label, command) => {
     connected()
     const selected = button(panel(), label)

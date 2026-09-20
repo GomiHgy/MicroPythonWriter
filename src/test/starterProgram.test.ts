@@ -26,6 +26,7 @@ describe('starter generator', () => {
     expect(source).toContain('HARDWARE NOT VERIFIED')
     expect(source).toContain('WS2812_TIMING_NS = (400, 850, 800, 450)')
     expect(source).toContain('FADE_IN_MS = 200')
+    expect(source).toContain('REMOTE_OFF_FADE_MS = 200')
     expect(source).toContain('DOUBLE_PRESS_MS = 350')
     expect(source).toContain('LONG_PRESS_MS = 800')
     expect(source).toContain('machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)')

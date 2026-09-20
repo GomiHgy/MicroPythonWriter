@@ -211,6 +211,222 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.program.status()["pixels"], "0" * 60)
         self.assertEqual(self.program.status()["mode"], "WARM")
 
+    def test_remote_off_fades_actual_pixels_at_0_100_199_200_ms(self):
+        self.config["max_brightness"] = 100
+        self.program = runtime.LedProgram(self.config)
+        self.program.command("PLAY")
+        self.step(210)
+        initial = self.program.output[:]
+        self.assertEqual(initial[0], (255, 128, 0))
+        phase = self.program.phase
+        self.program.command("OFF")
+        self.assertEqual(self.program.output, initial)
+        self.assertEqual(self.program.status()["playback"], "playing")
+        previous = 0
+        for elapsed in (100, 199, 200):
+            self.step(elapsed - previous)
+            previous = elapsed
+            expected = [tuple(c * (200 - elapsed) // 200 for c in rgb) for rgb in initial]
+            self.assertEqual(self.program.output, expected, elapsed)
+            self.assertEqual(self.program.status()["pixels"], "".join("%02x%02x%02x" % rgb for rgb in expected))
+            self.assertEqual(self.program.playback, "off" if elapsed == 200 else "playing")
+            self.assertEqual(self.program.phase, phase)
+        self.assertEqual(FRAMES[-1][2], bytes(30))
+        self.assertEqual(self.program.brightness, 100)
+        self.assertEqual(self.program.index, 0)
+
+    def test_remote_off_from_pause_fade_in_and_action_uses_last_transmitted_output(self):
+        for source in ("paused", "fade_in", "action"):
+            with self.subTest(source=source):
+                self.setUp()
+                self.program.command("MODE FLOW")
+                self.step(110 if source == "fade_in" else 400)
+                if source == "paused":
+                    self.program.command("PAUSE")
+                elif source == "action":
+                    self.program.command("ACTION SPARKLE")
+                    self.step(250)
+                initial = self.program.output[:]
+                self.assertTrue(any(any(rgb) for rgb in initial))
+                self.program.command("OFF")
+                self.assertIsNone(self.program.action)
+                self.assertIsNone(self.program.saved)
+                self.assertEqual(self.program.playback, "playing")
+                self.assertEqual(self.program.output, initial)
+                self.step(100)
+                self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in initial])
+                self.step(100)
+                self.assertEqual(self.program.playback, "off")
+                self.step(1500)
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+                self.assertEqual(self.program.index, 1)
+
+    def test_remote_off_repeat_does_not_restart_or_extend_deadline(self):
+        self.program.command("PLAY")
+        self.step(210)
+        self.program.command("OFF")
+        started = self.program.remote_off_started
+        self.step(100)
+        self.program.command("OFF")
+        self.assertEqual(self.program.remote_off_started, started)
+        self.step(99)
+        self.program.command("OFF")
+        self.assertEqual(self.program.remote_off_started, started)
+        self.step(1)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_remote_off_pause_does_not_freeze_pending_fade(self):
+        self.program.command("PLAY")
+        self.step(210)
+        self.program.command("OFF")
+        self.step(100)
+        self.program.command("PAUSE")
+        self.assertEqual(self.program.playback, "playing")
+        self.step(100)
+        self.assertEqual(self.program.playback, "off")
+
+    def test_remote_off_brightness_changes_cannot_brighten_snapshot(self):
+        self.program.command("BRIGHTNESS 40")
+        self.program.command("PLAY")
+        self.step(210)
+        initial = self.program.output[:]
+        self.program.command("OFF")
+        self.step(100)
+        halfway = self.program.output[:]
+        for value in (100, 0, 80):
+            self.program.command("BRIGHTNESS " + str(value))
+            self.assertEqual(self.program.output, halfway)
+            self.assertEqual(self.program.brightness, value)
+        self.program.command("SPEED 100")
+        self.assertEqual(self.program.output, halfway)
+        self.step(100)
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+        self.assertEqual(self.program.brightness, 80)
+        self.assertEqual(self.program.speed, 100)
+        self.assertEqual(halfway, [tuple(c // 2 for c in rgb) for rgb in initial])
+
+    def test_remote_off_play_mode_and_action_cancel_pending_off(self):
+        for command in ("PLAY", "MODE FLOW", "ACTION SPARKLE"):
+            with self.subTest(command=command):
+                self.setUp()
+                self.program.command("PLAY")
+                self.step(210)
+                self.program.command("OFF")
+                self.step(100)
+                self.program.command(command)
+                self.assertIsNone(self.program.remote_off_started)
+                self.assertIsNone(self.program.remote_off_pixels)
+                self.assertAlmostEqual(self.program.fade, 0.5)
+                self.assertEqual(self.program.playback, "playing")
+                self.step(1500)
+                self.assertEqual(self.program.playback, "playing")
+                self.assertTrue(any(any(rgb) for rgb in self.program.output))
+                self.assertEqual(self.program.index, 1 if command == "MODE FLOW" else 0)
+
+    def test_remote_off_play_after_brightness_increase_preserves_effective_level(self):
+        self.program.command("BRIGHTNESS 20")
+        self.program.command("PLAY")
+        self.step(210)
+        self.program.command("OFF")
+        self.step(100)
+        before = self.program.output[:]
+        self.program.command("BRIGHTNESS 100")
+        self.program.command("PLAY")
+        self.assertEqual(self.program.output, before)
+        self.assertAlmostEqual(self.program.fade, 0.1)
+        self.step(210)
+        self.assertEqual(self.program.output[0], (51, 25, 0))
+
+    def test_remote_off_already_black_is_immediate(self):
+        for playing in (False, True):
+            with self.subTest(playing=playing):
+                self.setUp()
+                if playing:
+                    self.program.command("BRIGHTNESS 0")
+                    self.program.command("PLAY")
+                    self.step(210)
+                self.program.command("OFF")
+                self.assertEqual(self.program.playback, "off")
+                self.assertIsNone(self.program.remote_off_started)
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
+    def test_remote_off_safety_off_and_button_off_remain_immediate(self):
+        for operation in ("safety", "button"):
+            with self.subTest(operation=operation):
+                self.setUp()
+                self.program.command("PLAY")
+                self.step(210)
+                self.program.command("OFF")
+                self.step(100)
+                if operation == "safety":
+                    self.program.off()
+                else:
+                    self.program.button_action("toggle")
+                self.assertEqual(self.program.playback, "off")
+                self.assertEqual(self.program.status()["pixels"], "0" * 60)
+                self.assertIsNone(self.program.remote_off_started)
+                self.step(1000)
+                self.assertEqual(self.program.playback, "off")
+
+    def test_remote_off_after_completion_still_uses_200ms_fade_in(self):
+        self.program.command("PLAY")
+        self.step(210)
+        self.program.command("OFF")
+        self.step(200)
+        self.program.command("PLAY")
+        self.assertEqual(self.program.output[0], (0, 0, 0))
+        self.step(200)
+        self.assertLess(self.program.fade, 1)
+        self.step(10)
+        self.assertEqual(self.program.fade, 1)
+
+    def test_remote_off_wall_clock_handles_delayed_loop_and_ticks_wrap(self):
+        global NOW
+        NOW = (1 << 30) - 320
+        self.program = runtime.LedProgram(self.config)
+        self.program.command("PLAY")
+        self.step(210)
+        self.program.command("OFF")
+        initial = self.program.output[:]
+        NOW = (NOW + 100) % (1 << 30)
+        self.program.step(NOW)
+        self.assertEqual(self.program.output, [tuple(c // 2 for c in rgb) for rgb in initial])
+        NOW = (NOW + 150) % (1 << 30)
+        self.program.step(NOW)
+        self.assertEqual(self.program.playback, "off")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
+    def test_remote_off_continues_ble_without_blocking_sleep(self):
+        radio = self.radio()
+        self.program.command("PLAY")
+        self.step(210)
+        radio.ble.incoming(b"OFF\nSTATUS\n")
+        sleep_ms = fake_time.sleep_ms
+        fake_time.sleep_ms = lambda value: self.fail("remote OFF must not block on sleep_ms")
+        try:
+            radio.receive()
+            self.assertEqual(self.program.playback, "playing")
+            self.step(100, radio)
+            self.assertTrue(radio.ble.notifications)
+            self.step(100, radio)
+            self.assertEqual(self.program.playback, "off")
+        finally:
+            fake_time.sleep_ms = sleep_ms
+
+    def test_remote_off_completes_after_bluetooth_disconnect(self):
+        self.program.command("PLAY")
+        self.step(210)
+        radio = self.radio()
+        radio.ble.incoming(b"OFF\n")
+        radio.receive()
+        self.step(100, radio)
+        self.assertEqual(self.program.playback, "playing")
+        radio.irq(2, (42, None, None))
+        self.step(100, radio)
+        self.assertIsNone(radio.conn)
+        self.assertEqual(self.program.playback, "off")
+        self.assertEqual(self.program.status()["pixels"], "0" * 60)
+
     def test_invalid_commands_do_not_change_state(self):
         before = self.program.status()
         for command in ["MODE ABSENT", "ACTION ABSENT", "BRIGHTNESS -1", "BRIGHTNESS 101", "SPEED 1.5", "PLAY EXTRA", "MODE", "PAUSE 0", "SPEED １", "SPEED +2"]:
@@ -225,6 +441,7 @@ class RuntimeTests(unittest.TestCase):
                 self.program.command("PAUSE")
             elif playback == "off":
                 self.program.command("OFF")
+                self.step(200)
             before = (self.program.phase, self.program.frame[:], self.program.playback)
             self.program.command("ACTION SPARKLE")
             self.step(400)

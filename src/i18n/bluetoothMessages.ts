@@ -99,6 +99,7 @@ export const bluetoothMessages: MessageCatalog = {
   '操作できます': { en: 'Ready to control', zh: '可以操作' },
   '接続・受信してから操作': { en: 'Connect and receive status first', zh: '连接并接收状态后即可操作' },
   'ライトを消す': { en: 'Turn lights off', zh: '关闭灯光' },
+  '対応プログラムでは、0.2秒かけてふわっと消灯します。以前のプログラムは更新が必要です。': { en: 'Compatible programs gently fade the lights out over 0.2 seconds. Older programs need to be updated.', zh: '兼容程序会在 0.2 秒内逐渐熄灭灯光。旧程序需要更新。' },
   '2. 好みに合わせる': { en: '2. Make it your own', zh: '2. 按喜好调整' },
   '明るさとスピード': { en: 'Brightness and speed', zh: '亮度与速度' },
   '明るさ': { en: 'Brightness', zh: '亮度' },

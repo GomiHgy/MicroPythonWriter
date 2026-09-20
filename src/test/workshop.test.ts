@@ -6,6 +6,7 @@ import { cloneWorkshopProfile, getBlePreparationReasons, isWorkshopProfile, LED_
 import type { WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { boardDefinitions, identifyBoard, identifySoc } from '../config/boards'
 import { buildControllerStarter } from '../services/workshop/ControllerStarter'
+import { remoteOffFadeRules } from '../i18n/promptMessages'
 
 function profile(): WorkshopProfile {
   return {
@@ -438,6 +439,32 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     const rules = createWorkshopContext(profile()).rules
     expect(rules).toContain('起動時は共通の送信処理で全LEDへ0を送って')
     expect(rules).toContain('起動演出が指定されていても、その後の最初の点灯にはOFFから点灯する最低200msの条件を適用')
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s のv1・v2・同梱候補にリモコン消灯200msの共通契約を含める', locale => {
+    for (const source of ['v1', 'v2', 'candidate'] as const) {
+      const value = bleProfile()
+      if (source === 'v2') {
+        value.baseline.verification!.nanoLedV1 = false
+        value.baseline.verification!.nanoLedV2 = true
+      } else if (source === 'candidate') value.baseline = { code: '', verification: null }
+      const original = structuredClone(value)
+      const prompt = buildStartPrompt(createWorkshopContext(value, locale))
+      expect(prompt).toContain(remoteOffFadeRules[locale])
+      for (const text of ['REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200', 'time.ticks_ms()', 'time.ticks_diff()', 'playback=playing', 'playback=off', 'mode=OFF', 'KeyboardInterrupt']) expect(prompt).toContain(text)
+      expect(prompt).not.toMatch(/OFFは直ちに全LEDを消灯|OFFは直ちに黒|OFF immediately sends|OFF 立即熄灭|OFF 立即输出/u)
+      expect(value).toEqual(original)
+    }
+  })
+
+  it.each(['ja', 'en', 'zh'] as const)('%s のリモコン消灯契約は設定保持・通知・明示書込み・安全停止を区別する', locale => {
+    const rules = remoteOffFadeRules[locale]
+    const required = {
+      ja: ['OFFを1回', '最後に実際に送信した', '選択モード・明るさ設定を保持', '再開始・延長しない', 'PAUSEでも消灯処理は止めない', '黒を送ってから', '安全停止の消灯は即時', 'USBで明示的に'],
+      en: ['OFF once', 'last actually transmitted', 'Retain the selected mode and brightness setting', 'does not restart or extend', 'PAUSE must not stop extinction', 'only after transmitting black', 'safety shutdown still turn LEDs off immediately', 'explicitly write/run it over USB'],
+      zh: ['只发送一次 OFF', '最后实际发送', '保持所选模式和亮度设置', '不重新开始或延长', 'PAUSE 不停止熄灭过程', '发送全黑后才报告', '安全停止仍立即熄灭', '明确通过 USB'],
+    }
+    for (const text of required[locale]) expect(rules).toContain(text)
   })
 
   it('LEDのみの文面は自己完結し、競合する初回応答や不要なBLE本文を含まない', () => {

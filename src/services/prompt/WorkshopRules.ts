@@ -2,7 +2,7 @@ import { cloneWorkshopProfile, getBlePreparationReasons, validProfileText, valid
 import type { WorkshopProfile } from '../workshop/WorkshopProfile'
 import { boardDefinitions, isBoardId } from '../../config/boards'
 import type { Locale } from '../../i18n/types'
-import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules } from '../../i18n/promptMessages'
+import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules, remoteOffFadeRules } from '../../i18n/promptMessages'
 import { translateWorkshop } from '../../i18n/workshopMessages'
 import { buildControllerStarter } from '../workshop/ControllerStarter'
 
@@ -89,7 +89,7 @@ const ledRules = `## LEDとボタンの固定ルール
 ## OFFから点灯するときの固定ルール
 - MIN_OFF_TO_ON_FADE_MS = 200 を冒頭に置く。対象は現在モードがOFF、かつ最後に送信した全LED出力が0の状態から点灯モードへ移る場合だけ。起動直後の最初の点灯も含む。
 - フェード時間は利用者指定時間と200msの長い方。指定なしや「パッと点灯」でも200ms。time.ticks_ms()とtime.ticks_diff()を使い、出力係数を0.0から1.0へ非ブロッキングで進める。目標輝度のフレームを先に送信しない。
-- 点灯中の色変更・明るさ変更・アニメーション中の一時的な黒いフレームではフェードを再開始しない。暗くする変化や消灯にも200msを強制しない。
+- 点灯中の色変更・明るさ変更・アニメーション中の一時的な黒いフレームではフェードを再開始しない。このフェードイン規則は暗くする変化や消灯には200msを強制しない。WebリモコンのOFFは別途定めた200ms消灯フェードに従う。
 - フェード中に別の点灯モードへ変更するときは進行度を維持し、目標色だけを更新する。OFFへ変更した場合はフェードインを中止する。
 - 長いsleep、time.sleep_ms(200)、演出完了まで抜けられないループは禁止。通常のメインループの待ち時間は10〜20ms以下とし、フェード・演出中も利用可能なボタンとBLEを受け付ける。
 - 時刻・現在モード・アニメーション位置・前回更新時刻で1種類の演出を進める。モード変更時に前の演出状態を適切にリセットするが、進行中の点灯フェードは上記の条件を維持する。
@@ -113,7 +113,7 @@ const nanoLedRules = `## NanoLED v1通信仕様
 - RXコマンドはUTF-8のASCII、1コマンドをLF（\\n）で終端しLF込み20バイト以下。ブラウザは1行ずつ応答ありWriteで順番に送り、同時書込みしない。
 - 機器は分割受信を結合してLFまで届いた行だけを順番に処理する。複数行を処理し、受信行バッファ上限は128バイト。超過行を次のLFまで破棄する。コマンドキューも有界にし、満杯の追加分を捨てて診断する。
 - PINK / BLUE / MAGIC / RAINBOW / OFF / BRIGHTNESS n / SPEED n / STATUS を全て維持する。PINKは全体ピンク、BLUEは全体青、MAGICはピンク・紫・青を左から右へ流す、RAINBOWは全体のレインボー変化。
-- OFFは直ちに全LEDを消灯し、フェードインを取り消すがプログラムとBLEを継続する。STATUSは状態通知だけで動作を変更しない。
+- OFFは下記の200ms消灯フェードに従い、フェードインを取り消すがプログラムとBLEを継続する。STATUSは状態通知だけで動作を変更しない。
 - nは0〜100の整数。引数不足・小数・範囲外・未知コマンドでは状態を変更しない。BRIGHTNESS 100は準備画面で設定した最大輝度の100%であり安全上限自体を変えない。BRIGHTNESS 0は現在モードを保持する。OFF中の明るさ・速さ変更では点灯しない。
 - SPEED 0は停止ではなく最も遅い、100は最も速い。標準MAGIC/RAINBOWの周期はperiod_ms = 3000 - 29 * n。LED数で1周期が変わらない。追加演出でも0は停止にせず同じ向きで速さを反映する。
 - 指定省略時の起動状態はmode=OFF、brightness=100、speed=0。利用者の明示した起動演出は安全上限とOFF→ONフェードを守って適用できる。通知は実際の適用状態を返す。
@@ -124,7 +124,8 @@ const nanoLedRules = `## NanoLED v1通信仕様
 - 既定MTU23でも動くようNotifyは1回20バイト以下へ分割し、LFは最後のチャンクに含める。開始時に固定した1行を最後まで送り、別スナップショットのチャンクを混ぜない。メインループから少量ずつ送り、LED・ボタン・コマンド処理を止めない。送信待ち・再試行も有界にする。
 - STATUS・コマンド適用・利用可能な本体ボタンの変更で最新状態を通知する。変化がなくても約1秒ごと、最大5スナップショット/秒。通信が遅ければ周期を延ばす。送信中の行を維持し、待機分は最新1件だけとする。行の途中で別JSONへ切り替えない。
 - 切断で送受信途中の行を破棄する。再接続・通知再購読後は完全な新しい行から送る。ブラウザはGATTオブジェクトを破棄しサービス・Characteristicを取り直す。
-- ブラウザはNotify境界でなくLFで区切る。不正JSON・過大行で現在状態を上書きしない。未受信や更新停止を明示し、送った設定だけでLED表示を変更しない。`
+- ブラウザはNotify境界でなくLFで区切る。不正JSON・過大行で現在状態を上書きしない。未受信や更新停止を明示し、送った設定だけでLED表示を変更しない。
+${remoteOffFadeRules.ja}`
 
 export function createWorkshopContext(input: WorkshopProfile, locale: Locale = 'ja'): WorkshopContext {
   const profile = cloneWorkshopProfile(input)

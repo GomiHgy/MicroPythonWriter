@@ -6,6 +6,7 @@ import json
 
 WS2812_TIMING_NS = (400, 850, 800, 450)
 FADE_IN_MS = 200
+REMOTE_OFF_FADE_MS = 200
 DEBOUNCE_MS = 40
 LONG_PRESS_MS = 800
 DOUBLE_PRESS_MS = 350
@@ -33,6 +34,10 @@ class LedProgram:
         self.phase = 0.0
         self.cycles = 0
         self.fade = 0.0
+        self.remote_off_started = None
+        self.remote_off_pixels = None
+        self.remote_off_fade = 0.0
+        self.remote_off_brightness = 100
         self.action = None
         self.action_elapsed = 0
         self.saved = None
@@ -48,13 +53,25 @@ class LedProgram:
         self.second_press = False
         self.write()
 
-    def write(self):
+    def write(self, now=None):
         # すべての出力が同じ安全上限を通る。通知はこの最終値をRGBで報告する。
-        scale = self.config["max_brightness"] / 100 * self.brightness / 100 * self.fade
-        if self.playback == "off":
-            scale = 0
-        for i, rgb in enumerate(self.frame):
-            r, g, b = tuple(int(max(0, min(255, c)) * scale) for c in rgb)
+        if self.remote_off_started is not None:
+            now = time.ticks_ms() if now is None else now
+            elapsed = max(0, time.ticks_diff(now, self.remote_off_started))
+            remaining = max(0, REMOTE_OFF_FADE_MS - elapsed)
+            if not remaining:
+                self.off()
+                return
+            self.fade = self.remote_off_fade * remaining / REMOTE_OFF_FADE_MS
+            # 上限適用済みの実出力を縮小する。設定変更で消灯途中に明るくしない。
+            pixels = [tuple(c * remaining // REMOTE_OFF_FADE_MS for c in rgb)
+                      for rgb in self.remote_off_pixels]
+        else:
+            scale = self.config["max_brightness"] / 100 * self.brightness / 100 * self.fade
+            if self.playback == "off":
+                scale = 0
+            pixels = [tuple(int(max(0, min(255, c)) * scale) for c in rgb) for rgb in self.frame]
+        for i, (r, g, b) in enumerate(pixels):
             self.output[i] = (r, g, b)
             self.buffer[3 * i:3 * i + 3] = bytes((g, r, b))
         machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)
@@ -63,6 +80,9 @@ class LedProgram:
         time.sleep_us(80)
 
     def off(self):
+        # 起動・例外・本体ボタン・有限再生終了の安全消灯は待たずに行う。
+        self.remote_off_started = None
+        self.remote_off_pixels = None
         self.action = None
         self.saved = None
         self.playback = "off"
@@ -71,11 +91,40 @@ class LedProgram:
         self.write()
         self.dirty = True
 
+    def fade_out(self):
+        if self.remote_off_started is not None:
+            # 連打で消灯時刻を延ばさない。
+            self.write()
+            self.dirty = True
+            return
+        self.cancel_action()
+        if not any(any(rgb) for rgb in self.output):
+            self.off()
+            return
+        self.remote_off_started = time.ticks_ms()
+        self.remote_off_pixels = self.output[:]
+        self.remote_off_fade = self.fade
+        self.remote_off_brightness = self.brightness
+        # PAUSE中の実出力も消灯する。黒を送信する前にoffとは報告しない。
+        self.playback = "playing"
+        self.just_started = False
+        self.dirty = True
+
+    def cancel_remote_off(self):
+        if self.remote_off_started is not None:
+            self.write()
+            if self.remote_off_started is not None:
+                # 消灯中に保存された輝度設定を適用しても、再開直後に急に明るくしない。
+                self.fade = min(1.0, self.fade * self.remote_off_brightness / self.brightness) if self.brightness else 0.0
+                self.remote_off_started = None
+                self.remote_off_pixels = None
+
     def cancel_action(self):
         self.action = None
         self.saved = None
 
     def play(self):
+        self.cancel_remote_off()
         was_off = self.playback == "off"
         self.cancel_action()
         self.playback = "playing"
@@ -91,6 +140,11 @@ class LedProgram:
         self.dirty = True
 
     def pause(self):
+        if self.remote_off_started is not None:
+            # PAUSEで消灯の途中を固定しない。先に受けたOFFを最後まで実行する。
+            self.write()
+            self.dirty = True
+            return
         self.cancel_action()
         if self.playback != "off":
             self.playback = "paused"
@@ -106,6 +160,7 @@ class LedProgram:
     def sparkle(self):
         if self.action is not None:
             return
+        self.cancel_remote_off()
         self.saved = (self.playback, self.frame[:], self.fade)
         was_off = self.playback == "off"
         self.action = "SPARKLE"
@@ -125,7 +180,7 @@ class LedProgram:
             if op == "STATUS":
                 self.dirty = True
             elif op == "OFF":
-                self.off()
+                self.fade_out()
             elif op == "PLAY":
                 self.play()
             elif op == "PAUSE":
@@ -241,6 +296,9 @@ class LedProgram:
         elapsed = max(0, time.ticks_diff(now, self.last))
         self.last = now
         self.button_step(now)
+        if self.remote_off_started is not None:
+            self.write(now)
+            return
         if self.playback != "playing":
             return
         if self.just_started:

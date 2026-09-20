@@ -31,6 +31,7 @@ describe('bundled Web controller starter candidate', () => {
     expect(source).toContain('"wireless":true')
     expect(source).toContain('"id": "SPARKLE"')
     expect(source).toContain('HARDWARE NOT VERIFIED')
+    expect(source).toContain('REMOTE_OFF_FADE_MS = 200')
     expect(starterAvailability(settings, recipe).verified).toBe(false)
   })
 
