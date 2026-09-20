@@ -608,10 +608,10 @@ describe('作品専用の無線リモコン v2', () => {
     expect(harness.send).not.toHaveBeenCalled()
   })
 
-  it.each(['ja', 'en', 'zh'] as const)('%sで再操作の対応プログラム条件と旧プログラムの制限を案内する', locale => {
+  it.each(['ja', 'en', 'zh'] as const)('%sで再操作は作品のプログラムに従い、無視する作品もあると案内する', locale => {
     modern({ action: 'SPARK' })
     harness.locale = locale
-    const guide = '対応プログラムでは、演出中に同じボタンを押すと今の光からやり直し、別のボタンで演出を切り替えられます。以前のプログラムでは再操作が無視されることがあります。'
+    const guide = '演出中にもう一度押したときの動きは、作品のプログラムに従います。通常は今の光からやり直すか別の演出に切り替わりますが、再操作を受け付けず最後まで続ける作品もあります。'
     const view = panel()
     expect(content(view)).toContain(locale === 'ja' ? guide : bluetoothMessages[guide][locale])
     expect(harness.send).not.toHaveBeenCalled()

@@ -442,11 +442,21 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
     expect(rules).toContain('起動演出が指定されていても、その後の最初の点灯にはOFFから点灯する最低200msの条件を適用')
   })
 
-  it.each(['ja', 'en', 'zh'] as const)('%s のv2と同梱候補は現在の実出力からアクションを再スタートし、最初の復帰元を保持する', locale => {
+  it.each(['ja', 'en', 'zh'] as const)('%s のv2と同梱候補は明示した作品仕様を優先し、未指定時だけアクションを再スタートする', locale => {
     const required = {
       ja: ['有効な追加ACTIONを即時に受け付け', '同じIDなら再スタート、別のIDなら置換', '実行待ちの演出キューを作らない', '最後に実際に送信した全LEDのRGB出力', '有限時間で非ブロッキング', '同梱候補は200ms', '補間途中の再押下', '輝度係数を二重に掛けず', '基底モード・位相・playback', '復帰元を更新しない', '不正・未登録ID', 'PAUSEは補間途中でも', '開始・再スタート・置換・終了', 'v2に要求ID付きACKはない'],
-      en: ['Accept valid additional ACTION commands immediately', 'restart the same ID or replace it with a different ID', 'never build an effect-execution backlog', "last actually transmitted RGB output", 'over a finite duration', 'bundled candidate uses 200ms', 'A retrigger during interpolation', 'Never apply brightness factors twice', 'base mode, phase and playback', 'must not overwrite this return state', 'Invalid or unregistered IDs', 'PAUSE holds the frame actually visible', 'start/restart/replacement/end', 'v2 has no request-ID ACK'],
+      en: ['accept valid additional ACTION commands immediately', 'restart the same ID or replace it with a different ID', 'never build an effect-execution backlog', "last actually transmitted RGB output", 'over a finite duration', 'bundled candidate uses 200ms', 'A retrigger during interpolation', 'Never apply brightness factors twice', 'base mode, phase and playback', 'must not overwrite this return state', 'Invalid or unregistered IDs', 'PAUSE holds the frame actually visible', 'start/restart/replacement/end', 'v2 has no request-ID ACK'],
       zh: ['立即接受有效的额外 ACTION', '相同 ID 重新开始，不同 ID 替换', '不建立等待执行的演出队列', '最后实际发送的 RGB 输出', '有限时间内非阻塞', '内置候选程序使用 200ms', '插值中再次按下', '不要对已应用安全上限的输出重复乘以亮度系数', '基础模式、相位和 playback', '不能覆盖该恢复状态', '无效或未登记 ID', 'PAUSE 即使在插值中', '动作开始、重新开始、替换及结束', 'v2 没有请求 ID ACK'],
+    }
+    const policy = {
+      ja: ['明示された作品仕様を以下の既定動作より優先', 'アクション実行中の追加ACTIONは無視する', '同IDだけ無視', '指定のない範囲は既定動作', '範囲や意図が曖昧なら確認', '生成・修正のどちらでも', '作品仕様に指定のない場合のみ', '同梱候補はこの指定なしの既定動作', '現在の演出・開始時刻・完了予定・補間・復帰元を変えず', '後で実行するキューにも積まない', '安全上限・非ブロッキング・OFFと中断動作・有限バッファの共通制約'],
+      en: ['Explicit artwork specifications take precedence', 'Ignore additional ACTION commands while active', 'ignore only the same ID', 'use defaults for unspecified cases', 'Ask for clarification if scope or intent is ambiguous', 'During generation and repair alike', 'Only where the artwork leaves behavior unspecified', 'bundled candidate uses this unspecified-case default', 'current effect, start time, scheduled completion, interpolation and return state unchanged', 'never queue that request for later execution', 'common safety cap, nonblocking behavior, OFF/interruption behavior and bounded buffers'],
+      zh: ['明确的作品规格优先于以下默认行为', '执行中忽略额外 ACTION', '忽略相同 ID', '未指定范围采用默认行为', '范围或意图不明确时先询问确认', '生成和修复时都不能', '仅在作品未指定行为时', '内置候选程序采用这一未指定时的默认行为', '不改变当前演出、开始时间、预计结束时间、插值或恢复状态', '不将请求加入稍后执行的队列', '安全上限、非阻塞、OFF 及中断行为、有界缓冲区等共用约束'],
+    }
+    const afterCompletion = {
+      ja: '実行中の無視規則を終了後の新しいACTIONへ広げず、新規の要求は受け付ける',
+      en: 'The ignore-while-active policy must not reject a new ACTION after completion',
+      zh: '仅在执行中忽略的规则不能延伸到结束后的新 ACTION，结束后应接受新的请求',
     }
     for (const source of ['v2', 'candidate'] as const) {
       const value = bleProfile()
@@ -458,23 +468,43 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
       const prompt = buildStartPrompt(createWorkshopContext(value, locale))
       expect(prompt).toContain(nanoLedV2Rules[locale])
       for (const text of required[locale]) expect(prompt).toContain(text)
+      for (const text of policy[locale]) expect(prompt).toContain(text)
+      expect(prompt).toContain(afterCompletion[locale])
+      expect(prompt.indexOf(policy[locale][0])).toBeLessThan(prompt.indexOf(policy[locale][6]))
       for (const safety of ['REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200', 'time.ticks_ms()', 'time.ticks_diff()', 'MODE/PLAY/PAUSE/OFF']) expect(prompt).toContain(safety)
-      expect(prompt).not.toMatch(/追加ACTIONは無視|Ignore additional ACTION commands|执行中忽略额外 ACTION/u)
+      expect(prompt).not.toMatch(/^- アクション中も有効な追加ACTIONを即時に受け付け|^- Accept valid additional ACTION commands immediately while active:|^- 动作执行中也立即接受有效的额外 ACTION/mu)
       expect(value).toEqual(original)
     }
     const legacy = buildStartPrompt(createWorkshopContext(bleProfile(), locale))
     expect(legacy).not.toContain(nanoLedV2Rules[locale])
     expect(legacy).not.toContain(required[locale][0])
+    expect(legacy).not.toContain(policy[locale][0])
   })
 
-  it('手動プロンプトの共通仕様・v2移行・演出追加も再スタート契約を維持する', () => {
+  it.each(['ja', 'en', 'zh'] as const)('%s の生成準備は登録済み作品の意図的な無視仕様を削除・書き換えない', locale => {
+    for (const requirement of ['アクション実行中の追加ACTIONは無視する', '同IDだけ無視し、別IDは既定の置換を使う']) {
+      const value = bleProfile()
+      value.baseline.code = `# 作品仕様: ${requirement}\n# Synthetic fixture, not tested hardware code.\nprint("keep intentional policy")\n`
+      value.baseline.verification = { ...value.baseline.verification!, code: value.baseline.code, nanoLedV1: false, nanoLedV2: true }
+      const original = structuredClone(value)
+      const prompt = buildStartPrompt(createWorkshopContext(value, locale))
+      expect(prompt).toContain(value.baseline.code)
+      expect(prompt).toContain(nanoLedV2Rules[locale])
+      expect(value).toEqual(original)
+    }
+  })
+
+  it('手動プロンプトの共通仕様・v2移行・演出追加も明示仕様優先と未指定時の既定を維持する', () => {
     const manual = readFileSync(new URL('../../prompt.md', import.meta.url), 'utf8')
-    expect(manual).not.toMatch(/追加ACTIONは無視|連打無視/u)
+    expect(manual).not.toMatch(/^・実行中も有効な追加ACTIONを即時に受け付け|^アクション実行中の有効な追加ACTIONは即時に受け付け|^演出中の有効な追加ACTIONは即時に受け付け/mu)
     const general = manual.split('Webコントローラ用のNanoLED v2固定仕様')[1].split('以下のNanoLED v1仕様')[0]
     const migration = manual.split('## プロンプトE0：')[1].split('## プロンプトE-v2：')[0]
     const addEffect = manual.split('## プロンプトE-v2：')[1].split('## プロンプトE（旧v1専用）')[0]
     for (const text of [general, migration, addEffect]) {
       for (const required of ['同じIDなら再スタート、別のIDなら置換', '実行待ちの演出キュー', '全LEDのRGB', '同梱候補は200ms', '復帰元', '不正・未登録ID', 'MODE/PLAY/PAUSE/OFF', 'Write応答']) expect(text).toContain(required)
+      for (const policy of ['明示された作品仕様', 'アクション実行中の追加ACTIONは無視する', '同IDだけ無視', '指定のない範囲は既定動作', '曖昧なら確認', '勝手に再スタートへ変更しない', '作品仕様に指定のない場合のみ', '現在の演出・開始時刻・完了予定・補間・復帰元を変えず', '後で実行するキューにも積', '有限バッファの共通制約']) expect(text).toContain(policy)
+      expect(text).toContain('実行中の無視規則を終了後の新しいACTIONへ広げず、新規の要求は受け付け')
+      expect(text.indexOf('明示された作品仕様')).toBeLessThan(text.indexOf('作品仕様に指定のない場合のみ'))
     }
   })
 

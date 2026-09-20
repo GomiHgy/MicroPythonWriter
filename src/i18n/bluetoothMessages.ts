@@ -54,7 +54,7 @@ export const bluetoothMessages: MessageCatalog = {
   'このプログラムは従来のリモコンに対応しています。再生・停止と作品専用アクションを使うには、対応プログラムへの更新が必要です。': { en: 'This program supports the original remote. Update to a compatible program to use playback controls and artwork-specific actions.', zh: '此程序支持原有遥控功能。如需播放、停止及作品专用动作，请更新为兼容程序。' },
   'モードを選ぶ': { en: 'Choose a mode', zh: '选择模式' },
   '一度だけ演出する': { en: 'One-time effects', zh: '单次灯光效果' },
-  '対応プログラムでは、演出中に同じボタンを押すと今の光からやり直し、別のボタンで演出を切り替えられます。以前のプログラムでは再操作が無視されることがあります。': { en: 'With a compatible program, press the same button during an effect to restart from the current light, or another button to switch effects. Older programs may ignore presses during an effect.', zh: '使用兼容程序时，效果运行中再次点击同一按钮可从当前灯光重新开始，点击其他按钮可切换效果。旧程序可能会忽略效果运行中的再次操作。' },
+  '演出中にもう一度押したときの動きは、作品のプログラムに従います。通常は今の光からやり直すか別の演出に切り替わりますが、再操作を受け付けず最後まで続ける作品もあります。': { en: 'Pressing again during an effect follows the artwork’s program. Normally it restarts from the current light or switches effects, but some artworks ignore additional presses and finish the current effect.', zh: '效果运行中再次按下时，行为由作品程序决定。通常会从当前灯光重新开始或切换效果，但有些作品会忽略再次操作，继续完成当前效果。' },
   '終わると元のモードと再生状態に戻ります。途中でモード変更・停止・消灯もできます。': { en: 'Returns to the previous mode and playback state when finished. You can also change mode, stop, or turn the lights off midway.', zh: '结束后恢复原来的模式和播放状态。也可以中途切换模式、停止或熄灯。' },
   'この作品には、一度だけの演出はありません。': { en: 'This artwork has no one-time effects.', zh: '此作品没有单次灯光效果。' },
   '最後に届いた演出: {name}': { en: 'Last reported effect: {name}', zh: '最后报告的效果：{name}' },

@@ -89,7 +89,7 @@ describe('ワークショップ修正依頼', () => {
     expect(hasSensitiveAssignments(repair)).toBe(true)
   })
 
-  it.each(['ja', 'en', 'zh'] as const)('%s の修正依頼も登録済みv2と同梱候補へ同じアクション再スタート仕様を渡す', locale => {
+  it.each(['ja', 'en', 'zh'] as const)('%s の修正依頼も登録済みv2と同梱候補で意図的な無視仕様を保持し、既定より優先させる', locale => {
     for (const registered of [true, false]) {
       const input = profile()
       input.features = { button: true, ble: true, controller: true }
@@ -99,12 +99,26 @@ describe('ワークショップ修正依頼', () => {
         : { code: '', verification: null }
       const context = createWorkshopContext(input)
       const before = structuredClone(context)
-      const source = 'print("captured-action-program")'
-      const repair = builder.build(error, source, device, 'captured-action-log', 'DEVICE_RUNTIME_ERROR', context, { locale })
-      expect(repair).toContain(nanoLedV2Rules[locale])
-      expect(repair.split(nanoLedV2Rules[locale])).toHaveLength(2)
-      expect(repair).not.toMatch(/追加ACTIONは無視|Ignore additional ACTION commands|执行中忽略额外 ACTION/u)
-      for (const required of [source, 'captured-action-log', error.traceback, 'REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200']) expect(repair).toContain(required)
+      const policy = {
+        ja: ['明示された作品仕様を以下の既定動作より優先', '作品仕様に指定のない場合のみ', '同IDだけ無視', '現在の演出・開始時刻・完了予定・補間・復帰元を変えず'],
+        en: ['Explicit artwork specifications take precedence', 'Only where the artwork leaves behavior unspecified', 'ignore only the same ID', 'current effect, start time, scheduled completion, interpolation and return state unchanged'],
+        zh: ['明确的作品规格优先于以下默认行为', '仅在作品未指定行为时', '忽略相同 ID', '不改变当前演出、开始时间、预计结束时间、插值或恢复状态'],
+      }
+      const afterCompletion = {
+        ja: '実行中の無視規則を終了後の新しいACTIONへ広げず、新規の要求は受け付ける',
+        en: 'The ignore-while-active policy must not reject a new ACTION after completion',
+        zh: '仅在执行中忽略的规则不能延伸到结束后的新 ACTION，结束后应接受新的请求',
+      }
+      for (const specification of ['アクション実行中の追加ACTIONは無視する', '同IDだけ無視し、別IDは既定の置換を使う']) {
+        const source = `# 作品仕様: ${specification}\nprint("captured-action-program")`
+        const repair = builder.build(error, source, device, 'captured-action-log', 'DEVICE_RUNTIME_ERROR', context, { locale })
+        expect(repair).toContain(nanoLedV2Rules[locale])
+        expect(repair.split(nanoLedV2Rules[locale])).toHaveLength(2)
+        expect(repair).toContain(afterCompletion[locale])
+        expect(repair).not.toMatch(/^- アクション中も有効な追加ACTIONを即時に受け付け|^- Accept valid additional ACTION commands immediately while active:|^- 动作执行中也立即接受有效的额外 ACTION/mu)
+        for (const required of [source, 'captured-action-log', error.traceback, 'REMOTE_OFF_FADE_MS = 200', 'MIN_OFF_TO_ON_FADE_MS = 200', ...policy[locale]]) expect(repair).toContain(required)
+        expect(repair.indexOf(policy[locale][0])).toBeLessThan(repair.indexOf(policy[locale][1]))
+      }
       expect(context).toEqual(before)
     }
   })

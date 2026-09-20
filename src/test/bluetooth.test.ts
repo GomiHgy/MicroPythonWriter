@@ -426,6 +426,26 @@ describe('Web Bluetooth controller', () => {
     expect(rx.maxActiveWrites).toBe(1)
   })
 
+  it('作品が追加ACTIONを無視して同じ状態を返しても再送・強制再スタートせず、完了後の新しい押下だけ送る', async () => {
+    vi.useFakeTimers()
+    const { client, rx, tx } = setup()
+    await client.connect()
+    const active = { ...stateV2, action: 'SPARKLE' }
+    tx.notify(line(active))
+    expect(await client.send('ACTION SPARKLE')).toBe(true)
+    // 無視する作品を模擬する。Write成功後も同じ状態を報告し、再スタートのACKは返さない。
+    tx.notify(line(active))
+    expect(client.getSnapshot().status).toEqual(active)
+    expect(client.getSnapshot().error).toBeNull()
+    await vi.advanceTimersByTimeAsync(1000)
+    tx.notify(line(stateV2))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(rx.writes).toEqual(['STATUS\n', 'ACTION SPARKLE\n'])
+    expect(client.getSnapshot().status).toEqual(stateV2)
+    expect(await client.send('ACTION SPARKLE')).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'ACTION SPARKLE\n', 'ACTION SPARKLE\n'])
+  })
+
   it('実行中の通知が届いても待機済みACTIONを捨てず、通信の待機後に1回だけ送る', async () => {
     const { client, rx, tx } = setup()
     await client.connect()
