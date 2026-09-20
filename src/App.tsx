@@ -5,6 +5,7 @@ import { BluetoothPanel } from './components/BluetoothPanel'
 import { AiPreparationPanel } from './components/AiPreparationPanel'
 import { MakerPanel } from './components/MakerPanel'
 import { ProgramResult } from './components/ProgramResult'
+import { LicenseNotice } from './components/LicenseNotice'
 import { getBoardDefinition } from './config/boards'
 import { loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
 import type { ArtworkProject, ProjectSnapshot, RemoteButton } from './services/projects/types'
@@ -341,6 +342,7 @@ export default function App() {
     <div id="panel-controller" role="tabpanel" aria-labelledby="tab-controller" hidden={activeTab !== 'controller'}>
       <BluetoothPanel onOpenProgram={() => { setActiveTab('program'); document.getElementById('tab-program')?.focus() }} onOpenPreparation={() => { setActiveTab('preparation'); document.getElementById('tab-preparation')?.focus() }} remoteButtons={project.draft.remoteButtons} projectName={project.name} onRemoteButtonsChange={saveRemoteButtons} />
     </div>
+    <LicenseNotice />
     <footer className="app-version" aria-label={t('アプリのバージョン情報')}>
       <span>MicroPython Writer · {t('バージョン')} <code>{__APP_BUILD__.revision ?? t('取得できませんでした')}</code></span>
       {__APP_BUILD__.dirty === true && <span>{t('未コミットの変更あり')}</span>}

@@ -6,6 +6,7 @@ import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
 import { ProgramResult } from '../components/ProgramResult'
+import { LicenseNotice } from '../components/LicenseNotice'
 import type { ProgramFeedback } from '../types/programFeedback'
 import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
 import type { ArtworkProject } from '../services/projects/types'
@@ -98,19 +99,61 @@ function assertNoUsbOperations() {
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
 }
 
-it.each((['maker', 'program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョン欄を表示する', (tab, locale) => {
+it.each((['maker', 'program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
   setLocale(locale)
   let view = render()
   event(byId(view, `tab-${tab}`), 'onClick')
   view = render()
   const footer = find(view, element => element.props.className === 'app-version')
+  const licenses = find(view, element => element.type === LicenseNotice)
+  expect(licenses.props).toEqual({})
+  const commonChildren = (view as Element).props.children as ReactNode[]
+  expect(commonChildren.indexOf(licenses)).toBe(commonChildren.indexOf(footer) - 1)
   expect(footer.type).toBe('footer')
   expect(footer.props['aria-label']).toBe(translate(locale, 'アプリのバージョン情報'))
   expect(find(footer, element => element.type === 'code').props.children).toBe(__APP_BUILD__.revision ?? translate(locale, '取得できませんでした'))
   for (const panel of all(view, element => element.props.role === 'tabpanel')) {
     expect(all(panel, element => element.props.className === 'app-version')).toHaveLength(0)
+    expect(all(panel, element => element.type === LicenseNotice)).toHaveLength(0)
   }
   expect(find(footer, element => element.type === 'time').props.dateTime).toBe(__APP_BUILD__.builtAt)
+  assertNoUsbOperations()
+})
+
+it('ライセンス欄は非制御の開閉で、言語変更でもタブ・編集内容・通信パネルを保持する', () => {
+  event(byId(render(), 'tab-controller'), 'onClick')
+  const before = render()
+  const beforeEditor = find(before, element => element.type === CodeEditor)
+  const beforeBluetooth = find(before, element => element.type === BluetoothPanel)
+  const beforeProject = structuredClone(currentProject())
+  const state = harness.programmer.state
+  const log = harness.programmer.log
+  const slots = [...harness.slots]
+  const details = LicenseNotice()
+  expect(details.type).toBe('details')
+  expect(details.props.open).toBeUndefined()
+  expect(details.props.onToggle).toBeUndefined()
+  for (const locale of ['en', 'zh', 'ja'] as const) {
+    setLocale(locale)
+    LicenseNotice()
+    const view = render()
+    expect(harness.slots).toEqual(slots)
+    expect(byId(view, 'tab-controller').props['aria-selected']).toBe(true)
+    expect(byId(view, 'panel-controller').props.hidden).toBe(false)
+    const editor = find(view, element => element.type === CodeEditor)
+    expect(editor.key).toBe(beforeEditor.key)
+    expect(editor.props.value).toBe(beforeEditor.props.value)
+    expect(editor.props.onChange).toBe(beforeEditor.props.onChange)
+    const bluetooth = find(view, element => element.type === BluetoothPanel)
+    expect(bluetooth.key).toBe(beforeBluetooth.key)
+    expect(bluetooth.props.remoteButtons).toEqual(beforeBluetooth.props.remoteButtons)
+    expect(currentProject()).toEqual(beforeProject)
+    expect(harness.programmer.state).toBe(state)
+    expect(harness.programmer.log).toBe(log)
+  }
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.programmer.setLog).not.toHaveBeenCalled()
+  assertNoUsbOperations()
 })
 
 function event(element: Element, name: string, value?: unknown) {
