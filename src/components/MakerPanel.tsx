@@ -190,6 +190,7 @@ export function MakerPanel(props: MakerPanelProps) {
         <p>{props.canConfirmStandalone ? t('自動起動の設定を確認しました。PCから外した動作確認は、まだ別途必要です。') : t('自動起動の設定完了を確認してから、PCを外して確認してください。')}</p>
         <label className="maker-check"><input id="maker-standalone" type="checkbox" checked={unplugged} disabled={!props.canConfirmStandalone} onChange={event => { if (props.canConfirmStandalone) setStep({ unplugged: event.target.checked }) }} />{t('安全な電源で、PCを外して電源を入れ直し、作品の動作を確認した')}</label>
         {unplugged && <p role="status">{t('持ち出し確認のチェックを記録しました。これは利用者による確認で、提供側の検証証明ではありません。')}</p>}
+        <aside className="maker-note"><strong>{t('持ち出した作品を、また編集したいとき')}</strong><p>{t('プログラム画面でUSB接続し、「自動実行しない設定に戻す」を押してください。作品のプログラムは消しません。')}</p><button className="quiet-button" onClick={props.onOpenProgram}>{t('自動実行をやめて編集に戻る')}</button></aside>
       </>}
       <div className="maker-secondary">{stage > 0 && <button className="text-button" onClick={() => setStep({ stage: stage - 1 })}>{t('一つ前へ')}</button>}{running && <button onClick={props.onStop}>{t('プログラムを停止')}</button>}<button className="text-button" onClick={props.onOpenProgram}>{t('コード・通信ログを見る')}</button></div>
     </div>

@@ -1,0 +1,23 @@
+.boot-mode-panel { padding: 20px; margin: 14px 0; border: 2px solid #85b6df; }
+.boot-mode-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.boot-mode-heading h2 { margin: 0; font-size: 1.13rem; }
+.boot-mode-badge { border-radius: 20px; padding: 7px 12px; color: #24516f; background: #e9f3fa; font-weight: 750; font-size: .85rem; }
+.boot-mode-badge.automatic { color: #80500c; background: #fff0d2; }
+.boot-guide { padding-left: 1.5em; line-height: 1.7; }
+.boot-guide li + li { margin-top: 6px; }
+.boot-preserve { font-weight: 700; }
+.boot-mode-note, .boot-more p { color: #526b84; font-size: .9rem; }
+.boot-result { margin: 14px 0; padding: 14px; border: 1px solid #87b6dc; border-radius: 10px; background: #edf7ff; }
+.boot-result p { margin: 7px 0 0; overflow-wrap: anywhere; }
+.boot-result.saved { border-color: #2f9364; background: #e6f6ec; color: #165438; }
+.boot-result.failed { border-color: #c95a52; background: #fff0ed; color: #882e28; }
+.boot-more { border-top: 1px solid #c8d6e3; margin-top: 16px; padding-top: 12px; }
+.boot-more summary { cursor: pointer; font-weight: 650; }
+:root[data-theme=dark] .boot-mode-panel { border-color: #4e7ea5; }
+:root[data-theme=dark] .boot-mode-badge { background: #263e53; color: #d4e9fb; }
+:root[data-theme=dark] .boot-mode-badge.automatic { background: #53432a; color: #ffe2a3; }
+:root[data-theme=dark] .boot-mode-note, :root[data-theme=dark] .boot-more p { color: #bbcee0; }
+:root[data-theme=dark] .boot-result { background: #1c354c; color: #eef5ff; }
+:root[data-theme=dark] .boot-result.saved { background: #173d2e; color: #d1f8e2; }
+:root[data-theme=dark] .boot-result.failed { background: #462727; color: #ffe2dd; }
+@media (max-width: 600px) { .boot-mode-panel { padding: 16px; } .boot-mode-panel .boot-actions > button { width: 100%; } }

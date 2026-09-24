@@ -3,6 +3,7 @@ import { workshopPresets } from '../config/workshops'
 import { buildControllerStarter } from '../services/workshop/ControllerStarter'
 import { buildStarterProgram, providerVerifiedStarters, starterAvailability } from '../services/projects/StarterProgram'
 import { cloneWorkshopProfile, LED_MODELS, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
+import runtime from '../../firmware/starter/runtime.py?raw'
 
 function profile(): WorkshopProfile {
   return {
@@ -32,7 +33,30 @@ describe('bundled Web controller starter candidate', () => {
     expect(source).toContain('"id": "SPARKLE"')
     expect(source).toContain('HARDWARE NOT VERIFIED')
     expect(source).toContain('REMOTE_OFF_FADE_MS = 200')
+    expect(source).toContain('LED_RESET_US = 350')
+    expect(source).not.toContain('time.sleep_us(80)')
     expect(starterAvailability(settings, recipe).verified).toBe(false)
+  })
+
+  it.each((['m5nanoc6', 'atoms3lite'] as const).flatMap(boardId => [1, 37, 88, 90, 110, 300].map(ledCount => ({ boardId, ledCount }))))('uses the shared optimized runtime without changing $boardId / $ledCount LEDs or stored data', ({ boardId, ledCount }) => {
+    const input = { ...profile(), boardId, ledCount, ledPin: boardId === 'm5nanoc6' ? 3 : 4, maxBrightnessPercent: 7.5 }
+    const before = structuredClone(input)
+    const { settings, recipe, source } = buildControllerStarter(input)
+    expect(source).toBe(buildStarterProgram(settings, recipe))
+    expect(source.endsWith(runtime)).toBe(true)
+    expect(settings).toMatchObject({ boardId, ledCount, ledPin: input.ledPin, maxBrightnessPercent: 7.5 })
+    expect(source).toContain(`"led_count":${ledCount},`)
+    expect(source).toContain(`"button_pin":${boardId === 'm5nanoc6' ? 9 : 41},`)
+    expect(source).toContain('"max_brightness":7.5,')
+    expect(source).toContain('self.last_sent_buffer = bytearray(self.count * 3)')
+    expect(source).toContain('self.last_sent_buffer[:] = self.buffer')
+    expect(source).toContain('self.write(force=True)')
+    expect(source).toContain('LED_RESET_US = 350')
+    expect(source).not.toContain('time.sleep_us(80)')
+    expect(source).toContain('HARDWARE NOT VERIFIED')
+    expect(starterAvailability(settings, recipe).verified).toBe(false)
+    expect(input).toEqual(before)
+    expect(providerVerifiedStarters).toEqual([])
   })
 
   it.each(LED_MODELS)('preserves all hardware settings for %s without guessing a firmware version', ledModel => {

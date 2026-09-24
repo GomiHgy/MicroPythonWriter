@@ -544,7 +544,8 @@ describe('一回で渡せる初回準備文と共通ルール', () => {
 
   it('共通ルールにbitstream・輝度・フェードの具体的な条件を維持する', () => {
     const rules = createWorkshopContext(profile()).rules
-    for (const text of ['GPIO2', 'GPIO9', 'アクティブLOW', '約40ms', 'bytearray(LED_COUNT * LED_BPP)', 'BITSTREAM_TIMING = 1', 'encoding=0', 'WS2812_TIMING_NS = (400, 850, 800, 450)', 'machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)', '第3引数に数値の1を直接渡さない', 'GRB', 'time.sleep_us(80)', 'neopixelをimportしない', 'MAX_BRIGHTNESS_PERCENT: 25', 'MIN_OFF_TO_ON_FADE_MS = 200', '最後に送信した全LED出力が0', 'time.ticks_ms()', 'time.ticks_diff()', '目標輝度のフレームを先に送信しない', '一時的な黒いフレーム', '進行度を維持', 'フェードインを中止', '10〜20ms以下']) expect(rules).toContain(text)
+    for (const text of ['GPIO2', 'GPIO9', 'アクティブLOW', '約40ms', 'bytearray(LED_COUNT * LED_BPP)', 'BITSTREAM_TIMING = 1', 'encoding=0', 'WS2812_TIMING_NS = (400, 850, 800, 450)', 'machine.bitstream(led_pin, 0, WS2812_TIMING_NS, led_buffer)', '第3引数に数値の1を直接渡さない', 'GRB', 'LED_RESET_US = 350', 'time.sleep_us(LED_RESET_US)', 'neopixelをimportしない', 'MAX_BRIGHTNESS_PERCENT: 25', 'MIN_OFF_TO_ON_FADE_MS = 200', '最後に送信した全LED出力が0', 'time.ticks_ms()', 'time.ticks_diff()', '目標輝度のフレームを先に送信しない', '一時的な黒いフレーム', '進行度を維持', 'フェードインを中止', '10〜20ms以下']) expect(rules).toContain(text)
+    expect(rules).not.toContain('sleep_us(80)')
   })
 
   it('有効なNanoLEDはUUID・分割・上限・キュー・再接続・通知値を全て含む', () => {

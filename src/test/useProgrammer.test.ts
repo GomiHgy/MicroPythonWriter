@@ -762,3 +762,188 @@ describe('書込み・実行結果の構造化フィードバック', () => {
     expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'stop', message: 'reset stop failed' })
   })
 })
+
+describe('自動起動を解除して編集へ戻す', () => {
+  beforeEach(() => {
+    vi.spyOn(BootModeService.prototype, 'set').mockResolvedValue()
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+    vi.mocked(DeviceProbe.prototype.probe).mockResolvedValue({ deviceName: 'NanoC6', microPythonVersion: 'test', firmwareInfo: 'test', nanoC6Confirmed: true, bootOption: 0, bootOptionSupported: true, nvsFallbackSupported: false })
+  })
+
+  it('自動起動済み機器への接続だけでは永続設定や作品を書き換えない', async () => {
+    const source = render().source
+    await render().connect()
+    expect(render().info.bootOption).toBe(0)
+    expect(render().state).toBe('raw-repl-ready')
+    expect(BootModeService.prototype.set).not.toHaveBeenCalled()
+    expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    await render().setBoot(1)
+    expect(BootModeService.prototype.set).toHaveBeenCalledExactlyOnceWith(1, expect.objectContaining({ bootOption: 0 }))
+    expect(BootModeService.prototype.reset).toHaveBeenCalledTimes(1)
+    expect(render().source).toBe(source)
+    expect(render().bootFeedback).toEqual({ mode: 1, phase: 'saved', saved: true })
+    expect(render().bootConfigured).toEqual({ mode: 1, source: null })
+    expect(render().state).toBe('disconnected')
+    await render().connect()
+    expect(render().bootFeedback).toBeNull()
+    expect(render().bootConfigured).toBeNull()
+  })
+
+  it('実行中でも、停止完了→設定保存→再起動の順に行い、コードを再送しない', async () => {
+    await render().connect(); await render().run()
+    const source = render().source
+    const order: string[] = []
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockImplementationOnce(async () => { order.push('stop'); return completeStop() })
+    vi.mocked(BootModeService.prototype.set).mockImplementationOnce(async mode => { order.push(`save:${mode}`) })
+    vi.mocked(BootModeService.prototype.reset).mockImplementationOnce(async () => { order.push('reset') })
+    await render().setBoot(1)
+    expect(order).toEqual(['stop', 'save:1', 'reset'])
+    expect(render().source).toBe(source)
+    expect(render().bootFeedback?.phase).toBe('saved')
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledTimes(1)
+    expect(render().programFeedback?.phase).toBe('stopped')
+  })
+
+  it('確認を取り消すと実行も設定もそのままにする', async () => {
+    await render().connect(); await render().run()
+    const previous = render().programFeedback
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    await render().setBoot(1)
+    expect(render().state).toBe('running-no-marker')
+    expect(render().programFeedback).toEqual(previous)
+    expect(render().bootFeedback).toBeNull()
+    expect(RawReplClient.prototype.stopLongRunning).not.toHaveBeenCalled()
+    expect(BootModeService.prototype.set).not.toHaveBeenCalled()
+  })
+
+  it.each(['stop', 'save', 'reset', 'disconnect'] as const)('%s失敗を成功扱いせず、保存の確認有無を区別する', async phase => {
+    await render().connect(); await render().run()
+    const error = new Error(`${phase} failure`)
+    if (phase === 'stop') vi.mocked(RawReplClient.prototype.stopLongRunning).mockRejectedValueOnce(error)
+    if (phase === 'save') vi.mocked(BootModeService.prototype.set).mockRejectedValueOnce(error)
+    if (phase === 'reset') vi.mocked(BootModeService.prototype.reset).mockRejectedValueOnce(error)
+    if (phase === 'disconnect') vi.mocked(WebSerialTransport.prototype.disconnect).mockRejectedValueOnce(error)
+    await render().setBoot(1)
+    expect(render().bootConfigured).toBeNull()
+    expect(render().bootFeedback).toEqual({ mode: 1, phase: 'failed', saved: phase === 'reset' || phase === 'disconnect', message: error.message })
+    expect(render().state).toBe('error')
+    if (phase === 'stop') expect(BootModeService.prototype.set).not.toHaveBeenCalled()
+    if (phase === 'stop' || phase === 'save') expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+  })
+
+  it('解除の連打・別操作を設定保存中に重ねない', async () => {
+    const entered = deferred(); const done = deferred()
+    vi.mocked(BootModeService.prototype.set).mockImplementationOnce(async () => { entered.resolve(); await done.promise })
+    await render().connect()
+    const pending = render().setBoot(1)
+    await entered.promise
+    expect(render().bootFeedback).toMatchObject({ phase: 'saving', saved: false })
+    await render().setBoot(0); await render().run(); await render().reset()
+    expect(BootModeService.prototype.set).toHaveBeenCalledTimes(1)
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+    done.resolve(); await pending
+    expect(render().bootFeedback?.phase).toBe('saved')
+  })
+
+  it.each(['save', 'reset'] as const)('%s中の切断では変更中表示を終わらせ、古い成功を出さない', async phase => {
+    const entered = deferred(); const done = deferred()
+    const pause = async () => { entered.resolve(); await done.promise }
+    if (phase === 'save') vi.mocked(BootModeService.prototype.set).mockImplementationOnce(pause)
+    else vi.mocked(BootModeService.prototype.reset).mockImplementationOnce(pause)
+    await render().connect()
+    const pending = render().setBoot(1)
+    await entered.promise
+    disconnectDetected(); done.resolve(); await pending
+    expect(render().state).toBe('connection-lost')
+    expect(render().bootConfigured).toBeNull()
+    expect(render().bootFeedback).toMatchObject({ phase: 'failed', saved: phase === 'reset' })
+    if (phase === 'save') expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+  })
+
+  it('旧設定操作の遅い失敗で新しい接続の表示を壊さない', async () => {
+    const entered = deferred(); const done = deferred()
+    vi.mocked(BootModeService.prototype.set).mockImplementationOnce(async () => { entered.resolve(); await done.promise; throw new Error('old failure') })
+    await render().connect()
+    const pending = render().setBoot(1)
+    await entered.promise
+    disconnectDetected(); await render().connect()
+    done.resolve(); await pending
+    expect(render().state).toBe('raw-repl-ready')
+    expect(render().bootFeedback).toBeNull()
+    expect(render().error).toBeUndefined()
+    expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+  })
+
+  it('リセット後の切断処理が終わるまで新しい接続を開かない', async () => {
+    const entered = deferred(); const done = deferred()
+    vi.mocked(WebSerialTransport.prototype.disconnect).mockImplementationOnce(async () => { entered.resolve(); await done.promise })
+    await render().connect()
+    const pending = render().setBoot(1)
+    await entered.promise
+    disconnectDetected()
+    await render().connect()
+    expect(WebSerialTransport.prototype.connect).toHaveBeenCalledTimes(1)
+    done.resolve(); await pending
+    await render().connect()
+    expect(WebSerialTransport.prototype.connect).toHaveBeenCalledTimes(2)
+    expect(render().state).toBe('raw-repl-ready')
+    expect(render().bootFeedback).toBeNull()
+  })
+
+  it('通常リセットの停止待ち中に機器が切り替わっても新機器へリセットを送らない', async () => {
+    const entered = deferred(); const done = deferred()
+    await render().connect(); await render().run()
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockImplementationOnce(async () => { entered.resolve(); await done.promise; return completeStop() })
+    const pending = render().reset()
+    await entered.promise
+    disconnectDetected(); await render().connect()
+    done.resolve(); await pending
+    expect(BootModeService.prototype.reset).not.toHaveBeenCalled()
+    expect(render().state).toBe('raw-repl-ready')
+  })
+
+  it('USB接続の連打でポート選択や初期化を二重に行わない', async () => {
+    const done = deferred()
+    vi.mocked(WebSerialTransport.prototype.connect).mockImplementationOnce(() => done.promise)
+    const pending = render().connect()
+    await render().connect(); await render().reconnect()
+    expect(WebSerialTransport.prototype.connect).toHaveBeenCalledTimes(1)
+    done.resolve(); await pending
+    expect(MicroPythonDevice.prototype.enterNormalMode).toHaveBeenCalledTimes(1)
+    expect(render().state).toBe('raw-repl-ready')
+  })
+
+  it('USB復旧の連打で状態遷移を壊さず、先行した復旧の完了を受け付ける', async () => {
+    await render().connect()
+    const entered = deferred(); const done = deferred()
+    vi.mocked(MicroPythonDevice.prototype.enterNormalMode).mockImplementationOnce(async () => { entered.resolve(); await done.promise })
+    const pending = render().normalMode()
+    await entered.promise
+    await render().normalMode()
+    expect(render().state).toBe('entering-raw-repl')
+    expect(MicroPythonDevice.prototype.enterNormalMode).toHaveBeenCalledTimes(2)
+    done.resolve(); await pending
+    expect(render().state).toBe('raw-repl-ready')
+    expect(render().error).toBeUndefined()
+  })
+
+  it('接続前のポート選択キャンセルは未接続へ戻し、そのまま選び直せる', async () => {
+    vi.mocked(WebSerialTransport.prototype.connect).mockRejectedValueOnce(new Error('port selection cancelled'))
+    await render().connect()
+    expect(render().state).toBe('disconnected')
+    expect(render().error?.message).toBe('port selection cancelled')
+    await render().connect()
+    expect(render().state).toBe('raw-repl-ready')
+    expect(render().error).toBeUndefined()
+  })
+
+  it('意図的停止中でもKeyboardInterrupt以外の後始末エラーでは起動設定を書き換えない', async () => {
+    await render().connect(); await render().run()
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockResolvedValueOnce({ ...stopped, stderr: 'RuntimeError: cleanup failed' })
+    await render().setBoot(1)
+    expect(BootModeService.prototype.set).not.toHaveBeenCalled()
+    expect(render().bootFeedback).toMatchObject({ phase: 'failed', saved: false })
+  })
+})

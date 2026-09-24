@@ -6,6 +6,8 @@ import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
 import { ProgramResult } from '../components/ProgramResult'
+import { BootModePanel } from '../components/BootModePanel'
+import type { BootFeedback } from '../types/bootFeedback'
 import { LicenseNotice } from '../components/LicenseNotice'
 import type { ProgramFeedback } from '../types/programFeedback'
 import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
@@ -1094,4 +1096,73 @@ it.each([null, 'false'])('有効な作品下書きと一致するAI準備文脈�
   expect(harness.preparation.context).toBe(matchingContext)
   expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
   assertNoUsbOperations()
+})
+
+it.each(['disconnected', 'connection-lost', 'running', 'stopped', 'error'])('自動起動の戻し方を%sでもプログラムタブ内の1か所に表示する', state => {
+  harness.programmer.state = state
+  harness.programmer.info.bootOption = 0
+  const view = render()
+  const panel = find(view, element => element.type === BootModePanel)
+  expect(all(byId(view, 'panel-program'), element => element.type === BootModePanel)).toEqual([panel])
+  expect(panel.props).toMatchObject({ state, bootOption: 0, supported: true, bootSupported: true })
+  assertNoUsbOperations()
+})
+
+it('自動起動解除と設定は異なる値を渡し、コードの書き込みや実行を伴わない', () => {
+  const panel = find(render(), element => element.type === BootModePanel)
+  const previous = structuredClone(currentProject())
+  event(panel, 'onDisable')
+  expect(harness.programmer.setBoot).toHaveBeenLastCalledWith(1)
+  event(panel, 'onEnable')
+  expect(harness.programmer.setBoot).toHaveBeenLastCalledWith(0)
+  expect(harness.programmer.setBoot).toHaveBeenCalledTimes(2)
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  for (const operation of ['run', 'write', 'load', 'connect', 'reset', 'stop'] as const) expect(harness.programmer[operation]).not.toHaveBeenCalled()
+})
+
+it.each([[false, false], [false, true], [true, false], [true, true]])('起動設定対応=%s、NVS対応=%sを自動起動ガイドに渡す', (bootSupported, fallbackSupported) => {
+  harness.programmer.info.bootOptionSupported = bootSupported
+  harness.programmer.info.nvsFallbackSupported = fallbackSupported
+  harness.programmer.supported = false
+  const panel = find(render(), element => element.type === BootModePanel)
+  expect(panel.props.bootSupported).toBe(bootSupported || fallbackSupported)
+  expect(panel.props.supported).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('完成後の戻る導線はプログラムタブを開くのみで、コードや機器設定を変更しない', () => {
+  event(byId(render(), 'tab-maker'), 'onClick')
+  const previous = structuredClone(currentProject())
+  event(maker(), 'onOpenProgram')
+  expect(byId(render(), 'panel-program').props.hidden).toBe(false)
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('自動起動ガイドの接続・USB復旧・再起動はそれぞれの明示操作へ渡す', () => {
+  const panel = find(render(), element => element.type === BootModePanel)
+  assertNoUsbOperations()
+  event(panel, 'onConnect')
+  expect(harness.programmer.connect).toHaveBeenCalledOnce()
+  event(panel, 'onRecover')
+  expect(harness.programmer.normalMode).toHaveBeenCalledOnce()
+  event(panel, 'onReset')
+  expect(harness.programmer.reset).toHaveBeenCalledOnce()
+  expect(harness.programmer.setBoot).not.toHaveBeenCalled()
+  expect(harness.programmer.write).not.toHaveBeenCalled()
+  expect(harness.programmer.run).not.toHaveBeenCalled()
+})
+
+it.each(['saving', 'resetting', 'saved', 'failed'] as const)('起動設定の%s結果を省略せずガイドへ渡す', phase => {
+  const programmer = harness.programmer as typeof harness.programmer & { bootFeedback?: BootFeedback }
+  const feedback: BootFeedback = { phase, mode: 1, saved: phase !== 'saving', message: 'diagnostic detail' }
+  programmer.bootFeedback = feedback
+  try {
+    expect(find(render(), element => element.type === BootModePanel).props.feedback).toBe(feedback)
+    assertNoUsbOperations()
+  } finally {
+    delete programmer.bootFeedback
+  }
 })

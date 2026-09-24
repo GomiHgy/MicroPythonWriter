@@ -156,13 +156,17 @@ describe('準備したコードを単発で実行する', () => {
     expect(start).not.toHaveBeenCalled()
   })
 
-  it('通常動作へのリセット前に準備を無効化する', async () => {
-    const { files, device } = fixture()
+  it('通常動作の復旧前に準備を無効化し、リセットせず参照を解放する', async () => {
+    const { files, device, execute } = fixture()
     await files.writeMain(source, true, true)
     vi.spyOn(device.repl, 'interrupt').mockImplementation(async () => { expect(files.peekPreparedProgram()).toBeUndefined() })
+    vi.spyOn(device.repl, 'discardPendingInput').mockReturnValue(new Uint8Array())
     vi.spyOn(device.repl, 'enterRawRepl').mockResolvedValue()
+    execute.mockResolvedValueOnce(result('__M5_NORMAL_MODE_READY__\n'))
     await device.enterNormalMode()
     expect(files.peekPreparedProgram()).toBeUndefined()
+    expect(execute.mock.calls.at(-1)?.[0]).toContain(clearPreparedProgramCommand())
+    expect(execute.mock.calls.at(-1)?.[0]).not.toContain('soft_reset')
   })
 })
 

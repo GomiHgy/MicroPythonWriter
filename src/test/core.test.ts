@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ByteQueue } from '../services/serial/ByteQueue'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { RawPasteProtocol } from '../services/micropython/RawPasteProtocol'
@@ -53,8 +53,8 @@ describe('Traceback', () => {
   it('意図的KeyboardInterruptを修正対象から除外する', () => expect(parser.parse('KeyboardInterrupt', '', true)?.intentionalInterrupt).toBe(true))
 })
 describe('起動モード', () => {
-  it('boot_option=0を使う', async () => { const fake = new FakeMicroPythonRepl(); await new BootModeService(fake as never).set(0, { bootOptionSupported: true, nvsFallbackSupported: false }); expect(fake.commands[0]).toContain('set_boot_option(0)') })
-  it('boot_optionなしではNVS set_u8だけへフォールバックする', async () => { const fake = new FakeMicroPythonRepl(); await new BootModeService(fake as never).set(1, { bootOptionSupported: false, nvsFallbackSupported: true }); expect(fake.commands[0]).toContain('set_u8') })
+  it('boot_option=0を使い読戻し確認する', async () => { const execute = vi.fn().mockResolvedValue({ stdout: '__M5_BOOT_MODE_SAVED__0\n', stderr: '', completed: true, interrupted: false }); await new BootModeService({ execute } as never).set(0, { bootOptionSupported: true, nvsFallbackSupported: false }); expect(execute.mock.calls[0][0]).toContain('set_boot_option(0)'); expect(execute.mock.calls[0][0]).toContain('get_boot_option()') })
+  it('boot_optionなしではNVS set_u8だけへフォールバックする', async () => { const execute = vi.fn().mockResolvedValue({ stdout: '__M5_BOOT_MODE_SAVED__1\n', stderr: '', completed: true, interrupted: false }); await new BootModeService({ execute } as never).set(1, { bootOptionSupported: false, nvsFallbackSupported: true }); expect(execute.mock.calls[0][0]).toContain('set_u8'); expect(execute.mock.calls[0][0]).toContain("get_u8('boot_option')") })
   it('set_u8非対応なら拒否する', async () => await expect(new BootModeService(new FakeMicroPythonRepl() as never).set(1, { bootOptionSupported: false, nvsFallbackSupported: false })).rejects.toBeInstanceOf(BootModeUnsupportedError))
 })
 

@@ -432,3 +432,18 @@ describe('多言語と案内', () => {
     }
   })
 })
+
+describe('完成後の編集への戻り道', () => {
+  it.each(['disconnected', 'connection-lost', 'running', 'stopped', 'error'] as const)('%sでも自動実行をやめる案内へ移動でき、移動だけでは機器を変更しない', state => {
+    finishStep()
+    props.state = state
+    props.bootOption = 0
+    const before = structuredClone(props.project)
+    const guide = button('自動実行をやめて編集に戻る')
+    expect(guide.props.disabled).not.toBe(true)
+    event(guide, 'onClick')
+    expect(props.onOpenProgram).toHaveBeenCalledTimes(1)
+    expect(props.project).toEqual(before)
+    for (const callback of sideEffects()) expect(callback).not.toHaveBeenCalled()
+  })
+})

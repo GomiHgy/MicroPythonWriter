@@ -5,6 +5,7 @@ import { appMessages } from '../../i18n/appMessages'
 import { serviceMessages } from '../../i18n/serviceMessages'
 import { createWorkshopContext, type WorkshopContext } from './WorkshopRules'
 import { buildMemoryPressureRules } from './MemoryPressureRules'
+import { buildLedTransmissionRules } from './LedTransmissionRules'
 
 const sensitive = /(?:password|passwd|pswd|api_key|token|secret|ssid)\s*=\s*[^\n#]+/i
 export const hasSensitiveAssignments = (source: string) => sensitive.test(source)
@@ -124,7 +125,7 @@ ${fenced(error.traceback)}
 ## ${text.log}
 ${fenced(terminalLog)}
 
-${codeSection}${workshopSection}${context ? '' : `\n\n${buildMemoryPressureRules(locale, true)}`}
+${codeSection}${workshopSection}${context ? '' : `\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}`}
 
 ## ${text.constraints}
 ${text.rules}

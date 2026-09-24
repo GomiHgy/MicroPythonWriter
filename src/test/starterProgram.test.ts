@@ -3,11 +3,14 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { buildStarterProgram, providerVerifiedStarters, starterAvailability } from '../services/projects/StarterProgram'
 import type { ProjectRecipe, ProjectSettings } from '../services/projects/types'
+import runtime from '../../firmware/starter/runtime.py?raw'
 
 const settings = (): ProjectSettings => ({ boardId: 'm5nanoc6', firmwareVersion: 'provider-test-only', ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20 })
 const recipe = (): ProjectRecipe => ({ modes: [{ id: 'WARM', label: 'あたたかい光', icon: 'light', kind: 'solid', color: '#ffcc00', speed: 50, repeats: 0, endState: 'hold' }], shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless: false })
 const pythonCommands = ['python3', 'python', ...(process.platform === 'win32' ? ['py', `${process.env.USERPROFILE}/.platformio/penv/Scripts/python.exe`] : [])]
 const python = pythonCommands.find(command => spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 5000 }).status === 0)
+const ledCounts = [1, 37, 88, 90, 110, 300]
+const generationCases = (['m5nanoc6', 'atoms3lite'] as const).flatMap(boardId => ledCounts.flatMap(ledCount => [false, true].map(wireless => ({ boardId, ledCount, wireless }))))
 
 describe('starter generator', () => {
   it('keeps provider verification empty and never promotes a user recipe', () => {
@@ -25,6 +28,8 @@ describe('starter generator', () => {
     expect(source).toBe(buildStarterProgram(settings(), recipe()))
     expect(source).toContain('HARDWARE NOT VERIFIED')
     expect(source).toContain('WS2812_TIMING_NS = (400, 850, 800, 450)')
+    expect(source).toContain('LED_RESET_US = 350')
+    expect(source).not.toMatch(/sleep_us\(80\)/)
     expect(source).toContain('FADE_IN_MS = 200')
     expect(source).toContain('REMOTE_OFF_FADE_MS = 200')
     expect(source).toContain('DOUBLE_PRESS_MS = 350')
@@ -35,6 +40,30 @@ describe('starter generator', () => {
     expect(source).toContain('"button_pin":9')
     expect(source).toContain('"wireless":false')
     expect(source).toContain('if CONFIG["wireless"]:')
+  })
+
+  it.each(generationCases)('embeds the updated runtime unchanged for $boardId / $ledCount LEDs / wireless=$wireless', ({ boardId, ledCount, wireless }) => {
+    const input = { ...settings(), boardId, ledCount, ledPin: boardId === 'm5nanoc6' ? 3 : 4, maxBrightnessPercent: 12.5 }
+    const design = { ...recipe(), wireless }
+    const before = structuredClone({ input, design })
+    const source = buildStarterProgram(input, design)
+    expect(source.endsWith(runtime)).toBe(true)
+    expect(source).toContain(`"led_count":${ledCount},`)
+    expect(source).toContain(`"led_pin":${input.ledPin},`)
+    expect(source).toContain('"max_brightness":12.5,')
+    expect(source).toContain(`"button_pin":${boardId === 'm5nanoc6' ? 9 : 41},`)
+    expect(source).toContain('self.buffer = bytearray(self.count * 3)')
+    expect(source).toContain('self.last_sent_buffer = bytearray(self.count * 3)')
+    expect(source).toContain('self.last_sent_buffer[:] = self.buffer')
+    expect(source).toContain('self.write(force=True)')
+    expect(source).toContain('LED_RESET_US = 350')
+    expect(source).toContain('machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)')
+    expect(source).not.toContain('time.sleep_us(80)')
+    expect(source).not.toMatch(/self\.count\s*=.*\+\s*2/)
+    expect(source).toContain('self.playback = "off"')
+    expect(source).toContain('HARDWARE NOT VERIFIED')
+    expect(starterAvailability(input, design).verified).toBe(false)
+    expect({ input, design }).toEqual(before)
   })
 
   it('maps AtomS3Lite button separately, not to NanoC6 pin', () => {
@@ -122,7 +151,8 @@ describe.skipIf(!python)('CPython host simulation (not hardware verification)', 
     const result = spawnSync(python!, ['-X', 'utf8', '-B', fileURLToPath(new URL('../../firmware/starter/test_runtime.py', import.meta.url))], { encoding: 'utf8', timeout: 15000 })
     expect(result.status, result.stderr || result.error?.message).toBe(0)
     expect(result.stderr).toContain('OK')
-  })
+    // Python全回帰の子プロセス上限15秒より、外側のテスト上限を長くする。
+  }, 20000)
 
   it('compiles generated Python and keeps quote/backslash payloads inert', () => {
     const value = recipe()

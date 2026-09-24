@@ -1,3 +1,5 @@
+# テスト専用の履歴: commit 3bc3fbf の runtime.py。新規コード生成・実機への配布には使用しない。
+# 送信最適化による演出・状態の変化がないことを同じ疑似時計で比較するため固定する。
 # 提供側の検証用候補。対象UIFlow2版での実機動作を保証しない。
 # main.py生成時にCONFIGをデータとして追加する。外部ライブラリは不要。
 import machine
@@ -5,8 +7,6 @@ import time
 import json
 
 WS2812_TIMING_NS = (400, 850, 800, 450)
-# フレーム前後のLOW候補値。全LED型番・配線での実機保証値ではない。
-LED_RESET_US = 350
 FADE_IN_MS = 200
 REMOTE_OFF_FADE_MS = 200
 ACTION_RESTART_BLEND_MS = 200
@@ -27,13 +27,8 @@ class LedProgram:
         )
         self.button = machine.Pin(config["button_pin"], machine.Pin.IN, machine.Pin.PULL_UP) if use_button else None
         self.count = config["led_count"]
-        # 候補と最後にソフトウェア送信を完了したGRBを別領域で再利用する。
         self.buffer = bytearray(self.count * 3)
-        self.last_sent_buffer = bytearray(self.count * 3)
-        self.last_sent_valid = False
         self.frame = [(0, 0, 0)] * self.count
-        self.solid_color = None
-        self.solid_frame = None
         self.output = [(0, 0, 0)] * self.count
         self.output_reference = [(0, 0, 0)] * self.count
         self.modes = config["modes"]
@@ -61,7 +56,7 @@ class LedProgram:
         self.held_brightness = 100
         self.saved = None
         self.just_started = False
-        self.dirty = True  # BLE通知要求。LED送信キャッシュとは独立。
+        self.dirty = True
         self.last = time.ticks_ms()
         self.raw = self.button.value() if self.button is not None else 1
         self.stable = 1
@@ -70,16 +65,17 @@ class LedProgram:
         self.long_handled = False
         self.pending_short_at = None
         self.second_press = False
-        self.write(force=True)
+        self.write()
 
-    def write(self, now=None, force=False):
+    def write(self, now=None):
         # すべての出力が同じ安全上限を通る。通知はこの最終値をRGBで報告する。
         now = time.ticks_ms() if now is None else now
         if self.remote_off_started is not None:
             elapsed = max(0, time.ticks_diff(now, self.remote_off_started))
             remaining = max(0, REMOTE_OFF_FADE_MS - elapsed)
             if not remaining:
-                return self.off()
+                self.off()
+                return
             self.fade = self.remote_off_fade * remaining / REMOTE_OFF_FADE_MS
             # 上限適用済みの実出力を縮小する。設定変更で消灯途中に明るくしない。
             pixels = [tuple(c * remaining // REMOTE_OFF_FADE_MS for c in rgb)
@@ -113,35 +109,14 @@ class LedProgram:
                     reference = [tuple((old[c] * (ACTION_RESTART_BLEND_MS - elapsed) + new[c] * elapsed)
                                        // ACTION_RESTART_BLEND_MS for c in range(3))
                                  for old, new in zip(self.action_blend_reference, reference)]
-        for i, (r, g, b) in enumerate(pixels):
-            offset = 3 * i
-            self.buffer[offset] = g
-            self.buffer[offset + 1] = r
-            self.buffer[offset + 2] = b
-        if not force and self.last_sent_valid and self.buffer == self.last_sent_buffer:
-            # 輝度0・量子化で同じ出力でも、復元用基準は今の論理状態へ進める。
-            self.output_reference = reference
-            return False
-        self.last_sent_valid = False
-        try:
-            self.pin.value(0)
-            time.sleep_us(LED_RESET_US)
-            machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)
-            self.pin.value(0)
-            time.sleep_us(LED_RESET_US)
-        except BaseException:
-            # 中断・送信失敗は成功扱いしない。LOWを試みて既存の安全停止へ渡す。
-            try:
-                self.pin.value(0)
-            except BaseException:
-                pass
-            raise
-        # 送信後LOWまで完了して初めて更新。物理的な発光の測定ではない。
-        self.last_sent_buffer[:] = self.buffer
-        self.output[:] = pixels
         self.output_reference = reference
-        self.last_sent_valid = True
-        return True
+        for i, (r, g, b) in enumerate(pixels):
+            self.output[i] = (r, g, b)
+            self.buffer[3 * i:3 * i + 3] = bytes((g, r, b))
+        machine.bitstream(self.pin, 0, WS2812_TIMING_NS, self.buffer)
+        self.pin.value(0)
+        # 同じループで複数コマンドを適用した場合にもリセット時間を確保する。
+        time.sleep_us(80)
 
     def rescale_output(self, pixels, original_brightness, reference=None):
         # 保存した実出力には安全上限が適用済み。設定輝度の比だけ反映する。
@@ -159,7 +134,7 @@ class LedProgram:
             return [(0, 0, 0)] * self.count
         return [tuple(min(cap, c * self.brightness // original_brightness) for c in rgb) for rgb in pixels]
 
-    def off(self, force=True):
+    def off(self):
         # 起動・例外・本体ボタン・有限再生終了の安全消灯は待たずに行う。
         self.remote_off_started = None
         self.remote_off_pixels = None
@@ -170,11 +145,8 @@ class LedProgram:
         self.playback = "off"
         self.fade = 0.0
         self.frame = [(0, 0, 0)] * self.count
-        self.solid_color = None
-        self.solid_frame = None
-        sent = self.write(force=force)
+        self.write()
         self.dirty = True
-        return sent
 
     def fade_out(self):
         if self.remote_off_started is not None:
@@ -400,18 +372,9 @@ class LedProgram:
         return (part, 0, 255 - part)
 
     def render(self, mode, phase):
-        # 静止色だけ描画を再利用する。位相・回数・フェード・入力はstepで毎回進む。
-        # frameは置換のみで、キャッシュの要素を変更しない。固定スナップショットは別コピー。
-        if mode["kind"] == "solid" and self.solid_color == mode["color"]:
-            return self.solid_frame
         color = tuple(int(mode["color"][i:i + 2], 16) for i in (0, 2, 4))
         if mode["kind"] == "solid":
-            self.solid_color = mode["color"]
-            self.solid_frame = [color] * self.count
-            return self.solid_frame
-        # 動く演出は従来どおり描画。静止色の大きなリストを別途保持し続けない。
-        self.solid_color = None
-        self.solid_frame = None
+            return [color] * self.count
         if mode["kind"] == "rainbow":
             return [self.wheel((phase + i / self.count) % 1) for i in range(self.count)]
         if mode["kind"] == "chase":

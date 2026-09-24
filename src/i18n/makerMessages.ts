@@ -1,6 +1,9 @@
 import type { MessageCatalog } from './types'
 
 export const makerMessages: MessageCatalog = {
+  '持ち出した作品を、また編集したいとき': { en: 'Ready to edit your standalone artwork again?', zh: '想再次编辑带走的作品时' },
+  'プログラム画面でUSB接続し、「自動実行しない設定に戻す」を押してください。作品のプログラムは消しません。': { en: 'On the Program screen, connect USB and click “Turn off automatic startup”. Your artwork program is kept.', zh: '请在程序页面连接 USB，然后点击“关闭自动运行”。不会删除作品程序。' },
+  '自動実行をやめて編集に戻る': { en: 'How to turn off auto-start and edit again', zh: '关闭自动运行并返回编辑的步骤' },
   '未検証コードを機器で試す': { en: 'Try unverified code on the device', zh: '在设备上试运行未验证代码' },
   '設定を見直してからコードを準備してください': { en: 'Review the settings before preparing code', zh: '请检查设置后再准备代码' },
   'コードの準備・表示・保存は、USB接続なしでできます。機器で試す前に、未検証であることと配線・設定を確認します。': { en: 'You can prepare, view and save code without USB. Before trying it on the device, review its unverified status, wiring and settings.', zh: '无需 USB 连接即可准备、查看和保存代码。在设备上试运行前，请确认代码尚未经验证，并检查接线和设置。' },

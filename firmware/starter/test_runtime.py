@@ -6,9 +6,11 @@ import os
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 NOW = 0
 FRAMES = []
+LED_EVENTS = []
 
 
 class Pin:
@@ -21,6 +23,7 @@ class Pin:
     def value(self, value=None):
         if value is not None:
             self.level = value
+            LED_EVENTS.append(("pin", self.number, value))
         return self.level
 
 
@@ -69,10 +72,19 @@ fake_time = types.ModuleType("time")
 fake_time.ticks_ms = lambda: NOW
 fake_time.ticks_diff = lambda a, b: ((a - b + (1 << 29)) % (1 << 30)) - (1 << 29)
 fake_time.sleep_ms = lambda value: None
-fake_time.sleep_us = lambda value: None
+fake_time.sleep_us = lambda value: LED_EVENTS.append(("sleep_us", value))
 fake_machine = types.ModuleType("machine")
 fake_machine.Pin = Pin
-fake_machine.bitstream = lambda pin, encoding, timing, data: FRAMES.append((encoding, timing, bytes(data)))
+
+
+def record_bitstream(pin, encoding, timing, data):
+    # 呼び出し時点の値を固定する。再利用bytearrayへの参照を履歴に残さない。
+    frame = bytes(data)
+    FRAMES.append((encoding, timing, frame))
+    LED_EVENTS.append(("bitstream", pin.number, encoding, timing, frame))
+
+
+fake_machine.bitstream = record_bitstream
 fake_bluetooth = types.ModuleType("bluetooth")
 fake_bluetooth.BLE = FakeBle
 fake_bluetooth.UUID = str
@@ -83,6 +95,12 @@ sys.modules["time"] = fake_time
 spec = importlib.util.spec_from_file_location("starter_runtime", os.path.join(os.path.dirname(__file__), "runtime.py"))
 runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
+history_spec = importlib.util.spec_from_file_location(
+    "starter_runtime_before_led_send_optimization",
+    os.path.join(os.path.dirname(__file__), "fixtures", "runtime_before_led_send_optimization.py"),
+)
+historical_runtime = importlib.util.module_from_spec(history_spec)
+history_spec.loader.exec_module(historical_runtime)
 
 BASE = {"board": "m5nanoc6", "firmware": "TEST ONLY", "led_model": "WS2812B", "led_pin": 2,
         "button_pin": 9, "led_count": 10, "max_brightness": 20, "name": "NanoLED-M5NanoC6",
@@ -98,6 +116,7 @@ class RuntimeTests(unittest.TestCase):
         global NOW
         NOW = 0
         FRAMES.clear()
+        LED_EVENTS.clear()
         self.config = copy.deepcopy(BASE)
         self.program = runtime.LedProgram(self.config)
 
@@ -1322,6 +1341,442 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(radio.ble.disconnections, [42])
         self.assertEqual(radio.conn, None)
         self.assertFalse(radio.tx)
+
+
+class LedTransmissionTests(unittest.TestCase):
+    """送信完了とはAPI/LOW待機の完了。実物の発光を測定するテストではない。"""
+    setUp = RuntimeTests.setUp
+    step = RuntimeTests.step
+    radio = RuntimeTests.radio
+
+    def expected_events(self, frame):
+        return [("pin", self.config["led_pin"], 0), ("sleep_us", 350),
+                ("bitstream", self.config["led_pin"], 0, (400, 850, 800, 450), frame),
+                ("pin", self.config["led_pin"], 0), ("sleep_us", 350)]
+
+    def light(self):
+        self.program.command("PLAY")
+        self.step(210)
+
+    def test_initial_black_is_sent_once_with_exact_low_order(self):
+        self.assertEqual(runtime.LED_RESET_US, 350)
+        self.assertEqual(FRAMES, [(0, (400, 850, 800, 450), bytes(30))])
+        self.assertEqual(LED_EVENTS, self.expected_events(bytes(30)))
+        self.assertTrue(self.program.last_sent_valid)
+        self.assertIsInstance(self.program.buffer, bytearray)
+        self.assertIsInstance(self.program.last_sent_buffer, bytearray)
+        self.assertIsNot(self.program.buffer, self.program.last_sent_buffer)
+
+    def test_same_final_output_skips_send_and_both_waits(self):
+        self.light()
+        LED_EVENTS.clear()
+        frames = len(FRAMES)
+        buffer_ids = (id(self.program.buffer), id(self.program.last_sent_buffer))
+        self.assertFalse(self.program.write())
+        self.step(1000)
+        self.assertEqual(LED_EVENTS, [])
+        self.assertEqual(len(FRAMES), frames)
+        self.assertEqual((id(self.program.buffer), id(self.program.last_sent_buffer)), buffer_ids)
+
+    def test_quantized_equal_output_updates_reference_without_sending(self):
+        self.program.playback = "playing"
+        self.program.fade = 1
+        self.program.brightness = 1
+        self.program.frame = [(10, 0, 0)] * self.program.count
+        LED_EVENTS.clear()
+        self.assertFalse(self.program.write())
+        self.assertEqual(self.program.output_reference, [(2, 0, 0)] * self.program.count)
+        self.program.frame = [(0, 10, 0)] * self.program.count
+        self.assertFalse(self.program.write())
+        self.assertEqual(self.program.output_reference, [(0, 2, 0)] * self.program.count)
+        self.assertEqual(LED_EVENTS, [])
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, [(0, 2, 0)] * self.program.count)
+
+    def test_one_byte_change_sends_full_grb_and_reuses_distinct_buffers(self):
+        self.program.playback = "playing"
+        self.program.fade = 1
+        self.program.frame[-1] = (5, 0, 0)
+        candidate_id, completed_id = id(self.program.buffer), id(self.program.last_sent_buffer)
+        LED_EVENTS.clear()
+        self.assertTrue(self.program.write())
+        expected = bytes(28) + bytes((1, 0))
+        self.assertEqual(LED_EVENTS, self.expected_events(expected))
+        self.assertEqual(bytes(self.program.last_sent_buffer), expected)
+        self.assertEqual((id(self.program.buffer), id(self.program.last_sent_buffer)), (candidate_id, completed_id))
+        self.program.buffer[0] = 99
+        self.assertEqual(self.program.last_sent_buffer[0], 0)
+        self.assertEqual(FRAMES[-1][2], expected)
+
+    def test_forced_black_and_invalid_cache_always_send(self):
+        for operation in (lambda: self.program.off(), lambda: self.program.write(force=True)):
+            LED_EVENTS.clear()
+            previous = len(FRAMES)
+            operation()
+            self.assertEqual(len(FRAMES), previous + 1)
+            self.assertEqual(LED_EVENTS, self.expected_events(bytes(30)))
+        self.program.last_sent_valid = False
+        LED_EVENTS.clear()
+        self.assertTrue(self.program.write())
+        self.assertEqual(LED_EVENTS, self.expected_events(bytes(30)))
+        self.assertTrue(self.program.last_sent_valid)
+
+    def test_failed_send_keeps_completed_cache_output_and_reference_and_invalidates(self):
+        for stage in ("low_before", "wait_before", "bitstream", "low_after", "wait_after"):
+            for exception_type in (OSError, KeyboardInterrupt):
+                with self.subTest(stage=stage, exception=exception_type.__name__):
+                    self.setUp()
+                    self.light()
+                    cache = bytes(self.program.last_sent_buffer)
+                    output = self.program.output[:]
+                    reference = self.program.output_reference[:]
+                    status = self.program.status()["pixels"]
+                    self.program.frame = [(0, 255, 255)] * self.program.count
+                    calls = {"pin": 0, "wait": 0}
+                    pin_value = self.program.pin.value
+
+                    def fail_if(stage_name):
+                        if stage == stage_name:
+                            raise exception_type("injected send failure")
+
+                    def pin(value=None):
+                        if value is not None:
+                            calls["pin"] += 1
+                            fail_if("low_before" if calls["pin"] == 1 else
+                                    "low_after" if calls["pin"] == 2 else "cleanup")
+                        return pin_value(value)
+
+                    def wait(value):
+                        calls["wait"] += 1
+                        self.assertEqual(value, 350)
+                        # trailing LOW hold must finish before replacing the completed frame.
+                        self.assertEqual(bytes(self.program.last_sent_buffer), cache)
+                        self.assertEqual(self.program.status()["pixels"], status)
+                        fail_if("wait_before" if calls["wait"] == 1 else "wait_after")
+
+                    def send(*args):
+                        self.assertEqual(bytes(self.program.last_sent_buffer), cache)
+                        fail_if("bitstream")
+                        record_bitstream(*args)
+
+                    with patch.object(self.program.pin, "value", pin), \
+                            patch.object(fake_time, "sleep_us", wait), \
+                            patch.object(fake_machine, "bitstream", send):
+                        with self.assertRaises(exception_type):
+                            self.program.write()
+                    self.assertFalse(self.program.last_sent_valid)
+                    self.assertEqual(bytes(self.program.last_sent_buffer), cache)
+                    self.assertEqual(self.program.output, output)
+                    self.assertEqual(self.program.output_reference, reference)
+                    self.assertEqual(self.program.status()["pixels"], status)
+                    self.assertEqual(self.program.pin.level, 0)
+                    # 失敗後に旧成功フレームへ戻しても、無効キャッシュでは実送信する。
+                    self.program.frame = [(255, 128, 0)] * self.program.count
+                    previous = len(FRAMES)
+                    self.assertTrue(self.program.write())
+                    self.assertEqual(len(FRAMES), previous + 1)
+                    self.assertTrue(self.program.last_sent_valid)
+
+    def test_low_cleanup_failure_does_not_swallow_original_send_failure(self):
+        self.light()
+        self.program.frame = [(0, 255, 0)] * self.program.count
+        pin_value = self.program.pin.value
+        calls = []
+
+        def pin(value=None):
+            calls.append(value)
+            if len(calls) > 1:
+                raise OSError("cleanup failed")
+            return pin_value(value)
+
+        with patch.object(self.program.pin, "value", pin), \
+                patch.object(fake_machine, "bitstream", side_effect=KeyboardInterrupt("original failure")):
+            with self.assertRaisesRegex(KeyboardInterrupt, "original failure"):
+                self.program.write()
+        self.assertFalse(self.program.last_sent_valid)
+        self.assertEqual(calls, [0, 0])
+
+    def test_all_configured_leds_are_sent_and_reported_without_extra_leds(self):
+        for count in (1, 37, 88, 90, 110, 300):
+            for board, button_pin, led_pin in (("m5nanoc6", 9, 2), ("atoms3lite", 41, 7)):
+                with self.subTest(count=count, board=board):
+                    self.setUp()
+                    self.config.update(led_count=count, board=board, button_pin=button_pin,
+                                       led_pin=led_pin, max_brightness=63)
+                    self.program = runtime.LedProgram(self.config)
+                    self.light()
+                    self.assertEqual(len(self.program.buffer), 3 * count)
+                    self.assertEqual(len(self.program.last_sent_buffer), 3 * count)
+                    self.assertEqual(len(FRAMES[-1][2]), 3 * count)
+                    self.assertEqual(len(self.program.status()["pixels"]), 6 * count)
+                    self.assertEqual(FRAMES[-1][2], bytes((80, 160, 0)) * count)
+                    self.assertEqual(self.program.pin.number, led_pin)
+                    self.assertEqual(self.program.button.number, button_pin)
+
+    def test_static_render_is_reused_but_color_change_invalidates_it(self):
+        self.light()
+        static_frame = self.program.frame
+        self.step(500)
+        self.assertIs(self.program.frame, static_frame)
+        self.program.modes[0]["color"] = "0000ff"
+        self.step(10)
+        self.assertIsNot(self.program.frame, static_frame)
+        self.assertEqual(self.program.output, [(0, 0, 51)] * self.program.count)
+
+    def test_short_changed_frames_are_not_throttled_by_a_new_refresh_limit(self):
+        global NOW
+        self.light()
+        for color in ((0, 255, 0), (0, 0, 255), (255, 255, 255), (0, 0, 0)):
+            NOW += 1
+            self.program.frame = [color] * self.program.count
+            previous = len(FRAMES)
+            self.assertTrue(self.program.write(NOW))
+            self.assertEqual(len(FRAMES), previous + 1)
+            expected = tuple(int(component * 0.2) for component in color)
+            self.assertEqual(self.program.output, [expected] * self.program.count)
+
+    def test_static_cache_and_action_pause_off_snapshots_remain_read_only_and_distinct(self):
+        self.light()
+        cached = self.program.solid_frame
+        cached_pixels = cached[:]
+        self.program.command("ACTION SPARKLE")
+        self.assertIsNot(self.program.saved[4], cached)
+        self.assertEqual(self.program.saved[4], cached_pixels)
+        self.step(300)
+        self.assertIsNone(self.program.solid_frame)
+        self.program.command("ACTION SPARKLE")
+        blend = self.program.action_blend_pixels
+        blend_reference = self.program.action_blend_reference
+        expected_blend, expected_reference = blend[:], blend_reference[:]
+        self.assertIsNot(blend, self.program.output)
+        self.assertIsNot(blend_reference, self.program.output_reference)
+        self.step(100)
+        self.assertEqual(blend, expected_blend)
+        self.assertEqual(blend_reference, expected_reference)
+        self.program.command("PAUSE")
+        held, held_reference = self.program.held_pixels, self.program.held_reference
+        expected_held, expected_held_reference = held[:], held_reference[:]
+        self.assertIsNot(held, self.program.output)
+        self.assertIsNot(held_reference, self.program.output_reference)
+        self.program.command("BRIGHTNESS 0")
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(held, expected_held)
+        self.assertEqual(held_reference, expected_held_reference)
+        self.program.command("OFF")
+        off, off_reference = self.program.remote_off_pixels, self.program.remote_off_reference
+        expected_off, expected_off_reference = off[:], off_reference[:]
+        self.assertIsNot(off, self.program.output)
+        self.assertIsNot(off_reference, self.program.output_reference)
+        self.step(100)
+        self.assertEqual(off, expected_off)
+        self.assertEqual(off_reference, expected_off_reference)
+        self.assertEqual(cached, cached_pixels)
+
+    def test_zero_output_advances_and_completes_action_and_finite_mode(self):
+        self.program.command("BRIGHTNESS 0")
+        self.program.command("MODE FLOW")
+        LED_EVENTS.clear()
+        self.step(400)
+        phase = self.program.phase
+        reference = self.program.output_reference[:]
+        self.assertGreater(phase, 0)
+        self.assertTrue(any(any(rgb) for rgb in reference))
+        self.program.command("ACTION SPARKLE")
+        self.step(400)
+        self.program.command("ACTION SPARKLE")
+        self.step(1000)
+        self.assertIsNone(self.program.action)
+        self.assertEqual(self.program.phase, phase)
+        self.assertEqual(self.program.output_reference, reference)
+        self.assertEqual(LED_EVENTS, [])
+        self.program.command("PAUSE")
+        self.step(300)
+        self.assertEqual(self.program.phase, phase)
+        self.program.command("BRIGHTNESS 100")
+        self.assertEqual(self.program.output, reference)
+        self.program.command("BRIGHTNESS 0")
+        self.program.modes[1].update(repeats=1, end="hold")
+        self.program.command("PLAY")
+        LED_EVENTS.clear()
+        self.step(3000)
+        self.assertEqual(self.program.playback, "paused")
+        self.assertGreaterEqual(self.program.cycles, 1)
+        self.assertEqual(LED_EVENTS, [])
+
+    def test_skipped_led_sends_do_not_block_dirty_status_or_periodic_ble(self):
+        self.program.command("BRIGHTNESS 0")
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        LED_EVENTS.clear()
+        self.step(900, radio)
+        first_snapshot = radio.last_snapshot
+        self.step(1000, radio)
+        self.assertEqual(fake_time.ticks_diff(radio.last_snapshot, first_snapshot), 1000)
+        for command, expected in ((b"MODE FLOW\n", "playing"), (b"PAUSE\n", "paused"),
+                                  (b"ACTION SPARKLE\n", "playing")):
+            radio.ble.notifications.clear()
+            radio.ble.incoming(command)
+            self.step(700, radio)
+            rows = b"".join(radio.ble.notifications).split(b"\n")[:-1]
+            self.assertTrue(rows)
+            self.assertEqual(json.loads(rows[-1])["playback"], expected)
+            self.assertEqual(json.loads(rows[-1])["pixels"], "0" * 60)
+        self.assertEqual(LED_EVENTS, [])
+        radio.irq(2, (42, None, None))
+        self.step(10, radio)
+        self.assertEqual(radio.ble.advertisements[-1][0], 250000)
+        radio.irq(1, (42, None, None))
+        radio.ble.notifications.clear()
+        radio.ble.incoming(b"STATUS\n")
+        self.step(700, radio)
+        self.assertTrue(b"\n" in b"".join(radio.ble.notifications))
+        self.assertEqual(LED_EVENTS, [])
+        for _ in range(20):
+            radio.ble.incoming(b"STATUS\n")
+        self.assertLessEqual(len(radio.rx), 8)
+        radio.receive()
+        self.assertEqual(radio.rx, [])
+        self.assertLessEqual(len(radio.line), 128)
+
+    def test_main_exception_and_keyboard_interrupt_force_black_even_when_already_black(self):
+        for failure in (RuntimeError, KeyboardInterrupt):
+            with self.subTest(failure=failure):
+                previous = len(FRAMES)
+                with patch.object(runtime, "LedProgram", return_value=self.program), \
+                        patch.object(runtime, "CONFIG", self.config, create=True), \
+                        patch.object(fake_time, "sleep_ms", side_effect=failure):
+                    with self.assertRaises(failure):
+                        runtime.main()
+                self.assertEqual(len(FRAMES), previous + 1)
+                self.assertEqual(FRAMES[-1][2], bytes(30))
+
+    def test_finally_closes_ble_even_when_forced_safety_black_fails(self):
+        radio = runtime.NanoBle(self.program)
+        with patch.object(runtime, "LedProgram", return_value=self.program), \
+                patch.object(runtime, "NanoBle", return_value=radio), \
+                patch.object(runtime, "CONFIG", self.config, create=True), \
+                patch.object(fake_time, "sleep_ms", side_effect=KeyboardInterrupt), \
+                patch.object(fake_machine, "bitstream", side_effect=OSError("safety send failed")) as send:
+            with self.assertRaisesRegex(OSError, "safety send failed"):
+                runtime.main()
+        self.assertEqual(send.call_count, 1)
+        self.assertFalse(self.program.last_sent_valid)
+        self.assertFalse(radio.ble.enabled)
+
+    def test_ble_pixels_do_not_report_a_failed_candidate_frame(self):
+        self.light()
+        completed_pixels = self.program.status()["pixels"]
+        self.program.frame = [(0, 255, 255)] * self.program.count
+        with patch.object(fake_machine, "bitstream", side_effect=OSError("send failed")):
+            with self.assertRaises(OSError):
+                self.program.write()
+        self.assertFalse(self.program.last_sent_valid)
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        # write失敗後のテレメトリ単体を検査。通常のmainでは既存の安全終了へ伝播する。
+        radio.receive()
+        for now in range(NOW + 10, NOW + 900, 10):
+            radio.step(now)
+        rows = b"".join(radio.ble.notifications).split(b"\n")[:-1]
+        self.assertTrue(rows)
+        self.assertTrue(all(json.loads(row)["pixels"] == completed_pixels for row in rows))
+
+
+class LedDifferentialTests(unittest.TestCase):
+    """同じ時計/入力の最適化前後を比較。送信回数/LOW待機だけを比較から分離する。"""
+    def run_scenario(self, module, config, events, start=0):
+        global NOW
+        NOW = start
+        FRAMES.clear()
+        LED_EVENTS.clear()
+        program = module.LedProgram(copy.deepcopy(config))
+        initial_output = FRAMES[-1][2]
+        # 履歴側が持つ全データ状態を比較。PinのPythonオブジェクト同一性は比較しない。
+        baseline_keys = tuple(key for key in historical_runtime.LedProgram(copy.deepcopy(config)).__dict__
+                              if key not in ("pin", "button"))
+        FRAMES.clear()
+        LED_EVENTS.clear()
+        # 初期強制全消灯は専用テストで検査し、ここからは観測できる最終出力を比較する。
+        program.write()
+        result = []
+
+        def record(label):
+            last_sent = FRAMES[-1][2] if FRAMES else initial_output
+            # 論理frameだけでなく、最後にstubが記録した全GRB出力とstatusの一致も検査する。
+            reported_grb = bytes(component for r, g, b in program.output for component in (g, r, b))
+            self.assertEqual(reported_grb, last_sent)
+            result.append((label, NOW, copy.deepcopy({key: getattr(program, key) for key in baseline_keys}),
+                           copy.deepcopy(program.status()), last_sent))
+
+        record("initial")
+        for event, value in events:
+            if event == "step":
+                while value:
+                    delta = min(value, 10)
+                    value -= delta
+                    NOW = (NOW + delta) % (1 << 30)
+                    program.step(NOW)
+                    record("step")
+            elif event == "command":
+                program.command(value)
+                record(value)
+            elif event == "button":
+                program.button.level = value
+                record("button")
+            elif event == "color":
+                program.modes[program.index]["color"] = value
+                record("color")
+            else:
+                self.fail("unknown fixture event")
+        return result, len(FRAMES), len([event for event in LED_EVENTS if event[0] == "sleep_us"])
+
+    def compare(self, config, events, start=0):
+        previous, old_sends, old_waits = self.run_scenario(historical_runtime, config, events, start)
+        current, new_sends, new_waits = self.run_scenario(runtime, config, events, start)
+        self.assertEqual(len(current), len(previous))
+        for expected, actual in zip(previous, current):
+            self.assertEqual(actual, expected, "clock/input: %s %s" % (actual[0], actual[1]))
+        # 1実送信につき旧版の後待機1回→新版は前後2回。減った送信は状態差ではない。
+        self.assertEqual(old_waits, old_sends)
+        self.assertEqual(new_waits, 2 * new_sends)
+        self.assertLessEqual(new_sends, old_sends)
+        return old_sends, new_sends
+
+    def test_all_modes_commands_buttons_fades_and_wrap_match_historical_states(self):
+        events = [("command", "PLAY"), ("step", 40), ("command", "MODE FLOW"), ("step", 170),
+                  ("command", "MODE WARM"), ("step", 500), ("color", "336699"), ("step", 100),
+                  ("command", "BRIGHTNESS 0"), ("step", 400), ("command", "PAUSE"), ("step", 200),
+                  ("command", "BRIGHTNESS 100"), ("command", "PLAY"), ("step", 200),
+                  ("command", "ACTION SPARKLE"), ("step", 350), ("command", "ACTION SPARKLE"),
+                  ("step", 100), ("command", "PAUSE"), ("step", 200), ("command", "PLAY"),
+                  ("step", 100), ("command", "ACTION SPARKLE"), ("step", 200),
+                  ("command", "ACTION SPARKLE"), ("step", 100), ("command", "OFF"),
+                  ("step", 100), ("command", "OFF"), ("step", 100), ("command", "PLAY"),
+                  ("step", 210), ("command", "ACTION SPARKLE"), ("step", 300),
+                  ("command", "ACTION SPARKLE"), ("step", 1000),
+                  ("button", 0), ("step", 100), ("button", 1), ("step", 450),
+                  ("button", 0), ("step", 100), ("button", 1), ("step", 50),
+                  ("button", 0), ("step", 100), ("button", 1), ("step", 450),
+                  ("button", 0), ("step", 1000), ("button", 1), ("step", 450)]
+        for kind in ("solid", "rainbow", "chase", "twinkle"):
+            for start in (0, (1 << 30) - 500):
+                with self.subTest(kind=kind, start=start):
+                    config = copy.deepcopy(BASE)
+                    config["modes"][0]["kind"] = kind
+                    config["double_press"] = "next"
+                    old_sends, new_sends = self.compare(config, events, start)
+                    self.assertLess(new_sends, old_sends)
+
+    def test_finite_repeats_zero_brightness_restore_and_completion_match_history(self):
+        events = [("command", "BRIGHTNESS 0"), ("command", "PLAY"), ("step", 3010),
+                  ("command", "BRIGHTNESS 100"), ("step", 50), ("command", "PLAY"),
+                  ("step", 400), ("command", "ACTION SPARKLE"), ("step", 1000), ("step", 3010)]
+        for kind in ("solid", "rainbow", "chase", "twinkle"):
+            for end in ("hold", "off"):
+                with self.subTest(kind=kind, end=end):
+                    config = copy.deepcopy(BASE)
+                    config["modes"][0].update(kind=kind, repeats=1, end=end)
+                    self.compare(config, events)
 
 
 if __name__ == "__main__":
