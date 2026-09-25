@@ -6,10 +6,13 @@ import { AiPreparationPanel } from './components/AiPreparationPanel'
 import { MakerPanel } from './components/MakerPanel'
 import { ProgramResult } from './components/ProgramResult'
 import { BootModePanel } from './components/BootModePanel'
+import { ProgramLibraryPanel } from './components/ProgramLibraryPanel'
 import { LicenseNotice } from './components/LicenseNotice'
 import { getBoardDefinition } from './config/boards'
-import { loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
-import type { ArtworkProject, ProjectSnapshot, RemoteButton } from './services/projects/types'
+import { createProject, loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
+import type { ArtworkProject, ProjectSettings, ProjectSnapshot, RemoteButton } from './services/projects/types'
+import type { SavedProgram } from './services/programs/ProgramLibrary'
+import { isLedModel } from './services/workshop/WorkshopProfile'
 import { buildStarterProgram, starterAvailability } from './services/projects/StarterProgram'
 import { hasSensitiveAssignments } from './services/prompt/RepairPromptBuilder'
 import { useProgrammer } from './hooks/useProgrammer'
@@ -30,7 +33,8 @@ const statusCopy: Record<string, { icon: string; eyebrow: string; title: string;
 }
 
 const defaultStatus = { icon: '…', eyebrow: '機器を準備中', title: '少し待ってください', description: 'ケーブルはそのままで、処理が終わるまで待ってください。', tone: 'waiting' as const }
-const tabs = [{ id: 'maker', label: '作品づくり', icon: '💡' }, { id: 'preparation', label: 'AIの準備', icon: '✦' }, { id: 'program', label: 'プログラム', icon: '✎' }, { id: 'controller', label: 'コントローラ', icon: '🎛' }] as const
+// 作品づくりは一時非表示。保存済み作品と実装は残し、再表示で復帰できるようにする。
+const tabs = [{ id: 'preparation', label: 'AIの準備', icon: '✦' }, { id: 'program', label: 'プログラム', icon: '✎' }, { id: 'controller', label: 'コントローラ', icon: '🎛' }] as const
 const readPreference = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 
 export default function App() {
@@ -39,6 +43,7 @@ export default function App() {
   const [projectData, setProjectData] = useState(loadedProject.project)
   const [projectSettingsActive, setProjectSettingsActive] = useState(() => readPreference('mpw-project-settings-active') === 'true')
   const [projectNotice, setProjectNotice] = useState(loadedProject.notice)
+  const [programLibraryError, setProgramLibraryError] = useState('')
   const [controllerPreparationNotice, setControllerPreparationNotice] = useState('')
   const [loadNeedsReview, setLoadNeedsReview] = useState(() => loadedProject.notice !== '')
   const [lastRunDraft, setLastRunDraft] = useState<ProjectSnapshot | null>(null)
@@ -62,7 +67,7 @@ export default function App() {
     }
   }, [projectData, app.source, loadNeedsReview])
   useEffect(() => { try { localStorage.setItem('mpw-project-settings-active', String(projectSettingsActive)) } catch { /* 文脈を永続化できなくても通信は行わない */ } }, [projectSettingsActive])
-  const [activeTab, setActiveTab] = useState<typeof tabs[number]['id']>(() => tabs.find(tab => tab.id === readPreference('mpw-active-tab'))?.id ?? (readPreference('mpw-source') === null ? 'maker' : 'program'))
+  const [activeTab, setActiveTab] = useState<typeof tabs[number]['id']>(() => tabs.find(tab => tab.id === readPreference('mpw-active-tab'))?.id ?? 'preparation')
   useEffect(() => { try { localStorage.setItem('mpw-active-tab', activeTab) } catch { /* タブは保存不可でも切り替えられる */ } }, [activeTab])
   const [dark, setDark] = useState(() => readPreference('mpw-theme') !== 'light')
   const [wrap, setWrap] = useState(() => readPreference('mpw-wrap') !== 'false')
@@ -86,7 +91,17 @@ export default function App() {
   const canMarkWorking = running && app.runningSource === app.source && currentMatchesRun && boardMatches
   const canFinish = ready && boardMatches && app.writtenSource === app.source && !!project.working && JSON.stringify(project.working.snapshot) === JSON.stringify(project.draft) && (app.info.bootOptionSupported || app.info.nvsFallbackSupported)
   const canConfirmStandalone = app.bootConfigured?.mode === 0 && app.bootConfigured.source === app.source && standaloneDraft !== null && JSON.stringify(standaloneDraft) === JSON.stringify(project.draft)
-  const openTab = (tab: typeof tabs[number]['id']) => { setActiveTab(tab); document.getElementById(`tab-${tab}`)?.focus() }
+  const openTab = (tab: typeof tabs[number]['id'] | 'maker') => {
+    const next = tab === 'maker' ? 'preparation' : tab
+    setActiveTab(next); document.getElementById(`tab-${next}`)?.focus()
+  }
+  const profile = preparation.context?.profile
+  // 自動保存の仮設定や古いAI設定を、復元したコードの確定設定と取り違えない。
+  const librarySettings: ProjectSettings | null = projectSettingsActive
+    ? project.draft.settings
+    : !loadedProject.sourceAuthoritative && profile && isLedModel(profile.ledModel) && typeof profile.ledCount === 'number' && typeof profile.ledPin === 'number' && typeof profile.maxBrightnessPercent === 'number'
+      ? { boardId: profile.boardId, firmwareVersion: profile.firmwareVersion ?? '', ledModel: profile.ledModel, ledCount: profile.ledCount, ledPin: profile.ledPin, maxBrightnessPercent: profile.maxBrightnessPercent }
+      : null
   const reportProjectError = (error: unknown) => setProjectNotice(error instanceof Error ? error.message : '作品を処理できませんでした。元の内容は変更していません。')
   const changeProject = (next: ArtworkProject) => {
     try { setProjectData(validateProject({ ...next, draft: { ...next.draft, source: app.source } })); setProjectSettingsActive(true); setProjectNotice('編集中です。「作品を保存」でこのブラウザに保存できます。') } catch (error) { reportProjectError(error) }
@@ -121,7 +136,7 @@ export default function App() {
       setProjectNotice('作品ファイルを書き出しました。ファイルにはコードと設定が含まれます。')
     } catch (error) { reportProjectError(error) }
   }
-  const replaceProject = (next: ArtworkProject) => {
+  const replaceProject = (next: ArtworkProject, onFailure?: (message: string) => void) => {
     // 上書き前の回復点を必ず確保する。保存不可なら読み込み・復元を中止する。
     try {
       const checked = validateProject(next)
@@ -141,7 +156,20 @@ export default function App() {
       setProjectSettingsActive(true)
       setProjectNotice('編集画面に読み込みました。機器には送っていません。「作品を保存」で確定できます。')
       return true
-    } catch (error) { reportProjectError(error); return false }
+    } catch (error) {
+      reportProjectError(error)
+      onFailure?.(error instanceof Error ? error.message : '作品を処理できませんでした。元の内容は変更していません。')
+      return false
+    }
+  }
+  const loadLibraryProgram = (saved: SavedProgram) => {
+    setProgramLibraryError('')
+    if (busy || !confirm(t('保存したプログラムを編集画面に読み込みます。現在のコードと設定は一時退避します。機器への書き込み・実行はしません。続けますか？'))) return false
+    const next = createProject()
+    // レシピ・動作確認・独自操作ボタンを別プログラムへ引き継がない。
+    const loaded = replaceProject({ ...next, name: saved.name, draft: { ...next.draft, source: saved.source, settings: saved.settings } }, setProgramLibraryError)
+    if (loaded) setStandaloneDraft(null)
+    return loaded
   }
   const importProject = async (file: File) => {
     const generation = ++importGeneration.current
@@ -158,19 +186,25 @@ export default function App() {
     try { replaceProject(restoreWorking(project)) } catch (error) { reportProjectError(error) }
   }
   const undoReplacement = () => {
+    if (busy) return
+    setProgramLibraryError('')
     try {
       const raw = readPreference('mpw-artwork-before-replace-v1')
       if (!raw) return
       const previous = validateProject(JSON.parse(raw))
       if (!confirm(t('直前の読み込み・復元前へ戻します。機器には送信しません。'))) return
-      replaceProject(previous)
-    } catch (error) { reportProjectError(error) }
+      replaceProject(previous, setProgramLibraryError)
+    } catch (error) {
+      reportProjectError(error)
+      setProgramLibraryError(error instanceof Error ? error.message : '作品を処理できませんでした。元の内容は変更していません。')
+    }
   }
   const runProject = () => {
     if (!canModifyProgram) return
     if (sourceMatches && !boardMatches) {
       setProjectNotice('接続した機器と、選択した機器が違います。正しい機器につなぎ直すか、最初のステップで機器を選び直し、配線を確認してください。')
-      openTab('maker')
+      setControllerPreparationNotice('接続した機器と保存したプログラムの機器設定が異なります。機器・LED設定と配線を確認してください。')
+      openTab('preparation')
       return
     }
     // 作成直後の候補は、プログラム画面から試す場合も毎回確認する。
@@ -262,7 +296,7 @@ export default function App() {
 
   return <main className="app">
     <header className="hero">
-      <div className="brand"><img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} width={48} height={48} alt="" aria-hidden="true" /><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("AIとフルカラーLED電飾をはじめよう")}</h1><p>{t(activeTab === 'maker' ? '機器を選んで、光る作品をひとつずつ作ろう。' : activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
+      <div className="brand"><img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} width={48} height={48} alt="" aria-hidden="true" /><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("AIとフルカラーLED電飾をはじめよう")}</h1><p>{t(activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
       <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={t(dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え')}>{t(dark ? '☀ 明るくする' : '🌙 暗くする')}</button>
       <label className="language-picker"><span>{t("表示言語")}</span><select aria-label={t("表示言語")} value={locale} onChange={event => { if (isLocale(event.target.value)) setLocale(event.target.value) }}><option value="ja">日本語</option><option value="en">English</option><option value="zh">简体中文</option></select></label>
     </header>
@@ -278,7 +312,7 @@ export default function App() {
       {tabs.map(tab => <button key={tab.id} id={`tab-${tab.id}`} role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)}><span aria-hidden="true">{tab.icon}</span> {t(tab.label)}</button>)}
     </div>
 
-    <div id="panel-maker" role="tabpanel" aria-labelledby="tab-maker" hidden={activeTab !== 'maker'}>
+    <div id="panel-maker" hidden>
       <MakerPanel project={project} onChange={changeProject} onSave={() => persistProject()} onExport={exportProject} onImport={importProject}
         onMarkWorking={markProjectWorking} onRestore={restoreProject} onUndoReplacement={undoReplacement} canUndoReplacement={canUndoReplacement}
         onPrepare={prepareStarter} onOpenProgram={() => openTab('program')} onOpenAI={() => {
@@ -317,6 +351,10 @@ export default function App() {
       <div className={`step ${ready || running ? 'active' : ''}`}><span>2</span><div><strong>{t("書く")}</strong><small>{t("下のプログラムを編集する")}</small></div></div>
       <div className={`step ${running ? 'active' : ''}`}><span>3</span><div><strong>{t("試す")}</strong><small>{t("「実行」で動きを確認する")}</small></div></div>
     </section>
+
+    <ProgramLibraryPanel source={app.source} settings={librarySettings} busy={busy} onLoad={loadLibraryProgram} onOpenPreparation={() => openTab('preparation')} />
+    {programLibraryError && <p role="alert" className="program-library-feedback error">{t(programLibraryError)}</p>}
+    {canUndoReplacement && <button type="button" className="quiet-button" disabled={busy} onClick={undoReplacement}>{t('直前の読み込み・復元を取り消す')}</button>}
 
     {preparation.context?.controllerStarter?.source === app.source && <section className="notice" aria-label={t('Webリモコンのお試し手順')}>
           <strong>{t('Webリモコンのお試しプログラム')}</strong>

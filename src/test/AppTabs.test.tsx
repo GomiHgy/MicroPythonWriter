@@ -7,11 +7,13 @@ import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
 import { ProgramResult } from '../components/ProgramResult'
 import { BootModePanel } from '../components/BootModePanel'
+import { ProgramLibraryPanel } from '../components/ProgramLibraryPanel'
 import type { BootFeedback } from '../types/bootFeedback'
 import { LicenseNotice } from '../components/LicenseNotice'
 import type { ProgramFeedback } from '../types/programFeedback'
 import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
 import type { ArtworkProject } from '../services/projects/types'
+import type { SavedProgram } from '../services/programs/ProgramLibrary'
 import type { AppError } from '../types'
 import { setLocale, translate } from '../i18n'
 
@@ -62,6 +64,7 @@ vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
 vi.mock('../components/AiPreparationPanel', () => ({ AiPreparationPanel: () => null }))
 vi.mock('../components/MakerPanel', () => ({ MakerPanel: () => null }))
+vi.mock('../components/ProgramLibraryPanel', () => ({ ProgramLibraryPanel: () => null }))
 vi.mock('../services/projects/StarterProgram', () => ({ buildStarterProgram: () => { if (harness.starterThrows) throw new Error('設定が不正です'); return harness.starterSource }, starterAvailability: () => ({ verified: harness.starterVerified, reason: '実機未確認です。' }) }))
 
 function render(): ReactNode {
@@ -88,6 +91,14 @@ function maker() { return find(render(), element => element.type === MakerPanel)
 function currentProject() { return maker().props.project as ArtworkProject }
 function editorContent(props: Record<string, unknown>) { return { ...props, onRun: undefined } }
 function aiPanel() { return find(render(), element => element.type === AiPreparationPanel) }
+function library() { return find(render(), element => element.type === ProgramLibraryPanel) }
+function undoLibraryLoad() { return find(byId(render(), 'panel-program'), element => element.type === 'button' && element.props.children === '直前の読み込み・復元を取り消す') }
+function savedProgram(): SavedProgram {
+  return {
+    id: 'saved-atom-program', name: '星空のランタン', description: '短押しで星空に切り替わるランタン', source: 'print("saved lantern")\n', savedAt: '2026-09-25T00:00:00.000Z',
+    settings: { boardId: 'atoms3lite', firmwareVersion: '2.5.3', ledModel: 'WS2812B-MINI', ledCount: 37, ledPin: 8, maxBrightnessPercent: 15 },
+  }
+}
 function controllerTrial() {
   const draft = structuredClone(createProject().draft)
   draft.settings.firmwareVersion = '2.4.1'
@@ -101,7 +112,7 @@ function assertNoUsbOperations() {
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
 }
 
-it.each((['maker', 'program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
+it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
   setLocale(locale)
   let view = render()
   event(byId(view, `tab-${tab}`), 'onClick')
@@ -342,19 +353,25 @@ it('ヘッダーに共有のフルカラーLEDアイコンを装飾画像とし�
   assertNoUsbOperations()
 })
 
-it('既存コードがない初回は作品づくりを入口にし、4つのタブを関連付ける', () => {
+it('初回はAIの準備を入口にし、作品づくりを隠して3つのタブを関連付ける', () => {
   const view = render()
-  expect(byId(view, 'tab-maker').props).toMatchObject({ role: 'tab', 'aria-selected': true, 'aria-controls': 'panel-maker', tabIndex: 0 })
+  expect(all(view, element => element.props.role === 'tab')).toHaveLength(3)
+  expect(all(view, element => element.props.id === 'tab-maker')).toHaveLength(0)
+  expect(byId(view, 'tab-preparation').props).toMatchObject({ role: 'tab', 'aria-selected': true, 'aria-controls': 'panel-preparation', tabIndex: 0 })
   expect(byId(view, 'tab-program').props).toMatchObject({ role: 'tab', 'aria-selected': false, 'aria-controls': 'panel-program', tabIndex: -1 })
   expect(byId(view, 'tab-controller').props).toMatchObject({ role: 'tab', 'aria-selected': false, 'aria-controls': 'panel-controller', tabIndex: -1 })
-  expect(byId(view, 'panel-maker').props).toMatchObject({ role: 'tabpanel', hidden: false, 'aria-labelledby': 'tab-maker' })
+  expect(byId(view, 'panel-maker').props.hidden).toBe(true)
+  expect(all(byId(view, 'panel-maker'), element => element.type === MakerPanel)).toHaveLength(1)
+  expect(byId(view, 'panel-preparation').props).toMatchObject({ role: 'tabpanel', hidden: false, 'aria-labelledby': 'tab-preparation' })
   expect(byId(view, 'panel-program').props).toMatchObject({ role: 'tabpanel', hidden: true, 'aria-labelledby': 'tab-program' })
   expect(byId(view, 'panel-controller').props).toMatchObject({ role: 'tabpanel', hidden: true, 'aria-labelledby': 'tab-controller' })
 })
 
-it('既存利用者の保存コードがある場合はプログラム画面から続ける', () => {
+it('旧形式の保存コードがあっても選択タブがなければAI準備を入口にし、コードは保持する', () => {
   harness.values.set('mpw-source', 'print("previous")')
-  expect(byId(render(), 'tab-program').props['aria-selected']).toBe(true)
+  expect(byId(render(), 'tab-preparation').props['aria-selected']).toBe(true)
+  expect(harness.values.get('mpw-source')).toBe('print("previous")')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
   assertNoUsbOperations()
 })
 
@@ -387,7 +404,7 @@ it('編集した下書きをコントローラ画面への往復後も保持す�
 })
 
 it('キーボードでタブを移動し、選んだ見出しへフォーカスを合わせる', () => {
-  const keys = [['ArrowRight', 'preparation'], ['ArrowRight', 'program'], ['ArrowRight', 'controller'], ['ArrowRight', 'maker'], ['ArrowLeft', 'controller'], ['Home', 'maker'], ['End', 'controller']]
+  const keys = [['ArrowRight', 'program'], ['ArrowRight', 'controller'], ['ArrowRight', 'preparation'], ['ArrowLeft', 'controller'], ['Home', 'preparation'], ['End', 'controller']]
   for (const [key, expected] of keys) {
     const preventDefault = vi.fn()
     event(find(render(), element => element.props.role === 'tablist'), 'onKeyDown', { key, preventDefault })
@@ -655,15 +672,17 @@ it.each(['button', 'editor'])('未確認候補をプログラム画面の%sか�
   expect(currentProject().working).toBeNull()
 })
 
-it.each([false, true].flatMap(verified => ['button', 'editor'].map(entry => [verified, entry] as const)))('確認済み=%sでも%sから機種不一致の生成コードを送らず作品画面で設定を案内する', (verified, entry) => {
+it.each([false, true].flatMap(verified => ['button', 'editor'].map(entry => [verified, entry] as const)))('確認済み=%sでも%sから機種不一致の生成コードを送らずAI準備で設定を案内する', (verified, entry) => {
   harness.starterVerified = verified; harness.programmer.source = harness.starterSource
   harness.programmer.info.boardId = 'atoms3lite'
   event(byId(render(), 'tab-program'), 'onClick')
   const view = render()
   if (entry === 'editor') event(find(view, element => element.type === CodeEditor), 'onRun')
   else event(find(view, element => element.props.className === 'run-button'), 'onClick')
-  expect(byId(render(), 'panel-maker').props.hidden).toBe(false)
+  expect(byId(render(), 'panel-preparation').props.hidden).toBe(false)
+  expect(byId(render(), 'panel-maker').props.hidden).toBe(true)
   expect(maker().props.notice).not.toBe('')
+  expect(aiPanel().props.controllerPreparationNotice).toContain('接続した機器')
   expect(harness.confirm).not.toHaveBeenCalled()
   expect(currentProject().working).toBeNull()
   assertNoUsbOperations()
@@ -994,15 +1013,27 @@ it('破損した下書きは自動保存で消さず、明示保存を断ると�
   assertNoUsbOperations()
 })
 
-it('最後のタブを保存して再表示し、未知の保存タブは初回導線へ戻す', () => {
+it.each(['preparation', 'program', 'controller'])('最後の%sタブを保存して再表示する', tab => {
   harness.runDependentEffects = true
-  event(byId(render(), 'tab-maker'), 'onClick'); render()
-  expect(harness.values.get('mpw-active-tab')).toBe('maker')
+  event(byId(render(), `tab-${tab}`), 'onClick'); render()
+  expect(harness.values.get('mpw-active-tab')).toBe(tab)
   harness.values.set('mpw-source', 'legacy saved source')
   harness.slots = []
-  expect(byId(render(), 'tab-maker').props['aria-selected']).toBe(true)
-  harness.values.set('mpw-active-tab', 'unknown'); harness.values.delete('mpw-source'); harness.slots = []
-  expect(byId(render(), 'tab-maker').props['aria-selected']).toBe(true)
+  expect(byId(render(), `tab-${tab}`).props['aria-selected']).toBe(true)
+  assertNoUsbOperations()
+})
+
+it.each(['maker', 'unknown'])('以前の%s保存タブはAI準備へ戻し、保存済みの作品は保持する', tab => {
+  const project = createProject(); project.name = '前の作品'; project.draft.source = 'print("keep saved artwork")'
+  harness.values.set('mpw-active-tab', tab)
+  harness.values.set(PROJECT_STORAGE_KEY, serializeProject(project))
+  const view = render()
+  expect(byId(view, 'tab-preparation').props['aria-selected']).toBe(true)
+  expect(byId(view, 'panel-maker').props.hidden).toBe(true)
+  expect(currentProject().name).toBe(project.name)
+  expect(harness.initialSources.at(-1)).toBe(project.draft.source)
+  expect(harness.values.get(PROJECT_STORAGE_KEY)).toBe(serializeProject(project))
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
   assertNoUsbOperations()
 })
 
@@ -1132,7 +1163,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('起動設
 })
 
 it('完成後の戻る導線はプログラムタブを開くのみで、コードや機器設定を変更しない', () => {
-  event(byId(render(), 'tab-maker'), 'onClick')
+  event(byId(render(), 'tab-preparation'), 'onClick')
   const previous = structuredClone(currentProject())
   event(maker(), 'onOpenProgram')
   expect(byId(render(), 'panel-program').props.hidden).toBe(false)
@@ -1165,4 +1196,250 @@ it.each(['saving', 'resetting', 'saved', 'failed'] as const)('起動設定の%s�
   } finally {
     delete programmer.bootFeedback
   }
+})
+
+it('プログラム保存欄には現在の編集コードを渡し、未選択の機器をNanoC6として扱わない', () => {
+  const view = render()
+  const panel = find(view, element => element.type === ProgramLibraryPanel)
+  expect(all(byId(view, 'panel-program'), element => element.type === ProgramLibraryPanel)).toEqual([panel])
+  expect(panel.props.source).toBe(harness.programmer.source)
+  expect(panel.props.settings).toBeNull()
+  expect(panel.props.busy).toBe(false)
+  harness.programmer.source = 'print("new edits")'
+  expect(library().props.source).toBe('print("new edits")')
+  assertNoUsbOperations()
+})
+
+it('AI準備で選んだ機器とLED設定を保存欄へ渡し、基準コードや認証情報は混ぜない', () => {
+  const settings = savedProgram().settings
+  harness.preparation.context = { profile: { ...settings, bleBaselineCode: 'private baseline', password: 'private data' }, errors: [] }
+  expect(library().props.settings).toEqual(settings)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('AI準備の機器設定が不完全なら保存欄は未選択として扱う', () => {
+  harness.preparation.context = { profile: { boardId: 'atoms3lite', ledCount: 37 }, errors: ['未入力です'] }
+  expect(library().props.settings).toBeNull()
+  assertNoUsbOperations()
+})
+
+it.each(['active', 'restored'])('%sの確定した作品設定がある場合、保存欄は古いAI準備の設定ではなく編集中の設定を使う', source => {
+  const draft = createProject(); draft.draft.settings = savedProgram().settings; draft.draft.source = 'print("current atom artwork")'
+  const previousContext = { profile: structuredClone(createProject().draft.settings), errors: [], bleBaselineCode: 'old baseline' }
+  harness.preparation.context = previousContext
+  if (source === 'restored') {
+    harness.values.set(PROJECT_DRAFT_STORAGE_KEY, serializeProject(draft))
+    harness.values.set('mpw-project-settings-active', 'true')
+  }
+  else event(maker(), 'onChange', draft)
+  expect(library().props.settings).toEqual(draft.draft.settings)
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(harness.preparation.context).toBe(previousContext)
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('保存欄から機器設定を選び直すリンクはAI準備へ移るだけでコードやUSBに触れない', () => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  const before = structuredClone(currentProject())
+  event(library(), 'onOpenPreparation')
+  expect(byId(render(), 'panel-preparation').props.hidden).toBe(false)
+  expect(byId(render(), 'panel-maker').props.hidden).toBe(true)
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('保存プログラムの読み込みを断ると編集中の内容・設定・ストレージを変更しない', () => {
+  const before = structuredClone(currentProject())
+  harness.confirm.mockReturnValue(false)
+  expect(event(library(), 'onLoad', savedProgram())).toBe(false)
+  expect(harness.confirm).toHaveBeenCalledOnce()
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each(['backup', 'draft'])('保存プログラム読込時の%s保存に失敗したら元の編集内容を保持する', stage => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  const before = structuredClone(currentProject())
+  const source = harness.programmer.source
+  harness.setItem.mockImplementation((key: string, value: string) => {
+    if (key === (stage === 'backup' ? 'mpw-artwork-before-replace-v1' : PROJECT_DRAFT_STORAGE_KEY)) throw new Error('quota')
+    harness.values.set(key, value)
+  })
+  expect(event(library(), 'onLoad', savedProgram())).toBe(false)
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.source).toBe(source)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  const view = render()
+  expect(byId(view, 'panel-program').props.hidden).toBe(false)
+  const alert = find(byId(view, 'panel-program'), element => element.props.role === 'alert' && element.props.className === 'program-library-feedback error')
+  expect(alert.props.children).toContain(stage === 'backup' ? 'quota' : '編集中の作品をブラウザに保存できませんでした')
+  assertNoUsbOperations()
+})
+
+it('保存プログラムはコード・機器設定だけを編集画面へ復元し、旧作品の動作OK・演出・ボタンと混同しない', () => {
+  const previous = createProject()
+  previous.name = '別の保存作品'
+  previous.draft.source = harness.programmer.source
+  previous.draft.recipe.wireless = true
+  previous.draft.recipe.modes[0].label = '古い光り方'
+  previous.draft.remoteButtons = [{ kind: 'action', id: 'OLD', label: '古い演出', icon: 'star' }]
+  harness.values.set(PROJECT_STORAGE_KEY, serializeProject(markWorking(previous)))
+  const context = { profile: structuredClone(previous.draft.settings), errors: [], bleBaselineCode: 'do not replace this baseline' }
+  harness.preparation.context = context
+  event(byId(render(), 'tab-program'), 'onClick')
+  const before = structuredClone(currentProject())
+  const existingSavedProject = harness.values.get(PROJECT_STORAGE_KEY)
+  const entry = savedProgram()
+  expect(event(library(), 'onLoad', entry)).toBe(true)
+  const loaded = currentProject()
+  expect(loaded.name).toBe(entry.name)
+  expect(loaded.draft.source).toBe(entry.source)
+  expect(loaded.draft.settings).toEqual(entry.settings)
+  expect(loaded.draft.recipe).toEqual(createProject().draft.recipe)
+  expect(loaded.draft.remoteButtons).toEqual([])
+  expect(loaded.working).toBeNull()
+  expect(harness.programmer.setSource).toHaveBeenCalledExactlyOnceWith(entry.source)
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!)).toEqual(before)
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft).toEqual(loaded.draft)
+  expect(harness.values.get(PROJECT_STORAGE_KEY)).toBe(existingSavedProject)
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(harness.preparation.context).toBe(context)
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  expect(byId(render(), 'panel-program').props.hidden).toBe(false)
+  expect(library().props.settings).toEqual(entry.settings)
+  assertNoUsbOperations()
+})
+
+it.each(['writing', 'stopping', 'connecting', 'resetting'])('USBの%s中は保存欄をbusyにし、読込ハンドラが直接呼ばれても変更を拒否する', state => {
+  harness.programmer.state = state
+  const before = structuredClone(currentProject())
+  const panel = library()
+  expect(panel.props.busy).toBe(true)
+  expect(event(panel, 'onLoad', savedProgram())).toBe(false)
+  expect(currentProject()).toEqual(before)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('読込後の再表示でも保存プログラムの機器設定を保持し、古いAI設定を修正依頼へ混ぜない', () => {
+  const entry = savedProgram()
+  harness.preparation.context = { profile: structuredClone(createProject().draft.settings), errors: [] }
+  harness.runDependentEffects = true
+  expect(event(library(), 'onLoad', entry)).toBe(true)
+  render()
+  expect(harness.values.get('mpw-project-settings-active')).toBe('true')
+  harness.slots = []
+  const panel = library()
+  expect(harness.initialSources.at(-1)).toBe(entry.source)
+  expect(harness.sourceAuthorities.at(-1)).toBe(true)
+  expect(panel.props.settings).toEqual(entry.settings)
+  expect(harness.contexts.at(-1)).toBeNull()
+  expect(harness.preparation.adoptProjectSettings).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it.each([null, 'false'])('仮設定の下書きを再表示してもactive=%sならAI設定・Nano設定を確定情報として保存欄へ出さない', active => {
+  harness.runDependentEffects = true
+  const selected = savedProgram().settings
+  harness.preparation.context = { profile: selected, errors: [] }
+  expect(library().props.settings).toEqual(selected)
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft.settings.boardId).toBe('m5nanoc6')
+  if (active === null) harness.values.delete('mpw-project-settings-active')
+  else harness.values.set('mpw-project-settings-active', active)
+  harness.slots = []
+  expect(library().props.settings).toBeNull()
+  expect(harness.sourceAuthorities.at(-1)).toBe(true)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.preparation.context).toEqual({ profile: selected, errors: [] })
+  assertNoUsbOperations()
+})
+
+it('保存設定の出自フラグを保存できなかった再表示では、コードは復元して設定は手動確認にする', () => {
+  harness.runDependentEffects = true
+  harness.setItem.mockImplementation((key: string, value: string) => {
+    if (key === 'mpw-project-settings-active') throw new Error('storage unavailable')
+    harness.values.set(key, value)
+  })
+  const entry = savedProgram()
+  expect(event(library(), 'onLoad', entry)).toBe(true)
+  expect(library().props.settings).toEqual(entry.settings)
+  expect(harness.values.has('mpw-project-settings-active')).toBe(false)
+  harness.slots = []
+  expect(library().props.settings).toBeNull()
+  expect(harness.initialSources.at(-1)).toBe(entry.source)
+  expect(currentProject().draft.settings).toEqual(entry.settings)
+  assertNoUsbOperations()
+})
+
+it('プログラム画面から読込を取り消し、退避したコードと設定を復元するが機器へは送らない', () => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  const previous = structuredClone(currentProject())
+  expect(event(library(), 'onLoad', savedProgram())).toBe(true)
+  const next = structuredClone(currentProject())
+  harness.programmer.setSource.mockClear()
+  harness.confirm.mockClear()
+  event(undoLibraryLoad(), 'onClick')
+  expect(currentProject()).toEqual(previous)
+  expect(harness.programmer.setSource).toHaveBeenCalledExactlyOnceWith(previous.draft.source)
+  expect(harness.confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('機器には送信しません'))
+  expect(JSON.parse(harness.values.get('mpw-artwork-before-replace-v1')!)).toEqual(next)
+  expect(byId(render(), 'panel-program').props.hidden).toBe(false)
+  assertNoUsbOperations()
+})
+
+it('プログラム画面の取り消しを断ると退避データも編集内容も保持する', () => {
+  expect(event(library(), 'onLoad', savedProgram())).toBe(true)
+  const current = structuredClone(currentProject())
+  const checkpoint = harness.values.get('mpw-artwork-before-replace-v1')
+  harness.programmer.setSource.mockClear()
+  harness.setItem.mockClear()
+  harness.confirm.mockReturnValue(false)
+  event(undoLibraryLoad(), 'onClick')
+  expect(currentProject()).toEqual(current)
+  expect(harness.values.get('mpw-artwork-before-replace-v1')).toBe(checkpoint)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('通信処理中はプログラム画面の取り消しを無効化し、ハンドラの直接呼出しも拒否する', () => {
+  expect(event(library(), 'onLoad', savedProgram())).toBe(true)
+  const current = structuredClone(currentProject())
+  harness.programmer.state = 'writing'
+  harness.programmer.setSource.mockClear()
+  harness.setItem.mockClear()
+  harness.confirm.mockClear()
+  const undo = undoLibraryLoad()
+  expect(undo.props.disabled).toBe(true)
+  event(undo, 'onClick')
+  expect(currentProject()).toEqual(current)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  expect(harness.setItem).not.toHaveBeenCalled()
+  expect(harness.confirm).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('取り消し時の退避失敗もプログラム画面に表示し、編集内容を変更しない', () => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  expect(event(library(), 'onLoad', savedProgram())).toBe(true)
+  const current = structuredClone(currentProject())
+  harness.programmer.setSource.mockClear()
+  harness.setItem.mockImplementation(() => { throw new Error('cannot save backup') })
+  event(undoLibraryLoad(), 'onClick')
+  const view = render()
+  expect(byId(view, 'panel-program').props.hidden).toBe(false)
+  expect(find(byId(view, 'panel-program'), element => element.props.role === 'alert' && element.props.className === 'program-library-feedback error').props.children).toBe('cannot save backup')
+  expect(currentProject()).toEqual(current)
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+  assertNoUsbOperations()
 })

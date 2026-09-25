@@ -39,6 +39,7 @@ export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareContro
   }
 
   return <div className="ai-preparation">
+    {controllerPreparationNotice && <p className="notice warn" role="alert">{t(controllerPreparationNotice)}</p>}
     <section className="panel ai-start">
       <div className="section-heading"><div><p className="eyebrow">{t('はじめてでも大丈夫')}</p><h2>{t('好きなAIと、光り方を考えよう')}</h2><p>{t('機器を選び、使うLEDとファームウェアを設定しよう。準備文をAIへ貼り付ければ、相談を始められます。')}</p></div><span className="ai-sparkle" aria-hidden="true">✦</span></div>
       <label className="ai-kit-label" htmlFor="ai-kit">{t('使う機器')}</label>
@@ -72,7 +73,6 @@ export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareContro
       {context?.errors.length ? <div className="notice warn"><strong>{t('設定を確認してください')}</strong><p>{t('下の項目を入力・確認すると、AIに渡す準備文を作れます。')}</p><details><summary>{t('確認する項目（{count}件）', { count: context.errors.length })}</summary><ul>{context.errors.map(error => <li key={error}>{t(error)}</li>)}</ul></details></div> : null}
       {profile?.features.controller && <section className="ai-controller-guide" aria-labelledby="ai-controller-heading">
         <h3 id="ai-controller-heading">{t('Webリモコンを使う準備')}</h3>
-        {controllerPreparationNotice && <p className="notice warn" role="alert">{t(controllerPreparationNotice)}</p>}
         {context?.bleSource === 'registered' ? <>
           <p>{t('登録済みのプログラムを土台に、AIと光り方・操作を相談できます。対応している通信仕様はそのまま使います。')}</p>
           <div className="ai-secondary-actions"><button className="quiet-button" onClick={onOpenProgram}>{t('プログラム画面を開く')}</button><button className="quiet-button" onClick={onOpenController} disabled={!onOpenController}>{t('Webリモコンを開く')}</button></div>

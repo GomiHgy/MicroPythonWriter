@@ -1,0 +1,37 @@
+.program-library { margin: 16px 0; padding: 20px; }
+.program-library-heading, .program-library-list-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.program-library-heading h2 { font-size: 1.13rem; margin: 0; }
+.program-library-note, .program-library-date { font-size: .86rem; color: #526b84; line-height: 1.65; }
+.program-library-feedback { padding: 13px 16px; border: 1px solid #91b7a1; border-radius: 10px; overflow-wrap: anywhere; }
+.program-library-feedback.success { color: #165438; background: #e6f6ec; }
+.program-library-feedback.neutral { border-color: #a7bbce; }
+.program-library-feedback.error { color: #882e28; background: #fff0ed; border-color: #c95a52; }
+.program-library-feedback p { margin: 8px 0; }
+.program-library-form { margin: 20px 0; padding: 18px; border: 2px solid #619ccd; border-radius: 12px; background: #f4f9fe; }
+.program-library-form h3 { margin-top: 0; }
+.program-library-form label { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-weight: 650; }
+.program-library-form input, .program-library-form select, .program-library-form textarea { width: 100%; min-width: 0; padding: 11px; border-radius: 8px; border: 1px solid #9cafc2; background: #fff; color: #152238; font: inherit; font-weight: 400; }
+.program-library-form textarea { resize: vertical; }
+.program-library-form fieldset { min-width: 0; margin: 20px 0; padding: 12px 16px; border: 1px solid #b3c8d9; border-radius: 10px; }
+.program-library-form legend { padding: 0 6px; font-weight: 700; }
+.program-library-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }
+.program-library-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.program-library-list-heading { margin-top: 20px; }
+.program-library-list-heading h3 { margin: 0; font-size: 1.04rem; }
+.program-library-list-heading h3 span { font-weight: 400; }
+.program-library-empty { padding: 20px; border: 1px dashed #a7bbce; border-radius: 10px; }
+.program-library-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 16px 0 0; padding: 0; list-style: none; }
+.program-library-item { padding: 18px; border: 1px solid #b9cddd; border-radius: 12px; background: #f8fbfe; min-width: 0; }
+.program-library-item h4 { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
+.program-library-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.program-library-item dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px 0; border-top: 1px solid #d6e0e9; border-bottom: 1px solid #d6e0e9; }
+.program-library-item dt { color: #526b84; font-size: .8rem; }
+.program-library-item dd { margin: 4px 0 0; font-weight: 650; overflow-wrap: anywhere; }
+:root[data-theme=dark] .program-library-note, :root[data-theme=dark] .program-library-date, :root[data-theme=dark] .program-library-item dt { color: #bbcee0; }
+:root[data-theme=dark] .program-library-form, :root[data-theme=dark] .program-library-item { background: #1b2c3d; border-color: #52728e; }
+:root[data-theme=dark] .program-library-form input, :root[data-theme=dark] .program-library-form select, :root[data-theme=dark] .program-library-form textarea { background: #121f2c; color: #eef5ff; border-color: #58718c; }
+:root[data-theme=dark] .program-library-form fieldset, :root[data-theme=dark] .program-library-item dl { border-color: #40576c; }
+:root[data-theme=dark] .program-library-feedback.success { color: #d1f8e2; background: #173d2e; border-color: #538f70; }
+:root[data-theme=dark] .program-library-feedback.error { color: #ffe2dd; background: #462727; border-color: #b75b51; }
+@media (max-width: 800px) { .program-library-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .program-library-list { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 500px) { .program-library { padding: 16px; } .program-library-form { padding: 12px; } .program-library-form fieldset { padding: 10px; } .program-library-fields { grid-template-columns: minmax(0, 1fr); } .program-library-actions > button { flex: 1 1 100%; } }
