@@ -1,6 +1,10 @@
 .program-library { margin: 16px 0; padding: 20px; }
 .program-library-heading, .program-library-list-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.program-library-heading h2 { font-size: 1.13rem; margin: 0; }
+.program-library-summary { cursor: pointer; }
+.program-library-summary h2 { display: inline-block; vertical-align: middle; font-size: 1.13rem; margin: 0 0 0 8px; }
+.program-library-summary .eyebrow { display: block; font-size: .86rem; }
+.program-library-body { margin-top: 16px; }
+.program-library-heading { justify-content: flex-end; }
 .program-library-note, .program-library-date { font-size: .86rem; color: #526b84; line-height: 1.65; }
 .program-library-feedback { padding: 13px 16px; border: 1px solid #91b7a1; border-radius: 10px; overflow-wrap: anywhere; }
 .program-library-feedback.success { color: #165438; background: #e6f6ec; }

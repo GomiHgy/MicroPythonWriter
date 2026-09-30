@@ -71,8 +71,10 @@ export function ProgramLibraryPanel(props: ProgramLibraryPanelProps) {
       setNotice({ error: false, message: '保存リストから削除しました。編集中のコードと機器のプログラムは変更していません。' })
     } catch (error) { fail(error) }
   }
-  return <section className="program-library panel" aria-labelledby="program-library-title">
-    <div className="program-library-heading"><div><p className="eyebrow">{t('あとから続きを作るために')}</p><h2 id="program-library-title">{t('プログラムを保存')}</h2></div>
+  return <details className="program-library panel" aria-labelledby="program-library-title">
+    <summary className="program-library-summary"><h2 id="program-library-title"><span className="eyebrow">{t('あとから続きを作るために')}</span>{t('プログラムを保存')}</h2></summary>
+    <div className="program-library-body">
+    <div className="program-library-heading">
       <button type="button" className="primary" disabled={!!library.error || !props.source.trim()} onClick={() => { if (!library.error && props.source.trim()) openForm() }}>{t('このプログラムを保存')}</button></div>
     <p className="program-library-note">{t('名前・説明・機器とLEDの設定を付けて、このブラウザに保存します。外部への送信や機器への書き込みは行いません。ブラウザのデータを消すと保存内容も消えます。')}</p>
     {!props.source.trim() && <p>{t('先に編集画面へプログラムを入力してください。')}</p>}
@@ -107,5 +109,6 @@ export function ProgramLibraryPanel(props: ProgramLibraryPanelProps) {
       <p className="program-library-date">{t('保存日時')} <time dateTime={program.savedAt}>{new Date(program.savedAt).toLocaleString(locale)}</time></p>
       <div className="program-library-actions"><button type="button" disabled={props.busy} onClick={() => read(program)}>{t('編集画面に読み込む')}</button><button type="button" className="quiet-button" onClick={() => remove(program)}>{t('保存リストから削除')}</button></div>
     </li>)}</ul>
-  </section>
+    </div>
+  </details>
 }

@@ -57,6 +57,29 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('プログラムのブラウザ保存UI', () => {
+  it('初期状態は閉じたネイティブ折りたたみで、見出しから保存欄全体を開ける', () => {
+    const view = render()
+    expect(view.type).toBe('details')
+    expect(view.props.open).toBeUndefined()
+    const summary = all(view, element => element.type === 'summary')
+    expect(summary).toHaveLength(1)
+    expect(text(summary[0])).toContain('プログラムを保存')
+    expect(all(summary[0], element => element.type === 'button')).toHaveLength(0)
+    expect(view.props.onToggle).toBeUndefined()
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+    expect(props.onLoad).not.toHaveBeenCalled()
+  })
+
+  it('折りたたみ内容をアンマウントせず、再描画しても入力途中の名前と説明を保持する', () => {
+    click('このプログラムを保存'); fillName()
+    const view = render()
+    expect(view.type).toBe('details')
+    expect(all(view, element => element.type === 'form')).toHaveLength(1)
+    expect(input('library-name').props.value).toBe('魔法の杖')
+    expect(input('library-description').props.value).toBe('ボタンで光る\nイベント用')
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+
   it('空一覧と保存先・機器へ送信しない説明を表示し、表示だけでは保存しない', () => {
     const result = text(render())
     expect(result).toContain('保存したプログラムはまだありません')
