@@ -1,3 +1,5 @@
+import { MAX_CONTROL_ACTIONS, MAX_CONTROL_MODES, MAX_NAMED_CONTROLS } from '../../config/bleLimits'
+
 export const NANO_LED_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 export const NANO_LED_RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'
 export const NANO_LED_TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'
@@ -42,8 +44,8 @@ const invalidLabelCharacters = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u
 const isPercentage = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100
 const isControlId = (value: unknown): value is string => typeof value === 'string' && controlIdPattern.test(value) && !reservedControlIds.has(value)
 
-function parseChoices(value: unknown, minimum: number): readonly LedControlChoice[] | null {
-  if (!Array.isArray(value) || value.length < minimum || value.length > 8) return null
+function parseChoices(value: unknown, minimum: number, maximum: number): readonly LedControlChoice[] | null {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) return null
   const choices: LedControlChoice[] = []
   const ids = new Set<string>()
   for (const entry of value) {
@@ -89,9 +91,9 @@ export function parseLedStatus(text: string): LedStatus | null {
     if (!value.controls || typeof value.controls !== 'object' || Array.isArray(value.controls)) return null
     const controls = value.controls as Record<string, unknown>
     if (typeof controls.speed !== 'boolean') return null
-    const modes = parseChoices(controls.modes, 1)
-    const actions = parseChoices(controls.actions, 0)
-    if (!modes || !actions || !modes.some(choice => choice.id === value.mode)) return null
+    const modes = parseChoices(controls.modes, 1, MAX_CONTROL_MODES)
+    const actions = parseChoices(controls.actions, 0, MAX_CONTROL_ACTIONS)
+    if (!modes || !actions || modes.length + actions.length > MAX_NAMED_CONTROLS || !modes.some(choice => choice.id === value.mode)) return null
     if (value.action !== null && (typeof value.action !== 'string' || !actions.some(choice => choice.id === value.action))) return null
     if (value.action !== null && value.playback !== 'playing') return null
     if (value.playback === 'off' && /[^0]/.test(pixels)) return null

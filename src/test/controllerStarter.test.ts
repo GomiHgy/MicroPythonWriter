@@ -4,6 +4,7 @@ import { buildControllerStarter } from '../services/workshop/ControllerStarter'
 import { buildStarterProgram, providerVerifiedStarters, starterAvailability } from '../services/projects/StarterProgram'
 import { cloneWorkshopProfile, LED_MODELS, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import runtime from '../../firmware/starter/runtime.py?raw'
+import { MAX_NAMED_CONTROLS, STARTER_FIXED_ACTION_COUNT } from '../config/bleLimits'
 
 function profile(): WorkshopProfile {
   return {
@@ -68,6 +69,23 @@ describe('bundled Web controller starter candidate', () => {
     expect(source).toContain('"led_pin":3')
     expect(source).toContain('"max_brightness":12.5')
     expect(source).toContain('"firmware":"MY-DEVICE-VERSION"')
+  })
+
+  it('embeds the same bounded, negotiated-MTU runtime and counts its fixed action without touching stored code', () => {
+    const input = profile()
+    const before = structuredClone(input)
+    const { recipe, source } = buildControllerStarter(input)
+    expect(recipe.modes.length + STARTER_FIXED_ACTION_COUNT).toBeLessThanOrEqual(MAX_NAMED_CONTROLS)
+    expect(source).toContain(`MAX_NAMED_CONTROLS = ${MAX_NAMED_CONTROLS}`)
+    expect(source).toContain('PREFERRED_ATT_MTU = 247')
+    expect(source).toContain('DEFAULT_NOTIFY_BYTES = 20')
+    expect(source).toContain('MAX_NOTIFY_BYTES = 244')
+    expect(source).toContain('_IRQ_MTU_EXCHANGED = 21')
+    expect(source).toContain('self.offset += len(chunk)')
+    expect(source).toContain('"controls": self.controls')
+    expect(source.endsWith(runtime)).toBe(true)
+    expect(input).toEqual(before)
+    expect(providerVerifiedStarters).toEqual([])
   })
 
   it('disables every button gesture when the feature is not selected, but keeps wireless controls', () => {

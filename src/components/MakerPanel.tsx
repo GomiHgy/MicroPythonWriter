@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { boardDefinitions, getBoardDefinition, type BoardId } from '../config/boards'
+import { MAX_CONTROL_MODES, MAX_NAMED_CONTROLS, MAX_WIRELESS_STARTER_MODES } from '../config/bleLimits'
 import { useLocale } from '../i18n'
 import { LED_MODELS } from '../services/workshop/WorkshopProfile'
 import { effectIcons, type ArtworkProject, type ProjectEffect, type ProjectRecipe, type ProjectSettings } from '../services/projects/types'
@@ -85,8 +86,10 @@ export function MakerPanel(props: MakerPanelProps) {
     setStep({ seen: false, tested: false, unplugged: false })
   }
   const updateMode = (id: string, patch: Partial<ProjectEffect>) => updateRecipe({ modes: recipe.modes.map(mode => mode.id === id ? { ...mode, ...patch } : mode) })
+  // 無線OFFでも保存済みアクションの外観は消さず保持する。自動同期するモード外観で保存上限を超えない。
+  const modeLimit = Math.min(recipe.wireless ? MAX_WIRELESS_STARTER_MODES : MAX_CONTROL_MODES, MAX_NAMED_CONTROLS - project.draft.remoteButtons.filter(button => button.kind === 'action').length)
   const addMode = () => {
-    if (recipe.modes.length >= 8) return
+    if (recipe.modes.length >= modeLimit) return
     let index = 1
     while (recipe.modes.some(mode => mode.id === `M${index}`)) index++
     updateRecipe({ modes: [...recipe.modes, { id: `M${index}`, label: t('光り方 {number}', { number: index }), icon: 'star', kind: 'solid', color: '#ffcc00', speed: 50, repeats: 0, endState: 'hold' }] })
@@ -157,7 +160,8 @@ export function MakerPanel(props: MakerPanelProps) {
           <label>{t('繰り返し（0はずっと）')}<input type="number" min="0" max="100" value={mode.repeats} onChange={event => updateMode(mode.id, { repeats: Number(event.target.value) })} /></label>
           <label>{t('終わったら')}<select value={mode.endState} onChange={event => updateMode(mode.id, { endState: event.target.value as ProjectEffect['endState'] })}><option value="hold">{t('最後の光を残す')}</option><option value="off">{t('消灯する')}</option></select></label>
         </div><button disabled={recipe.modes.length <= 1} onClick={() => { if (recipe.modes.length > 1) updateRecipe({ modes: recipe.modes.filter(item => item.id !== mode.id) }) }}>{t('この光り方を削除')}</button></fieldset>)}
-        <button disabled={recipe.modes.length >= 8} onClick={addMode}>{t('光り方を追加（最大8つ）')}</button>
+        <button disabled={recipe.modes.length >= modeLimit} onClick={addMode}>{t('光り方を追加（最大{count}種類）', { count: modeLimit })}</button>
+        {recipe.wireless && <p className="maker-note">{t('この無線対応候補は「キラッと光る」1個も登録するため、光り方は15種類までです。合わせて最大16個です。')}</p>}
         <button className="primary maker-next" disabled={recipe.modes.some(mode => !mode.label.trim())} onClick={() => { if (recipe.modes.every(mode => mode.label.trim())) setStep({ stage: 4 }) }}>{t('次へ：操作を選ぶ')}</button>
       </>}
       {stage === 4 && <>

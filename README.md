@@ -252,6 +252,10 @@ Webは演出中も押下ごとにACTIONを1回送るが、再スタート・無�
 
 ### 対応環境と困ったとき
 
+NanoLED v2の作品専用ボタンは、モードとアクションの**合計16個まで**。共通の再生・停止・消灯・状態取得やスライダーは別枠。同梱の無線候補にはSPARKLEが1個あるため、モードは最大15個。AIとの相談でも希望を数え、超える場合は勝手に削らず整理案を確認する。[準備文の件数確認](docs/ai-preparation.md#webリモコンをまず試す)を参照。
+
+新しい候補の状態通知は、接続直後は20バイトずつ送り、実際にMTU交換を確認できた接続だけ最大244バイトへ拡大する。交換できなくても20バイトで継続する。旧20バイト送信プログラムは引き続き使えるが、更新前のWeb側は9個以上のモードに対応しない。**Web更新だけでは機器内のmain.pyは変わらない**ので、作品を保存したうえで対応コードを準備し、明示的に書き込み・実行 → コントローラで接続 → 受信状態と実物のLEDを確認する。既存作品・登録済み基準コード・実機確認記録は自動更新しない。[通信仕様](docs/ble-protocol.md#分割と頻度)と[実機未確認の受入項目](docs/starter-validation.md#mtu可変notifyと16操作の受入)も参照。
+
 Windows/macOSのChromeまたは対応するデスクトップEdge、AndroidのChromeで利用する。iPhone/iPadの標準ブラウザ、Safari、Firefoxの標準機能は対象外。HTTPSまたは `localhost`、OSのBluetooth有効化とブラウザへの許可が必要。アプリは実際のAPI対応も確認する。詳細は [Chromeの公式ガイド](https://developer.chrome.com/docs/capabilities/bluetooth) と [Web Bluetoothの実装状況](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md) を参照。
 
 - 機器が見つからない：対応プログラムが実行中か確認する。ほかのスマートフォンやアプリが接続していれば、そちらを切断する。

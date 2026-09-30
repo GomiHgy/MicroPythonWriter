@@ -627,6 +627,22 @@ describe('作品専用の無線リモコン v2', () => {
     expect(content(view)).toContain('この作品には、一度だけの演出はありません。')
   })
 
+  it.each([[16, 0], [1, 15], [10, 1]])('機器から届いた%dモード・%dアクションを全て表示して末尾の操作も送信する', (modes, actions) => {
+    modern({ mode: 'M0', action: null, controls: { speed: true,
+      modes: Array.from({ length: modes }, (_, i) => ({ id: `M${i}`, label: `光り方[${i}]` })),
+      actions: Array.from({ length: actions }, (_, i) => ({ id: `A${i}`, label: `演出[${i}]` })),
+    } })
+    const view = panel()
+    for (let i = 0; i < modes; i++) expect(button(view, `光り方[${i}]`).props.disabled).toBe(false)
+    for (let i = 0; i < actions; i++) expect(button(view, `演出[${i}]`).props.disabled).toBe(false)
+    event(button(view, `光り方[${modes - 1}]`), 'onClick')
+    expect(harness.send).toHaveBeenLastCalledWith(`MODE M${modes - 1}`)
+    if (actions) {
+      event(button(panel(), `演出[${actions - 1}]`), 'onClick')
+      expect(harness.send).toHaveBeenLastCalledWith(`ACTION A${actions - 1}`)
+    }
+  })
+
   it('受信が途絶えたら作品専用操作も無効にするが消灯と再受信は残す', () => {
     modern({ playback: 'paused' })
     panel()

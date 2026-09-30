@@ -6,6 +6,17 @@ import { serviceMessages } from '../../i18n/serviceMessages'
 import { createWorkshopContext, type WorkshopContext } from './WorkshopRules'
 import { buildMemoryPressureRules } from './MemoryPressureRules'
 import { buildLedTransmissionRules } from './LedTransmissionRules'
+import { nanoLedTransportRules, nanoLedV2Rules } from '../../i18n/promptMessages'
+
+function unknownProtocolRules(locale: Locale) {
+  const guards = {
+    ja: '## 通信仕様が未確認の場合の適用範囲\n以下のNanoLEDルールは、記録された修正対象main.pyがNanoLEDを使用していると確認できた部分だけに適用する。BLE未使用・独自プロトコルなら新規導入せず、NanoLED v1なら共通送信条件のみ適用してv2へ移行しない。続くv2仕様は既存main.pyがv2の場合だけの修正条件であり、機能追加の依頼ではない。登録済み基準コード・作品・確認記録は自動変更しない。',
+    en: '## Scope when the communication protocol is unconfirmed\nApply the following NanoLED rules only where the captured repair-target main.py is confirmed to use NanoLED. Do not introduce BLE/NanoLED into non-BLE or custom-protocol code. For v1 use only the shared transport rules, never upgrade to v2. The v2 section is conditional on existing v2 code, not a request to add features. Do not automatically modify registered baselines, artwork or verification records.',
+    zh: '## 通信协议未确认时的适用范围\n以下 NanoLED 规则仅适用于已确认修复对象 main.py 使用 NanoLED 的部分。未使用 BLE 或使用独自协议时不新引入 BLE/NanoLED；v1 只应用共用传输规则，不升级为 v2。后面的 v2 规范仅为既有 v2 代码的修复条件，不是添加功能的要求。不自动修改已登记基准代码、作品或验证记录。',
+  }
+  // v1の修正にv2のカタログや操作を追加させないよう、適用範囲を明記する。
+  return `${guards[locale]}\n\n${nanoLedTransportRules[locale]}\n\n${nanoLedV2Rules[locale].replace(nanoLedTransportRules[locale], '')}`
+}
 
 const sensitive = /(?:password|passwd|pswd|api_key|token|secret|ssid)\s*=\s*[^\n#]+/i
 export const hasSensitiveAssignments = (source: string) => sensitive.test(source)
@@ -125,7 +136,7 @@ ${fenced(error.traceback)}
 ## ${text.log}
 ${fenced(terminalLog)}
 
-${codeSection}${workshopSection}${context ? '' : `\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}`}
+${codeSection}${workshopSection}${context ? '' : `\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}\n\n${unknownProtocolRules(locale)}`}
 
 ## ${text.constraints}
 ${text.rules}

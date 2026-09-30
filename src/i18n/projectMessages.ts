@@ -1,6 +1,7 @@
 import type { MessageCatalog } from './types'
 
 export const projectMessages: MessageCatalog = {
+  'キラッと光る': { en: 'Sparkle', zh: '闪光' },
   'このプログラムは、設定と一致する提供側の実機確認記録があります。': { en: 'This exact program has a provider hardware-test record matching the settings.', zh: '此程序具有与设置一致的提供方实机验证记录。' },
   '編集中の作品を読み込めませんでした。元データは変更していません。保存済みの作品があれば表示します。上書き前に元データを確認してください。': { en: 'Could not load the draft project. Original data was left untouched. A saved project is shown if available. Check the original data before overwriting it.', zh: '无法读取编辑中的作品，原始数据未更改。如有已保存作品将予以显示。覆盖前请检查原始数据。' },
   '編集中の作品をブラウザに保存できませんでした。作品ファイルを書き出して保管してください。': { en: 'Could not save the draft project in this browser. Export your project to a file for safekeeping.', zh: '无法将编辑中的作品保存到浏览器。请导出作品文件并妥善保管。' },
@@ -40,7 +41,9 @@ export const projectMessages: MessageCatalog = {
   '外部LEDのGPIOを確認してください。': { en: 'Check the external LED GPIO.', zh: '请确认外部LED的GPIO。' },
   '外部LEDのGPIOが内蔵LEDまたはボタンと重複しています。': { en: 'The external LED GPIO conflicts with the onboard LED or button.', zh: '外部LED的GPIO与内置LED或按钮冲突。' },
   '最大輝度は0より大きく100以下で指定してください。': { en: 'Set the maximum brightness above 0 and no higher than 100%.', zh: '最大亮度必须大于0且不超过100%。' },
-  '光り方は1〜8種類で指定してください。': { en: 'Add between 1 and 8 lighting modes.', zh: '请设置1至8种灯光模式。' },
+  '光り方は1〜16種類で指定してください。': { en: 'Add between 1 and 16 lighting modes.', zh: '请设置1至16种灯光模式。' },
+  '名前付き操作と全LEDの状態が4096バイトを超えます。名前の短縮などを相談して設定を見直してください。操作やLEDは自動では省略しません。': { en: 'The named controls and full LED state exceed 4096 bytes. Review the settings, for example by agreeing on shorter names. No controls or LEDs will be omitted automatically.', zh: '命名操作与全部LED状态超过4096字节。请协商缩短名称等方式后调整设置，不会自动省略操作或LED。' },
+  'この無線対応候補は「キラッと光る」1個を含めて最大16個です。光り方を15種類以内に整理してください。既存の演出は自動では削除しません。': { en: 'This wireless candidate allows at most 16 named controls, including one Sparkle action. Please arrange the modes into 15 or fewer. Existing effects will not be removed automatically.', zh: '此无线候选程序包含一个闪光动作，命名操作合计最多16个。请将灯光模式整理为15种以内。不会自动删除已有演出。' },
   '光り方のIDが不正または重複しています。': { en: 'A lighting mode ID is invalid or duplicated.', zh: '灯光模式ID无效或重复。' },
   '光り方の名前は制御文字を含まない1〜24文字にしてください。': { en: 'Use 1–24 characters for each lighting mode name, without control characters.', zh: '灯光模式名称须为1至24个字符，且不能包含控制字符。' },
   '対応する光り方を選んでください。': { en: 'Choose a supported lighting effect.', zh: '请选择支持的灯光效果。' },
@@ -55,9 +58,9 @@ export const projectMessages: MessageCatalog = {
   '作品データを読み込めません。コードは100000文字以内で、不正な文字を含めずに保存してください。': { en: 'Cannot read this project. Code must be no longer than 100,000 characters and must not contain invalid characters.', zh: '无法读取作品。代码不能超过100000个字符，也不能包含无效字符。' },
   '作品データを読み込めません。機器・UIFlow2版・LED設定を確認してください。': { en: 'Cannot read this project. Check the device, UIFlow2 version, and LED settings.', zh: '无法读取作品。请检查设备、UIFlow2版本和LED设置。' },
   '作品データを読み込めません。ボタン・無線の設定が正しくありません。': { en: 'Cannot read this project. The button or wireless settings are invalid.', zh: '无法读取作品。按钮或无线设置无效。' },
-  '作品データを読み込めません。光り方は1〜8個で設定してください。': { en: 'Cannot read this project. Include between 1 and 8 lighting modes.', zh: '无法读取作品。请设置1至8种灯光模式。' },
+  '作品データを読み込めません。光り方は1〜16個で設定してください。': { en: 'Cannot read this project. Include between 1 and 16 lighting modes.', zh: '无法读取作品。请设置1至16种灯光模式。' },
   '作品データを読み込めません。光り方の名前・ID・色・速さ・繰り返しを確認してください。': { en: 'Cannot read this project. Check each lighting mode’s name, ID, color, speed, and repeat count.', zh: '无法读取作品。请检查灯光模式的名称、ID、颜色、速度和重复次数。' },
-  '作品データを読み込めません。リモコンのボタンは種類ごとに8個までです。': { en: 'Cannot read this project. The remote supports up to 8 buttons of each type.', zh: '无法读取作品。遥控器每种类型最多支持8个按钮。' },
+  '作品データを読み込めません。リモコンのボタンはモードとアクションを合わせて16個までです。': { en: 'Cannot read this project. Remote mode and action buttons must total 16 or fewer.', zh: '无法读取作品。遥控模式与动作按钮合计最多16个。' },
   '作品データを読み込めません。リモコンのボタン設定が正しくありません。': { en: 'Cannot read this project. The remote button settings are invalid.', zh: '无法读取作品。遥控器按钮设置无效。' },
   '作品データを読み込めません。リモコンのボタンIDの重複や個数を確認してください。': { en: 'Cannot read this project. Check for duplicate remote button IDs or too many buttons.', zh: '无法读取作品。请检查遥控器按钮ID是否重复或按钮数量是否超限。' },
   '作品データを読み込めません。この形式・版の作品ファイルには対応していません。': { en: 'Cannot read this project. This project file format or version is not supported.', zh: '无法读取作品。不支持此作品文件格式或版本。' },

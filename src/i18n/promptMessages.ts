@@ -1,10 +1,57 @@
 import type { Locale, MessageCatalog } from './types'
+import { MAX_CONTROL_ACTIONS, MAX_CONTROL_MODES, MAX_NAMED_CONTROLS } from '../config/bleLimits'
 
 // Long-form prompt blocks are kept together so every language retains the same safety contract.
 // User code, hardware-verified baseline code, logs and protocol identifiers are never translated.
 export const promptMessages: MessageCatalog = {}
 
 const nanoLedV2Schema = `{"v":2,"mode":"RAINBOW","brightness":50,"speed":30,"pixels":"100000","playback":"playing","action":null,"controls":{"speed":true,"modes":[{"id":"RAINBOW","label":"Rainbow"}],"actions":[{"id":"SPARKLE","label":"Sparkle once"}]}}`
+
+// RXの長さやv1の項目は変更せず、TXの送信条件だけを共有する。
+export const nanoLedTransportRules: Record<Locale, string> = {
+  ja: `### NanoLED共通の送信条件（v1/v2）
+- 既存サービスとアプリ独自CharacteristicはRX/TXの2本を維持する。ボタン・キャラクター・モード・アクションごとに増設しない。MODE <id> / ACTION <id>等は既存の共通RX、状態と操作定義は共通TXを使う。v1にはv2専用操作を追加しない。Notify用にスタックが管理するDescriptorはアプリ独自Characteristicの本数に数えない。UUIDを変更・追加しない。
+- TX Notifyは接続直後・交渉済みATT MTU不明時に20バイト以下で開始する。希望ATT MTUの候補は247。有効な交渉結果を得た現在の接続だけ min(交渉済みATT MTU - 3, 244) バイト以下へ拡大する。希望値の設定やBluetooth 5.0以上という製品仕様は交渉結果ではない。
+- 対象MicroPython/UIFlow2の公式資料でBLE.config(mtu=...)・MTU交換イベント・データ形式を確認する。未確認APIやWeb BluetoothにないMTU操作APIを推測しない。MTU指定API非対応または交換なしは20バイトで継続し、初回STATUS・LED処理をMTU待ちで止めない。BLE初期化失敗・メモリ不足・予期しない例外はAPI非対応と区別し、全例外を握りつぶして成功扱いしない。
+- MTUイベントは該当する現在の接続にだけ適用する。切断・再接続で以前のMTUを破棄して20バイト開始へ戻す。旧来の固定20バイト送信も受信できる。登録済み基準コードをこの規則だけで無断変更せず、差分と再確認の必要性を示す。
+- JSONをUTF-8バイト列へ変換してから分割し、LFは最終チャンクに含める。Unicode文字の途中でも分割でき、ブラウザはLFまでバイト結合してから復号する。送信中の1行は固定し、MTUが途中で変わっても正常に受け付けられたチャンクの実バイト数だけ位置を進め、欠落・重複・別JSONの混入を防ぐ。
+- 主ループで少量ずつ送信し、LED・ボタン・BLE受信を止めない。有界な再試行とエラー処理を維持し、回数や待ち時間を増やしただけで安定化済みとしない。途中行を破棄する場合は切断などにより受信側と再同期し、残りの断片へ別JSONを続けない。切断時の送受信途中行を破棄し、再接続でサービス・Characteristicを取得し直して完全な新しい行から送る。`,
+  en: `### Shared NanoLED transport (v1/v2)
+- Keep the existing service and exactly two application-defined characteristics, RX/TX. Never add one per button, character, mode or action. Share RX for MODE <id> / ACTION <id> and other commands, and TX for state and controls. Do not add v2-only operations to v1. Stack-managed Notify descriptors are not additional application-defined characteristics. Do not change or add UUIDs.
+- Start TX Notify at at most 20 bytes immediately after connection and while negotiated ATT MTU is unknown. The preferred ATT MTU candidate is 247. Only a valid negotiated result for the current connection permits min(negotiated ATT MTU - 3, 244) bytes. Setting a preferred value or a Bluetooth 5.0-or-newer product specification is not a negotiated result.
+- Check BLE.config(mtu=...), the MTU exchange event and its data format against official documentation for the target MicroPython/UIFlow2. Do not invent unverified APIs or MTU APIs absent from Web Bluetooth. Continue at 20 bytes when MTU configuration is unsupported or no exchange occurs; never block initial STATUS or LEDs waiting for MTU. Distinguish unsupported APIs from BLE initialization failure, memory exhaustion and unexpected exceptions; do not swallow all errors as successful fallback.
+- Apply MTU events only to their current connection. Discard the previous MTU on disconnect/reconnect and restart at 20 bytes. Legacy fixed-20-byte senders remain receivable. Do not silently modify registered baselines to satisfy this rule; show differences and required revalidation.
+- Encode JSON as UTF-8 bytes before splitting, with LF in the last chunk. Unicode may cross chunks; the browser joins bytes up to LF before decoding. Freeze the current line; even if MTU changes mid-line, advance by the actual byte count of successfully accepted chunks only, avoiding loss, duplication and mixed JSON.
+- Send incrementally from the main loop without blocking LEDs, buttons or BLE reception. Preserve bounded retries/error handling; merely increasing retries or delays is not proven stability. When abandoning a partial line, resynchronize with the receiver, for example by disconnecting, rather than appending another JSON to its fragments. Discard partial RX/TX on disconnect; rediscover services/characteristics after reconnect and start a complete new line.`,
+  zh: `### NanoLED 共用传输条件（v1/v2）
+- 保持原有服务及 RX/TX 两个应用自定义 Characteristic，不按按钮、角色、模式或动作增设。MODE <id> / ACTION <id> 等命令共用 RX，状态及操作定义共用 TX；不向 v1 添加 v2 专用操作。协议栈管理的 Notify Descriptor 不计入应用自定义 Characteristic 数量，不更改或新增 UUID。
+- 连接后及已协商 ATT MTU 未知时，TX Notify 从每片最多 20 字节开始。期望 ATT MTU 候选值为 247，仅当前连接获得有效协商结果后，才扩大为 min(已协商 ATT MTU - 3, 244) 字节。设置期望值或产品支持 Bluetooth 5.0 以上都不等于已协商成功。
+- 根据目标 MicroPython/UIFlow2 的官方资料确认 BLE.config(mtu=...)、MTU 交换事件及数据格式。不猜测未确认 API 或 Web Bluetooth 不提供的 MTU 操作 API。MTU 配置 API 不支持或未发生交换时继续 20 字节分片，不为等待 MTU 阻塞首次 STATUS 或 LED。区分 API 不支持、BLE 初始化失败、内存不足及意外异常，不能吞掉全部异常并当作正常回退。
+- MTU 事件只应用于对应的当前连接。断开及重连丢弃以前的 MTU，重新从 20 字节开始。旧有固定 20 字节发送仍可接收。不能仅因新规则而擅改已登记基准代码，应列出差异及重新验证要求。
+- JSON 先编码为 UTF-8 字节再分片，LF 放在最后一片。允许 Unicode 字符跨片，浏览器拼接到 LF 后才解码。固定正在发送的一行，即使中途 MTU 改变，也只按成功接受片段的实际字节数推进位置，不能漏字节、重复或混入另一个 JSON。
+- 主循环少量发送，不阻塞 LED、按钮及 BLE 接收。保持有界重试与错误处理，不能仅增加重试次数或等待就宣称稳定。放弃半行时须通过断开等方式与接收方重新同步，不能把新 JSON 接在残片后。断开丢弃未完成的收发行，重连重新获取服务和 Characteristic，从完整新行开始。`,
+}
+
+export const namedControlPlanningRules: Record<Locale, string> = {
+  ja: `### 相談・仕様確認・生成前の名前付きボタン確認
+- 希望やAI自身の追加提案が増えるたびに、controls.modes / controls.actionsへの実際の登録予定数を数える。合計${MAX_NAMED_CONTROLS}個を超えそうと分かった時点で早期に案内し、超過案を先に承認して生成時に初めて拒否しない。
+- 例：「今の希望だと、光り方が15個、一回だけの演出が2個で、合計17個になります。上限は16個なので、あと1個整理する必要があります。どの方法がよさそうですか？」。実装可能な範囲で「優先度の低い演出を外す／用途を確認して似た演出をまとめる／共通の明るさ・速度調整で表す／おまかせで整理案」を示す。おまかせでも整理内容を明示し、最終仕様へ反映する。
+- 勝手に先頭${MAX_NAMED_CONTROLS}個へ切り詰めたり、説明なく削除・統合したり、上限を17個以上へ変更したり、ページ分け・非表示化・別Characteristicで回避したりしない。配線や端末の買い替えが必要とは説明しない。既存作品のアクションも無断で削除しない。
+- 最終承認前の仕様まとめに「名前付きボタン：合計11個／最大16個（光り方10個＋一回限りの演出1個）」の形で実際の件数を示す。コード生成直前と追加注文のたびに再計数し、超過が残れば「この仕様で作れます」と確定せずコードを生成しない。合計${MAX_NAMED_CONTROLS}個以内でもUTF-8の4096バイト制限は別途確認する。
+- 質問は一度に1問・3〜5個の選択肢・おまかせ・必要な質問は最大6問・回答済みを聞き直さない、を維持する。件数確認は既存の相談や最終確認へ早めに織り込み、質問数制限を超過コード生成の理由にしない。UUID・MTU・通信IDは利用者に質問しない。BLE/Webリモコン無効時はこの説明のために機能を有効化せず、使えないリモコン操作を提案しない。`,
+  en: `### Count named buttons during consultation, approval and generation
+- Recount the actual planned controls.modes / controls.actions registrations whenever wishes or AI-proposed effects are added. Warn early as soon as the combined count may exceed ${MAX_NAMED_CONTROLS}; do not approve an oversized order first and reject it only at generation.
+- Beginner example: "15 lighting modes plus 2 one-shot effects gives 17 named buttons. The limit is 16, so we need to consolidate one. Which approach would you prefer?" Offer only feasible choices: remove a low-priority effect; merge similar effects after confirming their purpose; use shared brightness/speed controls; or Choose for me to propose a consolidation. Even with Choose for me, explain every change and include it in the final specification.
+- Never truncate to the first ${MAX_NAMED_CONTROLS}, silently remove/merge effects, raise the cap to 17 or more, or bypass it with pages, hidden buttons or separate characteristics. Do not imply rewiring or buying another device is required. Never silently remove actions from existing artwork.
+- Before final approval show actual counts, for example "Named buttons: 11 / maximum 16 (10 lighting modes + 1 one-shot effect)". Recount immediately before code generation and after further requests. Do not promise the design is ready or generate over-limit code. Validate the separate 4096-byte UTF-8 limit even within ${MAX_NAMED_CONTROLS} controls.
+- Retain one question at a time, 3–5 choices including Choose for me, at most 6 necessary questions, and no repeated answered questions. Integrate early count checks into existing consultation/final approval; the question budget never permits over-limit generation. Do not ask users for UUIDs, MTU or protocol IDs. If BLE/Web remote is disabled, neither enable it for this explanation nor propose unavailable remote operations.`,
+  zh: `### 讨论、规格确认及生成前统计命名按钮
+- 每次新增愿望或 AI 建议的效果，都统计实际准备登记到 controls.modes / controls.actions 的数量。预计合计将超过 ${MAX_NAMED_CONTROLS} 个时及早提醒，不先批准超额需求再到生成时才拒绝。
+- 面向初学者的示例：“15 种发光模式加 2 个一次性效果，合计 17 个命名按钮。上限为 16 个，需要整理 1 个。你喜欢哪种方法？”仅提出可实现选项：去掉低优先级效果、确认用途后合并相似效果、用共用亮度/速度调节表达、或帮我决定整理方案。即使选帮我决定，也说明整理了什么并写入最终规格。
+- 禁止只截取前 ${MAX_NAMED_CONTROLS} 个、未说明就删除或合并、把上限改为 17 个以上、借分页/隐藏/其他 Characteristic 规避；不要说需要换接线或更换设备。不能擅自删除现有作品的动作。
+- 最终批准前展示实际统计，例如“命名按钮：合计 11 个／最多 16 个（发光模式 10 个＋一次性效果 1 个）”。代码生成前及追加需求后再次计数；超限未解决时不能确认可以制作，也不能生成超限代码。即使不超过 ${MAX_NAMED_CONTROLS} 个，也独立验证 UTF-8 的 4096 字节限制。
+- 保持每次一题、3–5 个选项含帮我决定、必要问题最多 6 个、不重复已回答内容。把早期计数检查纳入既有讨论和最终确认，不能以问题次数为由生成超限代码。不要询问 UUID、MTU 或通信 ID。BLE/网页遥控已禁用时，不为此说明启用它，也不提出不可用的遥控操作。`,
+}
 
 export const remoteOffFadeRules: Record<Locale, string> = {
   ja: `## Webリモコンの消灯（v1/v2共通）
@@ -39,7 +86,9 @@ export const nanoLedV2Rules: Record<Locale, string> = {
 - モードは続く光り方、アクションは一度だけの演出。利用者と光り方を相談し、技術的なID入力を求めず分かりやすい名前を付ける。下記例のID・ラベルは例示であり固定の作品内容ではない。再生・停止・消灯とそれぞれのボタンの用途を短く説明する。
 - TXはUTF-8 JSONをLF終端で送る。必須の構造例: ${nanoLedV2Schema}
 - v=2。modeは消灯中もcontrols.modesにある選択モードを保持する。playbackはplaying/paused/offのみ。actionは実行中のcontrols.actionsのid、またはnull。actionがnull以外ならplayback=playing。offならaction=nullでpixelsは全桁0。省略・型違いを許可しない。
-- 毎回controls全体を含める。speedはboolean、modesは1〜8件、actionsは0〜8件。各{id,label}のidは^[A-Z][A-Z0-9_]{0,11}$、同じリスト内で重複不可。OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTIONは予約語。labelは制御文字を含まない1〜24 Unicodeコードポイントの平文。説明言語に合う名前を機器に保持し、HTMLや通信命令として扱わない。ブラウザの言語変更で名前を翻訳しない。
+- 毎回controls全体を含める。speedはboolean、controls.modesは1〜${MAX_CONTROL_MODES}個、controls.actionsは0〜${MAX_CONTROL_ACTIONS}個、len(controls.modes) + len(controls.actions) <= ${MAX_NAMED_CONTROLS}が必須。モード16個＋アクション16個ではなく、合計${MAX_NAMED_CONTROLS}個以内の自由配分。10+1、15+1、16+0、1+15は可、16+1、8+9、17モード、0モードは不可。各{id,label}のidは^[A-Z][A-Z0-9_]{0,11}$、同じリスト内で重複不可。OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTIONは予約語。labelは制御文字を含まない1〜24 Unicodeコードポイントの平文。説明言語に合う名前を機器に保持し、HTMLや通信命令として扱わない。ブラウザの言語変更で名前を翻訳しない。
+- 再生・一時停止・消灯・状態取得の共通操作、明るさ・速度スライダー、本体の物理ボタン、表示するLEDの個数はこの${MAX_NAMED_CONTROLS}個に含めない。controls.modes/actionsへ登録する独自操作を実数で数え、ページ分けや非表示化でも減らない。候補固有のSPARKLEも1個に数えるため同梱候補は最大15モード＋固定1アクション。汎用仕様の16モード＋0アクションを候補がそのまま提供するとは説明せず、既存アクションを無断削除しない。更新前のWeb側が9モード以上を受け入れるとも説明しない。
+${namedControlPlanningRules.ja}
 - MODE <id>は選択モードをリセットしてplayingへ移る。PLAYはpausedの保存位相から再開し、offなら選択モードで再生する。PAUSEはアニメーションと点灯フェードの進行を止め、現在表示中の色と位相を保持する。OFFは下記の200ms消灯フェードを開始し、選択モードは保持する。プログラムとBLEは停止しない。STATUSは状態を返すだけ。
 - ACTION <id>は非ブロッキングで1回実行する。最初のアクション開始前の基底モード・位相・playbackを復帰元として保存し、最後のアクション完了後に戻る。元がpausedなら元の凍結位相、offなら消灯へ戻す。再スタートや別アクションへの置換で復帰元を更新しない。
 - ACTION再押下の動作は、明示された作品仕様を以下の既定動作より優先する。例えば「アクション実行中の追加ACTIONは無視する」と明示されていれば、その対象範囲に従って同ID・別IDの追加要求を無視する。「同IDだけ無視」など限定指定ならその範囲だけに適用し、指定のない範囲は既定動作を使う。範囲や意図が曖昧なら確認する。生成・修正のどちらでも、プロトコル共通規則を理由に意図的な作品仕様を勝手に再スタートへ変更しない。
@@ -49,7 +98,7 @@ export const nanoLedV2Rules: Record<Locale, string> = {
 - brightness/speedは適用した0〜100整数。BRIGHTNESS 100は設定した安全上限の100%。全出力で上限を守り、0でも選択モードを保持する。pausedで明るさを変える場合は位相を進めず現在のフレームへ倍率を適用する。off中の明るさ・速度変更では点灯しない。controls.speed=falseならブラウザは速度欄を隠し、機器はSPEEDを無視する。trueなら0は最も遅く停止ではなく、100は最速。標準周期はperiod_ms = 3000 - 29 * n。
 - 起動時の既定はplayback=off、action=null、brightness=100、speed=0、modeは最初の定義済みモード。v2では固定フェード条件の「現在モードがOFF」をplayback=offとして扱う。起動・PLAY・MODE・ACTIONでoffかつ全出力0から点灯するときは最低200msの非ブロッキングフェード。点灯中の変更や一時的な黒で再開始せず、進行中のモード変更ではフェード進行度を維持する。
 - pixelsはRGB LED1〜300個のRRGGBB連結。全数を報告し省略しない。安全上限・明るさ・フェードを適用して最後に送信したGRBバッファをRGB順へ戻した値であり、目標値や物理発光の測定値ではない。1行はLFを除きUTF-8で4096バイト以下。Unicodeラベルがあるため文字数でなくエンコード後バイト数で制限する。
-- Notifyを1回20バイト以下へ分割する。UTF-8文字の途中で分割されても、ブラウザはLFまでバイト結合してから復号する。1行の固定スナップショットを最後まで送ってから次へ進む。LED・ボタンを止めず主ループで少量ずつ送り、待機分は最新1件だけ。切断では送受信途中行を捨て、再接続でサービス・Characteristicを取り直し完全な行から再送する。
+${nanoLedTransportRules.ja}
 - TX購読後にSTATUS。初回の有効な状態を受け取るまでOFF以外は操作不可。STATUS、操作反映、本体ボタン、アクション開始・再スタート・置換・終了で通知し、変化がなくても約1秒ごと、最大5件/秒。通信が遅ければ周期を延ばす。不正JSON・過大行で現在状態を上書きしない。未受信・古い状態を明示する。
 - 送信完了と実行確認は別。v2に要求ID付きACKはない。Write応答をアクション成功・完了と呼ばず、機器から受信した現在のactionだけを表示する。短いアクションを通知で観測できなかった場合も成功と断定しない。
 ${remoteOffFadeRules.ja}`,
@@ -61,7 +110,9 @@ ${remoteOffFadeRules.ja}`,
 - A mode is a continuing effect; an action runs once. Ask about desired effects, not technical IDs. Supply friendly names in the conversation language and briefly explain play, pause, lights off, and project buttons. IDs and labels below are illustrative, not a fixed project.
 - TX is UTF-8 JSON terminated by LF. Required shape example: ${nanoLedV2Schema}
 - v=2. mode always belongs to controls.modes, retaining the selection even while off. playback is playing/paused/off. action is null or an active controls.actions ID; a non-null action requires playback=playing. off requires action=null and all-zero pixels. No missing fields or incorrect types.
-- Include the entire controls catalog in every status: speed:boolean, modes:1–8 items, actions:0–8 items. Each {id,label} uses an ID matching ^[A-Z][A-Z0-9_]{0,11}$, unique within its list. Reserved: OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTION. Labels are plain text of 1–24 Unicode code points without control characters. Keep device-provided labels in the program language, not HTML or commands; the browser must not translate them when its language changes.
+- Include the entire controls catalog in every status: speed:boolean, controls.modes:1–${MAX_CONTROL_MODES}, controls.actions:0–${MAX_CONTROL_ACTIONS}, and require len(controls.modes) + len(controls.actions) <= ${MAX_NAMED_CONTROLS}. This is not 16 modes plus 16 actions; distribute the combined ${MAX_NAMED_CONTROLS} freely. Allow 10+1, 15+1, 16+0 and 1+15; reject 16+1, 8+9, 17 modes and 0 modes. Each {id,label} uses an ID matching ^[A-Z][A-Z0-9_]{0,11}$, unique within its list. Reserved: OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTION. Labels are plain text of 1–24 Unicode code points without control characters. Keep device-provided labels in the program language, not HTML or commands; the browser must not translate them when its language changes.
+- Exclude shared play/pause/off/status operations, brightness/speed sliders, physical buttons and the LED count from the ${MAX_NAMED_CONTROLS}. Count actual custom registrations in controls.modes/actions, including hidden or paginated ones. The bundled candidate's fixed SPARKLE counts as one, so that candidate supports at most 15 modes plus 1 fixed action. Do not claim it directly supports the general protocol's 16 modes plus 0 actions or silently delete existing actions. Do not claim older web versions accept 9 or more modes.
+${namedControlPlanningRules.en}
 - MODE <id> selects and resets that mode, then plays. PLAY resumes the saved phase when paused, or plays the selected mode when off. PAUSE freezes animation/fade-in progress and retains the currently displayed color and phase. OFF starts the 200ms fade-out below while retaining the selected mode. Keep the program and BLE running. STATUS only reports state.
 - ACTION <id> runs once without blocking. Save the base mode, phase and playback from before the first action as the return state, and restore it after the final action completes: restore the frozen phase if originally paused, or darkness if off. Restarting or replacing an action must not overwrite this return state.
 - Explicit artwork specifications take precedence over the following ACTION retrigger defaults. For example, if the artwork explicitly says "Ignore additional ACTION commands while active", ignore same-ID and different-ID requests within its specified scope. If it says "ignore only the same ID", apply that restriction only there and use defaults for unspecified cases. Ask for clarification if scope or intent is ambiguous. During generation and repair alike, never replace an intentional artwork policy with restarting merely because of the common protocol rules.
@@ -71,7 +122,7 @@ ${remoteOffFadeRules.ja}`,
 - Report applied brightness/speed as integers 0–100. BRIGHTNESS 100 is 100% of the configured safety cap; keep the cap on every output. Zero retains the mode. Changing brightness while paused scales the current frame without advancing its phase. Brightness/speed changes while off do not light LEDs. With controls.speed=false hide the slider and ignore SPEED on the device; otherwise 0 is slowest, not stopped, and 100 is fastest. Standard period_ms = 3000 - 29 * n.
 - Startup defaults: playback=off, action=null, brightness=100, speed=0, mode=first defined mode. In v2 the fixed fade rule's current mode OFF means playback=off. Startup/PLAY/MODE/ACTION from off with all-zero output must fade in nonblockingly for at least 200ms. Do not restart for changes while lit or a temporary black frame; preserve fade progress during mode changes.
 - pixels concatenates RRGGBB for every RGB LED, 1–300 LEDs without omissions, converting the last transmitted, cap/brightness/fade-adjusted GRB buffer back to RGB. It reports transmitted output, not target colors or measured physical light. Each UTF-8 line is at most 4096 bytes excluding LF; count encoded bytes, not characters.
-- Split Notify into at most 20 bytes per chunk. Unicode characters may cross chunks: the browser reassembles bytes to LF before decoding. Finish one frozen snapshot before the next. Send incrementally from the main loop without blocking LEDs/buttons; keep only the newest pending snapshot. Discard partial RX/TX on disconnect; rediscover services/characteristics and restart a complete line after reconnect.
+${nanoLedTransportRules.en}
 - Subscribe to TX before STATUS. Disable controls except OFF before the first valid state. Report STATUS, applied commands, button changes, action start/restart/replacement/end, and approximately every second unchanged, at most 5 snapshots/second; slow down for slow links. Invalid/oversized JSON must not overwrite state. Indicate missing/stale state.
 - Sending and confirming execution are different: v2 has no request-ID ACK. Never call a Write Response action success/completion. Show only the current action reported by the device; if a short action is not observed in notifications, do not assume it succeeded.
 ${remoteOffFadeRules.en}`,
@@ -83,7 +134,9 @@ ${remoteOffFadeRules.en}`,
 - 模式是持续的效果，动作只执行一次。询问用户希望的效果，不要求输入技术 ID。用对话语言设置易懂名称，简短说明播放、暂停、熄灭及作品按钮。以下 ID 与名称仅为示例，不是固定作品内容。
 - TX 为 LF 结尾的 UTF-8 JSON，必需结构示例：${nanoLedV2Schema}
 - v=2。mode 必须属于 controls.modes，熄灭时也保留所选模式。playback 仅为 playing/paused/off。action 为 null 或正在执行的 controls.actions 的 ID；非 null 时 playback 必须为 playing。off 时 action=null 且 pixels 全部为 0。不允许字段缺失或类型错误。
-- 每次状态都包含完整 controls：speed 为 boolean，modes 为 1–8 项，actions 为 0–8 项。各 {id,label} 的 id 匹配 ^[A-Z][A-Z0-9_]{0,11}$，同一列表内不重复。保留字为 OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTION。label 为不含控制字符的 1–24 个 Unicode 码点的纯文本。设备名称使用程序语言，不能当成 HTML 或命令；浏览器切换语言时不翻译这些名称。
+- 每次状态都包含完整 controls：speed 为 boolean，controls.modes 为 1–${MAX_CONTROL_MODES} 个，controls.actions 为 0–${MAX_CONTROL_ACTIONS} 个，必须满足 len(controls.modes) + len(controls.actions) <= ${MAX_NAMED_CONTROLS}。不是 16 模式加 16 动作，而是在合计 ${MAX_NAMED_CONTROLS} 个以内自由分配。允许 10+1、15+1、16+0、1+15；拒绝 16+1、8+9、17 模式及 0 模式。各 {id,label} 的 id 匹配 ^[A-Z][A-Z0-9_]{0,11}$，同一列表内不重复。保留字为 OFF/PLAY/PAUSE/STATUS/BRIGHTNESS/SPEED/MODE/ACTION。label 为不含控制字符的 1–24 个 Unicode 码点的纯文本。设备名称使用程序语言，不能当成 HTML 或命令；浏览器切换语言时不翻译这些名称。
+- 共用播放/暂停/熄灭/状态获取、亮度和速度滑块、机身物理按钮及显示的 LED 数量不计入这 ${MAX_NAMED_CONTROLS} 个。按 controls.modes/actions 实际登记的独自操作计数，分页和隐藏不减少数量。候选自带 SPARKLE 也算 1 个，所以该候选最多 15 模式加 1 固定动作。不能说它直接支持通用协议的 16 模式加 0 动作，也不能擅删现有动作。不能声称旧网页版本能接收 9 个以上模式。
+${namedControlPlanningRules.zh}
 - MODE <id> 选择并重置模式，然后播放。PLAY 从暂停保存的相位继续，或在 off 时播放所选模式。PAUSE 冻结动画及渐亮进度，保留当前显示颜色和相位。OFF 按下述规则开始 200ms 渐暗，保持所选模式。程序和 BLE 继续运行。STATUS 仅报告状态。
 - ACTION <id> 非阻塞执行一次。将首次动作开始前的基础模式、相位和 playback 保存为恢复状态，最后一个动作结束后恢复；原先为 paused 时恢复冻结相位，为 off 时恢复熄灭。重新开始或替换动作时不能覆盖该恢复状态。
 - ACTION 再次按下时，明确的作品规格优先于以下默认行为。例如明确要求“执行中忽略额外 ACTION”时，在指定范围内忽略相同及不同 ID 的追加请求；若仅要求“忽略相同 ID”，则只适用于该范围，未指定范围采用默认行为。范围或意图不明确时先询问确认。生成和修复时都不能以共用协议规则为由，擅自把作品有意规定的行为改成重新开始。
@@ -93,7 +146,7 @@ ${remoteOffFadeRules.en}`,
 - brightness/speed 报告已应用的 0–100 整数。BRIGHTNESS 100 是设置安全上限的 100%，全部输出保持上限，0 不改变所选模式。暂停中调整亮度只缩放当前画面，不推进相位。off 时调整亮度或速度不点亮。controls.speed=false 时浏览器隐藏速度，设备忽略 SPEED；为 true 时 0 最慢但不停，100 最快，标准 period_ms = 3000 - 29 * n。
 - 默认启动为 playback=off、action=null、brightness=100、speed=0，mode 为第一个已定义模式。v2 中固定渐变规则的“当前模式 OFF”应解释为 playback=off。启动、PLAY、MODE、ACTION 从 off 且全零输出点亮时，必须非阻塞渐亮至少 200ms。已亮时变化或动画临时黑帧不重新开始，切换模式时保持正在进行的渐变进度。
 - pixels 将 1–300 个 RGB LED 的全部 RRGGBB 连接，不省略。将最后实际发送且已应用安全上限、亮度、渐变的 GRB 缓冲区转回 RGB，报告已发送输出而非目标颜色或物理发光测量值。每行 UTF-8 编码后不含 LF 最多 4096 字节，按字节而非字符计数。
-- 每次 Notify 分片最多 20 字节。Unicode 字符可跨片，浏览器按字节拼接至 LF 后解码。同一固定快照整行发完再发下一行。主循环分步发送，不阻塞 LED 或按钮；待发送仅保留最新一条。断开时丢弃未完成收发行，重连重新获取服务和特征，从完整新行开始。
+${nanoLedTransportRules.zh}
 - 先订阅 TX 再发送 STATUS，首次有效状态前只允许 OFF。STATUS、命令应用、按钮变化、动作开始、重新开始、替换及结束时通知；不变时也约每秒通知，最多 5 次/秒，慢链路可延长周期。无效或超长 JSON 不覆盖当前状态，明确提示未收到或已过期状态。
 - 发送完成与执行确认不同：v2 没有请求 ID ACK。不能将写入响应称为动作成功或完成，只显示设备报告的当前 action。短动作未被通知观察到时，也不能推断成功。
 ${remoteOffFadeRules.zh}`,
@@ -123,6 +176,7 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - Advance one effect using time, current mode, animation position and last update time. Reset the previous effect state on mode change while preserving an active fade according to the rules above.
 - Unless specified, start OFF; if the button is used, use one short press; use an approximately 3-second effect cycle and repeat until the next operation. Briefly explain the defaults adopted.`,
     ble: `## Preserve the BLE baseline
+- Fixed-20-byte transmission in a registered baseline remains valid. If negotiated-MTU sending or additional controls require a change, explain the differences, API evidence and required hardware revalidation first. Do not change registered code, saved artwork, executed code or verification records without approval. An approved modification is an unverified candidate; updating the bundled candidate does not update registered baselines.
 - The full baseline below corresponds to hardware verification registered by the user. It does not mean this app or AI verified hardware behavior.
 - Preserve BLE initialization, service and characteristic UUIDs, receive-callback argument format, device-name format and libraries. Never invent APIs or replace the BLE implementation.
 - Receive callbacks only put received bytes in a bounded queue. Perform actual mode changes and LED updates in the main loop. Do not lose multiple commands by overwriting one variable.
@@ -147,7 +201,7 @@ export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string;
 - TX is one ASCII-only JSON line terminated by LF. Require v (number 1), mode (applied mode), brightness and speed (applied integers 0–100), and pixels (all LED RGB outputs). Keep logs on USB, not TX.
 - pixels concatenates six hexadecimal RRGGBB digits per LED in LED order, either case. All zeros means all OFF. Support 1–300 RGB LEDs; count = pixels.length / 6. Never omit, subsample or change the configured LED count. Limit a line to 4096 bytes excluding LF.
 - Report pixels in RGB order from the last output actually transmitted AFTER maximum-brightness, user-brightness and fade factors. Convert the LED GRB buffer back to RGB. This is a transmitted-output snapshot, not target colors or a physical light sensor measurement.
-- For MTU23, split Notify into chunks of at most 20 bytes; put LF in the last chunk. Keep one snapshot fixed until its whole line is sent; never mix snapshots. Send small amounts from the main loop without blocking LEDs, buttons or commands. Bound pending sends and retries.
+${nanoLedTransportRules.en}
 - Notify the latest state for STATUS, applied commands and enabled button changes, and approximately once per second even unchanged, at most 5 snapshots/second. Slow down if necessary. Finish the current line and keep only the newest pending snapshot; never replace JSON mid-line.
 - Discard partial send and receive lines on disconnect. After reconnect/resubscribe start a complete new line. The browser discards old GATT objects and rediscovers services and characteristics.
 - The browser delimits by LF, not Notify boundaries. Invalid JSON or oversized lines do not overwrite state. Clearly indicate missing or stale state. Do not update LED previews merely from sent settings.
@@ -178,6 +232,7 @@ Prioritize fixed specifications, hardware-verified baseline code, official M5Sta
 - 根据时间、当前模式、动画位置和上次更新时间推进一种效果。切换模式时适当重置旧效果状态，但必须按上述规则保持正在进行的渐亮进度。
 - 未指定时，启动为 OFF；使用按钮时采用一次短按；效果周期约 3 秒，重复到下次操作。向用户简短说明采用的默认设置。`,
     ble: `## 保持 BLE 基准代码
+- 已登记代码的固定 20 字节发送仍有效。若可变 MTU 发送或增加操作需要改造，先说明差异、API 依据及重新实机验证要求。未经批准，不修改已登记代码、保存作品、执行代码或验证记录。获准的改造版仍为未验证候选，内置候选更新不等于基准代码更新。
 - 下方完整基准代码对应用户登记的实机验证信息，不代表本应用或 AI 已验证实机行为。
 - 保持 BLE 初始化方法、服务和特征 UUID、接收回调的参数形式、设备名称格式及库不变。不要猜测不存在或未确认的 API，也不要替换 BLE 实现。
 - 接收回调只将接收到的字节保存到有界队列。实际模式切换和 LED 更新在主循环中处理，不能通过覆盖单一变量丢失多个命令。
@@ -202,7 +257,7 @@ Prioritize fixed specifications, hardware-verified baseline code, official M5Sta
 - TX 为一行仅含 ASCII 的 JSON，以 LF 结束。必须包含 v（数值 1）、mode（已应用模式）、brightness 和 speed（已应用的 0–100 整数）以及 pixels（全部 LED 的 RGB 输出）。日志走 USB，不能混入 TX。
 - pixels 按 LED 顺序拼接每颗 LED 的六位 RRGGBB 十六进制数，大小写均可。全部为 0 表示全部熄灭。支持 1–300 颗 RGB LED，数量为 pixels.length / 6。不能省略、抽样或改变设定数量。每行不含 LF 最多 4096 字节。
 - pixels 必须按 RGB 顺序报告经过最大亮度、用户亮度和渐变后最后实际发送的输出。将 LED 的 GRB 缓冲区还原为 RGB。它是已发送输出的快照，不是目标颜色，也不是传感器对实物发光的测量。
-- 为兼容 MTU23，每次 Notify 最多 20 字节，LF 位于最后一个分片。整行发送期间固定同一快照，不混入其他快照。从主循环少量发送，不阻塞 LED、按钮和命令处理；待发送及重试必须有界。
+${nanoLedTransportRules.zh}
 - STATUS、命令应用和可用按钮状态变化时通知最新状态；无变化也约每秒通知一次，最多每秒 5 个快照。通信慢时延长周期。完成正在发送的整行，待发送仅保留最新一份，不能在行中途替换 JSON。
 - 断开时丢弃发送和接收的半行。重连及重新订阅通知后，从完整新行开始。浏览器丢弃旧 GATT 对象并重新获取服务和特征。
 - 浏览器按 LF 分行，而非 Notify 边界。无效 JSON 或超长行不能覆盖状态。明确提示未收到或停止更新，不能仅根据发送的设置改变 LED 预览。

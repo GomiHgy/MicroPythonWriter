@@ -1,4 +1,6 @@
 import { boardDefinitions, isBoardId } from '../../config/boards'
+import { MAX_CONTROL_MODES, MAX_NAMED_CONTROLS, STARTER_FIXED_ACTION_COUNT } from '../../config/bleLimits'
+import { MAX_STATUS_BYTES } from '../bluetooth/protocol'
 import { LED_MODELS } from '../workshop/WorkshopProfile'
 import type { ProjectRecipe, ProjectSettings } from './types'
 import runtime from '../../../firmware/starter/runtime.py?raw'
@@ -24,7 +26,8 @@ function validate(settings: ProjectSettings, recipe: ProjectRecipe) {
   const board = boardDefinitions[settings.boardId]
   if ([board.buttonPin, board.rgbPin, board.rgbPowerPin, board.statusLedPin].includes(settings.ledPin)) throw new Error('外部LEDのGPIOが内蔵LEDまたはボタンと重複しています。')
   if (!Number.isFinite(settings.maxBrightnessPercent) || settings.maxBrightnessPercent <= 0 || settings.maxBrightnessPercent > 100) throw new Error('最大輝度は0より大きく100以下で指定してください。')
-  if (!Array.isArray(recipe.modes) || recipe.modes.length < 1 || recipe.modes.length > 8) throw new Error('光り方は1〜8種類で指定してください。')
+  if (!Array.isArray(recipe.modes) || recipe.modes.length < 1 || recipe.modes.length > MAX_CONTROL_MODES) throw new Error('光り方は1〜16種類で指定してください。')
+  if (recipe.wireless && recipe.modes.length + STARTER_FIXED_ACTION_COUNT > MAX_NAMED_CONTROLS) throw new Error('この無線対応候補は「キラッと光る」1個を含めて最大16個です。光り方を15種類以内に整理してください。既存の演出は自動では削除しません。')
   const ids = new Set<string>()
   for (const mode of recipe.modes) {
     if (typeof mode.id !== 'string' || !/^[A-Z][A-Z0-9_]{0,11}$/.test(mode.id) || reserved.has(mode.id) || ids.has(mode.id)) throw new Error('光り方のIDが不正または重複しています。')
@@ -36,6 +39,18 @@ function validate(settings: ProjectSettings, recipe: ProjectRecipe) {
     if (!['hold', 'off'].includes(mode.endState)) throw new Error('終了時の状態を選んでください。')
   }
   if (!['next', 'toggle', 'none'].includes(recipe.shortPress) || !['next', 'toggle', 'none'].includes(recipe.doublePress) || !['next', 'toggle', 'none', 'off'].includes(recipe.longPress) || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') throw new Error('ボタン・無線の操作設定が不正です。')
+  if (recipe.wireless) {
+    const longestId = recipe.modes.reduce((longest, mode) => mode.id.length > longest.length ? mode.id : longest, '')
+    const status = {
+      v: 2, mode: longestId, brightness: 100, speed: 100, pixels: 'ffffff'.repeat(settings.ledCount),
+      playback: 'playing', action: 'SPARKLE',
+      controls: { speed: true, modes: recipe.modes.map(mode => ({ id: mode.id, label: mode.label.trim() })), actions: [{ id: 'SPARKLE', label: 'キラッと光る' }] },
+    }
+    // 候補のjson.dumps既定区切りに合わせる。文字列内のコロン・カンマは改変しない。
+    // 機器側でも実際のUTF-8バイト数を初期化時と毎回の送信時に再検証する。
+    const row = JSON.stringify(status).replace(/"(?:\\.|[^"\\])*"|[:,]/g, token => token.startsWith('"') ? token : `${token} `)
+    if (new TextEncoder().encode(row).length > MAX_STATUS_BYTES) throw new Error('名前付き操作と全LEDの状態が4096バイトを超えます。名前の短縮などを相談して設定を見直してください。操作やLEDは自動では省略しません。')
+  }
 }
 
 /** 提供側の実機確認状況。コード準備・試行の可否とは別で、利用者の「動作OK」保存でも昇格しない。 */

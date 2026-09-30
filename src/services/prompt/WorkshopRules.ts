@@ -2,7 +2,7 @@ import { cloneWorkshopProfile, getBlePreparationReasons, validProfileText, valid
 import type { WorkshopProfile } from '../workshop/WorkshopProfile'
 import { boardDefinitions, isBoardId } from '../../config/boards'
 import type { Locale } from '../../i18n/types'
-import { interpolatePrompt, localizedPromptBlocks, nanoLedV2Rules, remoteOffFadeRules } from '../../i18n/promptMessages'
+import { interpolatePrompt, localizedPromptBlocks, nanoLedTransportRules, nanoLedV2Rules, remoteOffFadeRules } from '../../i18n/promptMessages'
 import { translateWorkshop } from '../../i18n/workshopMessages'
 import { buildControllerStarter } from '../workshop/ControllerStarter'
 import { buildMemoryPressureRules } from './MemoryPressureRules'
@@ -99,6 +99,7 @@ const ledRules = `## LEDとボタンの固定ルール
 
 const bleRules = `## BLE基準コードの維持
 - 下記全文は利用者が登録した実機確認情報に対応する基準コードであり、アプリやAIが実機動作を検証したという意味ではない。
+- 登録済みコードの20バイト固定送信は引き続き有効。MTU可変送信や操作数拡張の改造が必要なら差分・API根拠・実機再確認の必要性を示し、利用者の承認なく登録済みコード・保存作品・実行コード・確認記録を変更しない。許可された改造版は未確認候補として扱う。同梱候補の更新と基準コードの更新を混同しない。
 - BLE初期化方法、サービスとCharacteristicのUUID、受信コールバックの引数形式、デバイス名の形式、使用ライブラリを維持する。存在未確認のAPIを推測したり、別のBLE実装へ置き換えたりしない。
 - 受信コールバックでは受信バイトを有界キューへ保存するだけにする。実際のモード変更とLED更新はメインループで行う。複数コマンドを1つの変数への上書きで失わせない。
 - 分割受信の処理と受信バッファ・コマンドキューを有界に保ち、満杯なら追加分を破棄して短い診断を出す。無制限に待機・再試行しない。切断時の受信途中データを次の接続へ持ち越さない。
@@ -123,7 +124,7 @@ const nanoLedRules = `## NanoLED v1通信仕様
 - TXはASCIIだけのJSONを1行、LFで終端する。v（数値1）、mode（適用中モード）、brightness（適用した0〜100整数）、speed（適用した0〜100整数）、pixels（全LEDのRGB値）を全て必須とする。ログはTXへ混ぜずUSB側へ出す。
 - pixelsはLED1から順に各LEDのRRGGBB・6桁HEXを連結する。大小文字は任意。全消灯は全桁0。RGBのLED1〜300個、LED数はpixels.length / 6。固定LED数を省略・間引き・変更しない。1行はLFを除いて4096バイト以下。
 - pixelsは最大輝度・明るさ設定・フェード適用後に最後に実際に送信した値をRGB順で報告する。LED用GRBバッファからRGB順へ戻す。目標色ではなく送信済み出力のスナップショットであり、物理的な発光をセンサーで測定した結果ではない。
-- 既定MTU23でも動くようNotifyは1回20バイト以下へ分割し、LFは最後のチャンクに含める。開始時に固定した1行を最後まで送り、別スナップショットのチャンクを混ぜない。メインループから少量ずつ送り、LED・ボタン・コマンド処理を止めない。送信待ち・再試行も有界にする。
+${nanoLedTransportRules.ja}
 - STATUS・コマンド適用・利用可能な本体ボタンの変更で最新状態を通知する。変化がなくても約1秒ごと、最大5スナップショット/秒。通信が遅ければ周期を延ばす。送信中の行を維持し、待機分は最新1件だけとする。行の途中で別JSONへ切り替えない。
 - 切断で送受信途中の行を破棄する。再接続・通知再購読後は完全な新しい行から送る。ブラウザはGATTオブジェクトを破棄しサービス・Characteristicを取り直す。
 - ブラウザはNotify境界でなくLFで区切る。不正JSON・過大行で現在状態を上書きしない。未受信や更新停止を明示し、送った設定だけでLED表示を変更しない。

@@ -212,8 +212,8 @@ describe('NanoLED v2 telemetry', () => {
     { controls: { ...stateV2.controls, modes: {} } }, { controls: { ...stateV2.controls, actions: null } },
     { controls: { ...stateV2.controls, modes: [...stateV2.controls.modes, stateV2.controls.modes[0]] } },
     { controls: { ...stateV2.controls, actions: [stateV2.controls.actions[0], stateV2.controls.actions[0]] } },
-    { controls: { ...stateV2.controls, modes: Array.from({ length: 9 }, (_, index) => ({ id: index ? `MODE_${index}` : 'PINK', label: 'モード' })) } },
-    { controls: { ...stateV2.controls, actions: Array.from({ length: 9 }, (_, index) => ({ id: `ACT_${index}`, label: '合図' })) } },
+    { controls: { ...stateV2.controls, modes: Array.from({ length: 17 }, (_, index) => ({ id: index ? `MODE_${index}` : 'PINK', label: 'モード' })) } },
+    { controls: { ...stateV2.controls, actions: Array.from({ length: 16 }, (_, index) => ({ id: `ACT_${index}`, label: '合図' })) } },
   ])('不整合なv2の状態・一覧を拒否する: %j', changed => {
     expect(parseLedStatus(JSON.stringify({ ...stateV2, ...changed }))).toBeNull()
   })
@@ -237,6 +237,62 @@ describe('NanoLED v2 telemetry', () => {
     expect(parseLedStatus(JSON.stringify(value))).toEqual(value)
   })
 
+  it.each([[10, 1], [15, 1], [16, 0], [1, 15]])('モード%d個＋アクション%d個を受理し、表示・共通操作を件数に含めない', (modes, actions) => {
+    const value = { ...stateV2, mode: 'M0', controls: { speed: true,
+      modes: Array.from({ length: modes }, (_, i) => ({ id: `M${i}`, label: `光り方 ${i}` })),
+      actions: Array.from({ length: actions }, (_, i) => ({ id: `A${i}`, label: `演出 ${i}` })),
+    } }
+    expect(parseLedStatus(JSON.stringify(value))).toEqual(value)
+  })
+
+  it.each([[16, 1], [8, 9], [17, 0], [0, 0], [1, 16]])('モード%d個＋アクション%d個を黙って切り詰めず拒否する', (modes, actions) => {
+    const value = { ...stateV2, mode: 'M0', controls: { speed: true,
+      modes: Array.from({ length: modes }, (_, i) => ({ id: `M${i}`, label: `光り方 ${i}` })),
+      actions: Array.from({ length: actions }, (_, i) => ({ id: `A${i}`, label: `演出 ${i}` })),
+    } }
+    const before = structuredClone(value)
+    expect(parseLedStatus(JSON.stringify(value))).toBeNull()
+    expect(value).toEqual(before)
+  })
+
+  it.each([20, 182, 244])('%dバイトNotifyで日本語・絵文字の途中を含めて結合し、4096バイトの行も保持する', chunkSize => {
+    // ラベル内へチャンク境界が来るよう空白で位置をずらす。UTF-8はLFまで復号しない。
+    const text = JSON.stringify({ ...stateV2, controls: { ...stateV2.controls, actions: [{ id: 'SPARKLE', label: '虹色🌈闪光✨'.repeat(3) }] } })
+    const labelStart = encoder.encode(text.slice(0, text.indexOf('虹色'))).length
+    const prefixSize = (chunkSize - (labelStart + 1) % chunkSize) % chunkSize
+    const payload = ' '.repeat(prefixSize) + text
+    const padding = MAX_STATUS_BYTES - encoder.encode(payload).length
+    const bytes = encoder.encode(`${payload}${' '.repeat(padding)}\n`)
+    const parser = new LedStatusParser()
+    const result = { statuses: [] as ReturnType<LedStatusParser['push']>['statuses'], rejected: 0 }
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const part = parser.push(bytes.slice(offset, offset + chunkSize))
+      result.statuses.push(...part.statuses); result.rejected += part.rejected
+    }
+    expect(result).toEqual({ statuses: [parseLedStatus(text)], rejected: 0 })
+    const oversized = encoder.encode(`${payload}${' '.repeat(padding + 1)}\n${line(stateV2)}`)
+    const recovered = { statuses: [] as ReturnType<LedStatusParser['push']>['statuses'], rejected: 0 }
+    for (let offset = 0; offset < oversized.length; offset += chunkSize) {
+      const part = parser.push(oversized.slice(offset, offset + chunkSize))
+      recovered.statuses.push(...part.statuses); recovered.rejected += part.rejected
+    }
+    expect(recovered).toEqual({ statuses: [stateV2], rejected: 1 })
+  })
+
+  it('送信途中でNotify長が20→182→244へ変わっても旧仕様の次行まで復元する', () => {
+    const bytes = encoder.encode(line(stateV2) + line())
+    const parser = new LedStatusParser()
+    const result = { statuses: [] as ReturnType<LedStatusParser['push']>['statuses'], rejected: 0 }
+    let offset = 0
+    for (const size of [20, 182, 244, 20, 244]) {
+      const part = parser.push(bytes.slice(offset, offset + size))
+      offset += size
+      result.statuses.push(...part.statuses); result.rejected += part.rejected
+    }
+    expect(offset).toBeGreaterThanOrEqual(bytes.length)
+    expect(result).toEqual({ statuses: [stateV2, state], rejected: 0 })
+  })
+
   it('直接パースでも4096バイト上限を守り、UTF-8のバイト数で判定する', () => {
     const text = JSON.stringify(stateV2)
     const padding = MAX_STATUS_BYTES - encoder.encode(text).length
@@ -246,6 +302,19 @@ describe('NanoLED v2 telemetry', () => {
     expect(tooBig.length).toBeLessThan(MAX_STATUS_BYTES)
     expect(parseLedStatus(tooBig)).toBeNull()
     expect(new LedStatusParser().push(encoder.encode(`${tooBig}\n${line(stateV2)}`))).toEqual({ statuses: [stateV2], rejected: 1 })
+  })
+
+  it('16操作以内でも長いUnicodeラベルと全LED報告が4096バイトを超える場合は拒否する', () => {
+    const value = { ...stateV2, mode: 'M00000000000', pixels: 'ffffff'.repeat(MAX_LED_COUNT), controls: {
+      speed: true,
+      modes: Array.from({ length: 16 }, (_, i) => ({ id: `M${String(i).padStart(11, '0')}`, label: '🌈'.repeat(24) })),
+      actions: [],
+    } }
+    // JSON区切りに許される空白も、送信された実バイトとして数える。
+    const row = JSON.stringify(value).replace(/"(?:\\.|[^"\\])*"|[:,]/g, token => token.startsWith('"') ? token : `${token} `)
+    expect(encoder.encode(row).length).toBeGreaterThan(MAX_STATUS_BYTES)
+    expect(parseLedStatus(row)).toBeNull()
+    expect(parseLedStatus(JSON.stringify({ ...value, pixels: 'ffffff' }))).not.toBeNull()
   })
 })
 
@@ -314,6 +383,20 @@ describe('Web Bluetooth controller', () => {
     expect(await client.send('ACTION UNKNOWN')).toBe(false)
     expect(client.getSnapshot().error).toContain('アクションは機器に登録されていません')
     expect(rx.writes).toEqual(['STATUS\n', 'PLAY\n', 'PAUSE\n', 'MODE RAINBOW\n', 'ACTION SPARKLE\n', 'BRIGHTNESS 70\n', 'SPEED 40\n'])
+  })
+
+  it.each([20, 182, 244])('%dバイトNotifyで16モードを受信し、最後の操作も同じRX/TXで扱う', async chunkSize => {
+    const { client, tx, rx, device } = setup()
+    await client.connect()
+    const value = { ...stateV2, mode: 'M0', controls: { speed: true,
+      modes: Array.from({ length: 16 }, (_, i) => ({ id: `M${i}`, label: `虹🌈 ${i}` })), actions: [],
+    } }
+    const bytes = encoder.encode(line(value))
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) tx.notify(bytes.slice(offset, offset + chunkSize))
+    expect(client.getSnapshot().status).toEqual(value)
+    expect(await client.send('MODE M15')).toBe(true)
+    expect(rx.writes).toEqual(['STATUS\n', 'MODE M15\n'])
+    expect(device.gatt.service.requests).toEqual([NANO_LED_RX_UUID, NANO_LED_TX_UUID])
   })
 
   it('速さ調整に未対応のv2作品にはSPEEDを送らない', async () => {

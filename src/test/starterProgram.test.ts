@@ -134,7 +134,37 @@ describe('starter generator', () => {
     const value = recipe()
     expect(() => buildStarterProgram(settings(), { ...value, modes: [] })).toThrow()
     expect(() => buildStarterProgram(settings(), { ...value, modes: [value.modes[0], value.modes[0]] })).toThrow()
-    expect(() => buildStarterProgram(settings(), { ...value, modes: Array.from({ length: 9 }, (_, i) => ({ ...value.modes[0], id: `M${i}` })) })).toThrow()
+    expect(() => buildStarterProgram(settings(), { ...value, modes: Array.from({ length: 17 }, (_, i) => ({ ...value.modes[0], id: `M${i}` })) })).toThrow()
+  })
+
+  it.each([10, 15])('wireless candidate counts its fixed SPARKLE action along with %d modes', count => {
+    const value = { ...recipe(), wireless: true }
+    value.modes = Array.from({ length: count }, (_, i) => ({ ...value.modes[0], id: `M${i}` }))
+    const before = structuredClone(value)
+    expect(buildStarterProgram(settings(), value)).toContain('SPARKLE')
+    expect(value).toEqual(before)
+  })
+
+  it('keeps 16 non-wireless modes but rejects wireless 16 + SPARKLE without removing user effects', () => {
+    const value = recipe()
+    value.modes = Array.from({ length: 16 }, (_, i) => ({ ...value.modes[0], id: `M${i}` }))
+    expect(buildStarterProgram(settings(), value)).toContain('"wireless":false')
+    value.wireless = true
+    const before = structuredClone(value)
+    expect(() => buildStarterProgram(settings(), value)).toThrow('「キラッと光る」1個を含めて最大16個')
+    expect(starterAvailability(settings(), value)).toMatchObject({ verified: false, reason: expect.stringContaining('15種類以内') })
+    expect(value).toEqual(before)
+  })
+
+  it('keeps all pixels and maximum UTF-8 labels for a full wireless candidate without claiming a RAM guarantee', () => {
+    const value = { ...recipe(), wireless: true }
+    value.modes = Array.from({ length: 15 }, (_, i) => ({ ...value.modes[0], id: `M${String(i).padStart(11, '0')}`, label: '🌈'.repeat(24) }))
+    const before = structuredClone(value)
+    const source = buildStarterProgram({ ...settings(), ledCount: 300 }, value)
+    expect(source).toContain('"led_count":300')
+    expect(source).toContain('"id":"M00000000014"')
+    expect(source).toContain('🌈'.repeat(24))
+    expect(value).toEqual(before)
   })
 
   it('preserves Unicode labels as data and does not share or mutate inputs', () => {

@@ -41,6 +41,7 @@ export interface ProjectSnapshot {
   source: string
   settings: ProjectSettings
   recipe: ProjectRecipe
+  // 受信済み操作の外観設定。controls本体への追加定義ではなく、件数をレシピと二重加算しない。
   remoteButtons: RemoteButton[]
 }
 export interface ArtworkProject {

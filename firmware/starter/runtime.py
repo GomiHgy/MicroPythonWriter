@@ -14,11 +14,27 @@ ACTION_DURATION_MS = 1000
 DEBOUNCE_MS = 40
 LONG_PRESS_MS = 800
 DOUBLE_PRESS_MS = 350
+MAX_NAMED_CONTROLS = 16
+MAX_STATUS_BYTES = 4096
+PREFERRED_ATT_MTU = 247
+DEFAULT_NOTIFY_BYTES = 20
+MAX_NOTIFY_BYTES = 244
+_IRQ_MTU_EXCHANGED = 21
 
 
 class LedProgram:
     def __init__(self, config):
         self.config = config
+        # 候補にはSPARKLEを1件固定で含める。黙ってモードを切り詰めない。
+        modes = config["modes"]
+        if not 1 <= len(modes) <= MAX_NAMED_CONTROLS:
+            raise ValueError("NanoLED needs 1 to 16 modes")
+        if config["wireless"] and len(modes) + 1 > MAX_NAMED_CONTROLS:
+            raise ValueError("NanoLED starter allows 15 modes plus SPARKLE, 16 named controls total")
+        # 定義は初期化時だけ構築し、全STATUSで同じ定義を使う。送信中はbytesへ固定する。
+        self.controls = {"speed": True,
+                         "modes": [{"id": m["id"], "label": m["label"]} for m in modes],
+                         "actions": [{"id": "SPARKLE", "label": "キラッと光る"}]}
         self.pin = machine.Pin(config["led_pin"], machine.Pin.OUT, value=0)
         # ボタンを使わない作品では入力GPIO自体を初期化・読み取りしない。
         use_button = config["while_held"] or any(
@@ -465,17 +481,25 @@ class LedProgram:
         return {"v": 2, "mode": self.modes[self.index]["id"], "brightness": self.brightness,
                 "speed": self.speed, "pixels": "".join("%02x%02x%02x" % rgb for rgb in self.output),
                 "playback": self.playback, "action": self.action,
-                "controls": {"speed": True,
-                             "modes": [{"id": m["id"], "label": m["label"]} for m in self.modes],
-                             "actions": [{"id": "SPARKLE", "label": "キラッと光る"}]}}
+                "controls": self.controls}
 
 
 class NanoBle:
     def __init__(self, program):
         import bluetooth
         self.program = program
+        # 通信開始前にも最大長のフィールドを使って検証する。pixelsは全LED分を維持。
+        if len(program.controls["modes"]) + len(program.controls["actions"]) > MAX_NAMED_CONTROLS:
+            raise ValueError("NanoLED named controls exceed 16")
+        largest = program.status()
+        largest.update(mode=max((m["id"] for m in program.modes), key=len),
+                       brightness=100, speed=100, playback="playing", action="SPARKLE")
+        self.encode_status(largest)
+        del largest
         self.ble = bluetooth.BLE()
         self.conn = None
+        self.connection_epoch = 0
+        self.notify_bytes = DEFAULT_NOTIFY_BYTES
         self.ready = False
         self.rx = []
         self.overflow = False
@@ -490,6 +514,7 @@ class NanoBle:
         self.last_notify = self.last_snapshot
         try:
             self.ble.active(True)
+            self.configure_mtu()
             self.ble.gap_advertise(None)
             service = bluetooth.UUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
             tx = (bluetooth.UUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e"), bluetooth.FLAG_NOTIFY)
@@ -501,11 +526,43 @@ class NanoBle:
             # 128-bit UUIDは広告に追加しない。Flags + 完全名だけで31バイト以内。
             self.advertisement = bytes((2, 1, 6, len(name) + 1, 9)) + name
             self.ble.gap_advertise(250000, adv_data=self.advertisement)
-        except Exception:
-            self.ble.active(False)
+        except BaseException:
+            try:
+                self.ble.active(False)
+            except BaseException:
+                pass
             raise
 
+    def configure_mtu(self):
+        # MicroPython公式: configは希望値、event 21の(conn_handle, mtu)が交渉結果。
+        # 非対応だけ20バイトで継続。メモリ不足・初期化異常を成功扱いしない。
+        configure = getattr(self.ble, "config", None)
+        if configure is None:
+            return
+        try:
+            configure(mtu=PREFERRED_ATT_MTU)
+        except NotImplementedError:
+            return
+        except ValueError as error:
+            if str(error) != "unknown config param":
+                raise
+        except OSError as error:
+            import errno
+            unsupported = (getattr(errno, "ENOSYS", None), getattr(errno, "EOPNOTSUPP", None))
+            if not error.args or error.args[0] is None or error.args[0] not in unsupported:
+                raise
+
+    @staticmethod
+    def encode_status(status):
+        row = json.dumps(status).encode("utf-8")
+        if len(row) > MAX_STATUS_BYTES:
+            raise ValueError("NanoLED status exceeds 4096 UTF-8 bytes; shorten labels with the user")
+        return row + b"\n"
+
     def clear_connection(self):
+        # 同じhandleが再利用されても、古い送信処理の結果を次の接続へ持ち越さない。
+        self.connection_epoch += 1
+        self.notify_bytes = DEFAULT_NOTIFY_BYTES
         self.ready = False
         self.rx = []
         self.overflow = False
@@ -521,10 +578,15 @@ class NanoBle:
         if event == 1:
             self.conn = data[0]
             self.clear_connection()
+            self.restart = False
         elif event == 2 and data[0] == self.conn:
             self.conn = None
             self.clear_connection()
             self.restart = True
+        elif event == _IRQ_MTU_EXCHANGED and self.conn is not None and len(data) == 2 and data[0] == self.conn:
+            mtu = data[1]
+            if type(mtu) is int and 23 <= mtu <= 517:
+                self.notify_bytes = min(mtu - 3, MAX_NOTIFY_BYTES)
         elif event == 3 and data[0] == self.conn and data[1] == self.rx_handle:
             chunk = self.ble.gatts_read(self.rx_handle)
             if len(self.rx) < 8 and len(chunk) < 128 and not self.overflow:
@@ -572,10 +634,12 @@ class NanoBle:
             return
         age = time.ticks_diff(now, self.last_snapshot)
         if age >= 200 and (self.program.dirty or age >= 1000):
-            row = json.dumps(self.program.status()).encode("utf-8")
-            if len(row) > 4096:
-                raise ValueError("NanoLED status exceeds 4096 bytes")
-            self.pending = row + b"\n"
+            epoch = self.connection_epoch
+            row = self.encode_status(self.program.status())
+            if epoch != self.connection_epoch:
+                return
+            # 待機分だけ最新1件へ置換。送信中のUTF-8行には触れない。
+            self.pending = row
             self.program.dirty = False
             self.last_snapshot = now
         if not self.tx and self.pending is not None:
@@ -583,17 +647,23 @@ class NanoBle:
             self.offset = 0
         if self.tx and time.ticks_diff(now, self.last_notify) >= 10:
             self.last_notify = now
+            conn, epoch = self.conn, self.connection_epoch
+            chunk = self.tx[self.offset:self.offset + self.notify_bytes]
             try:
-                self.ble.gatts_notify(self.conn, self.tx_handle, self.tx[self.offset:self.offset + 20])
-                self.offset += 20
+                self.ble.gatts_notify(conn, self.tx_handle, chunk)
+                if epoch != self.connection_epoch:
+                    return
+                # 最終チャンクや送信中のMTU変更でも、実際の受付バイト数だけ進める。
+                self.offset += len(chunk)
                 self.failures = 0
                 if self.offset >= len(self.tx):
                     self.tx = b""
             except OSError:
+                if epoch != self.connection_epoch:
+                    return
                 self.failures += 1
                 if self.failures >= 3:
                     # 途中のJSONを捨てて同一接続へ次行を混ぜない。再接続からやり直す。
-                    conn = self.conn
                     self.conn = None
                     self.clear_connection()
                     self.ble.gap_disconnect(conn)

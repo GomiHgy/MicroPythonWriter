@@ -1,4 +1,5 @@
 import { isBoardId } from '../../config/boards'
+import { MAX_CONTROL_ACTIONS, MAX_CONTROL_MODES, MAX_NAMED_CONTROLS } from '../../config/bleLimits'
 import { isLedModel } from '../workshop/WorkshopProfile'
 import type { ArtworkProject, ProjectSnapshot } from './types'
 
@@ -55,7 +56,7 @@ function snapshot(value: unknown): ProjectSnapshot {
     || (hasDoublePress && !['next', 'toggle', 'none'].includes(recipe.doublePress as string))
     || !longPressActions.includes(recipe.longPress as string)
     || typeof recipe.whileHeld !== 'boolean' || typeof recipe.wireless !== 'boolean') fail('ボタン・無線の設定が正しくありません。')
-  if (!Array.isArray(recipe.modes) || recipe.modes.length < 1 || recipe.modes.length > 8) fail('光り方は1〜8個で設定してください。')
+  if (!Array.isArray(recipe.modes) || recipe.modes.length < 1 || recipe.modes.length > MAX_CONTROL_MODES) fail('光り方は1〜16個で設定してください。')
   const modes = recipe.modes as unknown[]
   const ids = new Set<string>()
   for (const candidate of modes) {
@@ -67,14 +68,16 @@ function snapshot(value: unknown): ProjectSnapshot {
       || !['hold', 'off'].includes(mode.endState as string)) fail('光り方の名前・ID・色・速さ・繰り返しを確認してください。')
     ids.add(mode.id as string)
   }
-  if (!Array.isArray(draft.remoteButtons) || draft.remoteButtons.length > 16) fail('リモコンのボタンは種類ごとに8個までです。')
+  // 外観の上書き一覧であり、機器のcontrolsへ追加する別操作ではない。レシピと二重加算しない。
+  if (!Array.isArray(draft.remoteButtons) || draft.remoteButtons.length > MAX_NAMED_CONTROLS) fail('リモコンのボタンはモードとアクションを合わせて16個までです。')
   const remoteIds = { mode: new Set<string>(), action: new Set<string>() }
   for (const candidate of draft.remoteButtons as unknown[]) {
     const button = record(candidate, ['kind', 'id', 'label', 'icon'])
     if ((button.kind !== 'mode' && button.kind !== 'action') || !identifier(button.id) || !text(button.label, 24) || !icon(button.icon)) fail('リモコンのボタン設定が正しくありません。')
     const kind = button.kind as 'mode' | 'action'
     const id = button.id as string
-    if (remoteIds[kind].has(id) || remoteIds[kind].size >= 8) fail('リモコンのボタンIDの重複や個数を確認してください。')
+    const maximum = kind === 'mode' ? MAX_CONTROL_MODES : MAX_CONTROL_ACTIONS
+    if (remoteIds[kind].has(id) || remoteIds[kind].size >= maximum) fail('リモコンのボタンIDの重複や個数を確認してください。')
     remoteIds[kind].add(id)
   }
   // 受信したコードや名前は実行せず、そのまま保存する。HTMLとしても扱わない。

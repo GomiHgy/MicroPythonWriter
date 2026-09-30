@@ -65,7 +65,7 @@ describe('作品の形式・保存・読み込み', () => {
     ['source NUL', (p: ArtworkProject) => { p.draft.source = 'print(1)\0' }],
     ['source long', (p: ArtworkProject) => { p.draft.source = 'x'.repeat(MAX_PROJECT_SOURCE_LENGTH + 1) }],
     ['modes empty', (p: ArtworkProject) => { p.draft.recipe.modes = [] }],
-    ['modes excess', (p: ArtworkProject) => { p.draft.recipe.modes = Array.from({ length: 9 }, (_, i) => ({ ...p.draft.recipe.modes[0], id: `M${i}` })) }],
+    ['modes excess', (p: ArtworkProject) => { p.draft.recipe.modes = Array.from({ length: 17 }, (_, i) => ({ ...p.draft.recipe.modes[0], id: `M${i}` })) }],
     ['mode duplicate', (p: ArtworkProject) => { p.draft.recipe.modes.push({ ...p.draft.recipe.modes[0] }) }],
     ['short button', (p: ArtworkProject) => { (p.draft.recipe as unknown as { shortPress: string }).shortPress = 'exec' }],
     ['double button', (p: ArtworkProject) => { (p.draft.recipe as unknown as { doublePress: string }).doublePress = 'off' }],
@@ -102,9 +102,9 @@ describe('作品の形式・保存・読み込み', () => {
     expect(() => validateProject(project)).toThrow()
   })
 
-  it('Unicodeコードポイント24個、設定境界値、8個のモードを受け付ける', () => {
+  it('Unicodeコードポイント24個、設定境界値、16個のモードを受け付ける', () => {
     const project = createProject()
-    project.draft.recipe.modes = Array.from({ length: 8 }, (_, i) => ({ ...project.draft.recipe.modes[0], id: `MODE_${i}`, label: '🌟'.repeat(24), speed: i ? 0 : 100, repeats: i ? 0 : 100 }))
+    project.draft.recipe.modes = Array.from({ length: 16 }, (_, i) => ({ ...project.draft.recipe.modes[0], id: `MODE_${i}`, label: '🌟'.repeat(24), speed: i ? 0 : 100, repeats: i ? 0 : 100 }))
     project.draft.source = 'x'.repeat(MAX_PROJECT_SOURCE_LENGTH)
     project.draft.settings.ledCount = 300
     project.draft.settings.ledPin = 48
@@ -112,14 +112,42 @@ describe('作品の形式・保存・読み込み', () => {
     expect(validateProject(project)).toEqual(project)
   })
 
-  it('remote mode/actionは種類ごとに8個まででIDを一意にする', () => {
+  it('remote mode/actionは合計16個までで、同じ種類のIDを一意にする', () => {
     const project = createProject()
     project.draft.remoteButtons = Array.from({ length: 16 }, (_, i) => ({ kind: i < 8 ? 'mode' : 'action', id: `ID_${i % 8}`, label: `ボタン${i}`, icon: 'light' }))
     expect(validateProject(project)).toEqual(project)
     project.draft.remoteButtons[1].id = 'ID_0'
     expect(() => validateProject(project)).toThrow()
-    project.draft.remoteButtons = Array.from({ length: 9 }, (_, i) => ({ kind: 'action', id: `ID_${i}`, label: '動作', icon: 'star' }))
+    project.draft.remoteButtons = Array.from({ length: 16 }, (_, i) => ({ kind: 'action', id: `ID_${i}`, label: '動作', icon: 'star' }))
     expect(() => validateProject(project)).toThrow()
+  })
+
+  it.each([[10, 1], [15, 1], [16, 0], [1, 15]])('外観設定の%dモード＋%dアクションをレシピと二重加算せず保持する', (modes, actions) => {
+    const project = createProject()
+    project.draft.recipe.modes = Array.from({ length: 16 }, (_, i) => ({ ...project.draft.recipe.modes[0], id: `M${i}` }))
+    project.draft.recipe.wireless = true
+    project.draft.remoteButtons = [
+      ...Array.from({ length: modes }, (_, i) => ({ kind: 'mode' as const, id: `M${i}`, label: `モード${i}`, icon: 'light' as const })),
+      ...Array.from({ length: actions }, (_, i) => ({ kind: 'action' as const, id: `A${i}`, label: `演出${i}`, icon: 'star' as const })),
+    ]
+    project.draft.source = '# 利用者の既存コードは変更しない'
+    const before = structuredClone(project)
+    expect(saveProject(project)).toBe('')
+    target.setItem.mockClear()
+    expect(loadProject().project).toEqual(before)
+    expect(target.setItem).not.toHaveBeenCalled()
+    expect(project).toEqual(before)
+  })
+
+  it.each([[16, 1], [8, 9], [17, 0]])('外観設定の%dモード＋%dアクションは切り詰めず拒否する', (modes, actions) => {
+    const project = createProject()
+    project.draft.remoteButtons = [
+      ...Array.from({ length: modes }, (_, i) => ({ kind: 'mode' as const, id: `M${i}`, label: 'モード', icon: 'light' as const })),
+      ...Array.from({ length: actions }, (_, i) => ({ kind: 'action' as const, id: `A${i}`, label: '演出', icon: 'star' as const })),
+    ]
+    const before = structuredClone(project)
+    expect(() => validateProject(project)).toThrow('合わせて16個')
+    expect(project).toEqual(before)
   })
 
   it.each(['root', 'settings', 'recipe', 'mode', 'working', 'snapshot', 'remote'])('階層 %s の未定義キーを拒否する', level => {

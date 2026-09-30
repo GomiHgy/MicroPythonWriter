@@ -1,5 +1,6 @@
 """CPythonで状態機械を確認する。GPIO波形・UIFlow2・電源・実発光の検証ではない。"""
 import copy
+import errno
 import importlib.util
 import json
 import os
@@ -34,6 +35,10 @@ class FakeBle:
         self.fail_notify = False
         self.disconnections = []
         self.advertisements = []
+        self.configurations = []
+
+    def config(self, **kwargs):
+        self.configurations.append(kwargs)
 
     def active(self, enabled):
         self.enabled = enabled
@@ -1341,6 +1346,306 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(radio.ble.disconnections, [42])
         self.assertEqual(radio.conn, None)
         self.assertFalse(radio.tx)
+
+
+class NotifyMtuTests(unittest.TestCase):
+    """ATT交換・Notifyを模擬する。実機MTU交換成功・無線動作を証明しない。"""
+    setUp = RuntimeTests.setUp
+    step = RuntimeTests.step
+    radio = RuntimeTests.radio
+
+    def test_preferred_mtu_does_not_expand_before_exchange(self):
+        radio = self.radio()
+        self.assertEqual(radio.ble.configurations, [{"mtu": 247}])
+        self.assertEqual(radio.notify_bytes, 20)
+        radio.ble.incoming(b"STATUS\n")
+        self.step(500, radio)
+        self.assertTrue(radio.ble.notifications)
+        self.assertTrue(all(len(chunk) <= 20 for chunk in radio.ble.notifications))
+
+    def test_negotiated_mtu_boundaries_and_complete_unicode_lines(self):
+        for mtu, size in ((23, 20), (185, 182), (247, 244), (517, 244)):
+            with self.subTest(mtu=mtu):
+                self.setUp()
+                self.program.controls["modes"][0]["label"] = "星🌟" * 12
+                with patch.object(runtime, "json", types.SimpleNamespace(
+                    dumps=lambda value: json.dumps(value, ensure_ascii=False)
+                )):
+                    radio = self.radio()
+                    radio.irq(21, (42, mtu))
+                    radio.ble.incoming(b"STATUS\n")
+                    self.step(1500, radio)
+                self.assertEqual(radio.notify_bytes, size)
+                self.assertEqual(max(map(len, radio.ble.notifications)), size)
+                rows = b"".join(radio.ble.notifications).split(b"\n")[:-1]
+                self.assertTrue(rows)
+                for row in rows:
+                    self.assertEqual(json.loads(row)["controls"]["modes"][0]["label"], "星🌟" * 12)
+
+    def test_unknown_invalid_and_other_connection_mtu_are_ignored(self):
+        radio = self.radio()
+        for data in ((43, 247), (42, 22), (42, 518), (42, True), (42, 247.0),
+                     (42, "247"), (42, None), (42,), (42, 247, 1)):
+            radio.irq(21, data)
+            self.assertEqual(radio.notify_bytes, 20)
+        radio.irq(21, (42, 185))
+        radio.irq(21, (99, 247))
+        self.assertEqual(radio.notify_bytes, 182)
+
+    def test_reconnect_discards_mtu_pending_and_partial_rx_tx(self):
+        radio = self.radio()
+        radio.irq(21, (42, 247))
+        radio.ble.incoming(b"STATUS\nMO")
+        self.step(200, radio)
+        radio.pending = b"old\n"
+        radio.irq(2, (42, None, None))
+        self.assertEqual(radio.notify_bytes, 20)
+        radio.irq(21, (42, 247))
+        self.assertEqual(radio.notify_bytes, 20)
+        radio.irq(1, (43, None, None))
+        radio.irq(21, (42, 247))
+        self.assertEqual(radio.notify_bytes, 20)
+        self.assertFalse(radio.ready)
+        self.assertEqual((radio.tx, radio.pending, radio.offset, radio.line), (b"", None, 0, b""))
+        self.step(500, radio)
+        radio.irq(2, (43, None, None))
+        radio.irq(1, (42, None, None))  # handle再利用でも20から開始。
+        self.assertEqual(radio.notify_bytes, 20)
+
+    def test_mtu_changes_midline_and_failed_chunks_advance_exactly_once(self):
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        original = radio.tx
+        self.assertEqual(radio.offset, 20)
+        radio.irq(21, (42, 185))
+        self.step(10, radio)
+        self.assertEqual(radio.offset, 202)
+        radio.ble.fail_notify = True
+        self.step(10, radio)
+        self.assertEqual(radio.offset, 202)
+        radio.irq(21, (42, 247))
+        radio.ble.fail_notify = False
+        while radio.tx:
+            self.step(10, radio)
+        self.assertEqual(radio.offset, len(original))  # 最後の短いチャンクも実長。
+        self.assertEqual(b"".join(radio.ble.notifications), original)
+        self.assertEqual(json.loads(original)["v"], 2)
+
+    def test_mtu_change_inside_notify_does_not_change_accepted_length(self):
+        radio = self.radio()
+        notify = radio.ble.gatts_notify
+
+        def exchange_during_send(conn, handle, chunk):
+            notify(conn, handle, chunk)
+            radio.irq(21, (42, 247))
+
+        radio.ble.gatts_notify = exchange_during_send
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        self.assertEqual(radio.offset, 20)
+        self.assertEqual(radio.notify_bytes, 244)
+        self.step(10, radio)
+        self.assertEqual(radio.offset, 264)
+
+    def test_connection_changes_during_notify_cannot_pollute_new_session(self):
+        for fails in (False, True):
+            with self.subTest(fails=fails):
+                self.setUp()
+                radio = self.radio()
+
+                def disconnect_during_send(conn, handle, chunk):
+                    radio.irq(2, (42, None, None))
+                    radio.irq(1, (42, None, None))
+                    if fails:
+                        raise OSError("connection gone")
+
+                radio.ble.gatts_notify = disconnect_during_send
+                radio.ble.incoming(b"STATUS\n")
+                self.step(200, radio)
+                self.assertEqual((radio.tx, radio.pending, radio.offset, radio.failures), (b"", None, 0, 0))
+                self.assertFalse(radio.ready)
+                self.assertEqual(radio.notify_bytes, 20)
+                self.assertEqual(radio.ble.disconnections, [])
+
+    def test_connection_changes_while_encoding_discard_old_snapshot(self):
+        radio = self.radio()
+
+        def disconnected_dumps(value):
+            radio.irq(2, (42, None, None))
+            radio.irq(1, (42, None, None))
+            return json.dumps(value)
+
+        radio.ble.incoming(b"STATUS\n")
+        with patch.object(runtime, "json", types.SimpleNamespace(dumps=disconnected_dumps)):
+            self.step(200, radio)
+        self.assertIsNone(radio.pending)
+        self.assertEqual(radio.tx, b"")
+        self.assertEqual(radio.ble.notifications, [])
+        self.assertTrue(self.program.dirty)
+
+    def test_unsupported_mtu_api_only_falls_back_to_twenty(self):
+        for exception in (NotImplementedError(), ValueError("unknown config param"),
+                          OSError(errno.ENOSYS), OSError(errno.EOPNOTSUPP)):
+            with self.subTest(exception=repr(exception)):
+                with patch.object(FakeBle, "config", side_effect=exception):
+                    radio = self.radio()
+                radio.ble.incoming(b"STATUS\n")
+                self.step(500, radio)
+                self.assertTrue(radio.ble.enabled)
+                self.assertEqual(radio.notify_bytes, 20)
+                self.assertTrue(all(len(chunk) <= 20 for chunk in radio.ble.notifications))
+        # 属性欠落も扱うが、メソッド内部のAttributeErrorを握りつぶさない。
+        class LegacyBle(FakeBle):
+            def __getattribute__(self, name):
+                if name == "config":
+                    raise AttributeError(name)
+                return super().__getattribute__(name)
+        with patch.object(fake_bluetooth, "BLE", LegacyBle):
+            self.assertEqual(self.radio().notify_bytes, 20)
+
+    def test_mtu_and_initialization_failures_propagate_and_close(self):
+        for exception in (MemoryError("full"), OSError(errno.ENOMEM), OSError(errno.EIO),
+                          ValueError("invalid mtu"), TypeError("bad argument"),
+                          AttributeError("broken internals"), RuntimeError("failed"), KeyboardInterrupt()):
+            for operation in ("config", "active"):
+                with self.subTest(exception=repr(exception), operation=operation):
+                    ble = FakeBle()
+                    if operation == "config":
+                        ble.config = lambda **kwargs: (_ for _ in ()).throw(exception)
+                    else:
+                        active = ble.active
+                        def fail_activation(enabled):
+                            if enabled:
+                                raise exception
+                            active(enabled)
+                        ble.active = fail_activation
+                    with patch.object(fake_bluetooth, "BLE", return_value=ble):
+                        with self.assertRaises(type(exception)) as raised:
+                            runtime.NanoBle(self.program)
+                    self.assertIs(raised.exception, exception)
+                    self.assertFalse(ble.enabled)
+
+    def test_cleanup_failure_does_not_replace_original_initialization_error(self):
+        ble = FakeBle()
+        original = MemoryError("allocation failed")
+        ble.config = lambda **kwargs: (_ for _ in ()).throw(original)
+        active = ble.active
+        def cleanup_fails(enabled):
+            if not enabled:
+                raise OSError("cleanup failed")
+            active(enabled)
+        ble.active = cleanup_fails
+        with patch.object(fake_bluetooth, "BLE", return_value=ble):
+            with self.assertRaises(MemoryError) as raised:
+                runtime.NanoBle(self.program)
+        self.assertIs(raised.exception, original)
+
+    def test_controls_reused_without_changing_inflight_snapshot_and_latest_pending_only(self):
+        self.config["led_count"] = 300
+        self.program = runtime.LedProgram(self.config)
+        controls = self.program.status()["controls"]
+        for _ in range(10):
+            self.assertIs(self.program.status()["controls"], controls)
+        radio = self.radio()
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        current = radio.tx
+        original = json.loads(current)
+        self.program.command("BRIGHTNESS 23")
+        self.step(200, radio)
+        older = radio.pending
+        self.assertEqual(json.loads(older)["brightness"], 23)
+        self.program.command("BRIGHTNESS 71")
+        controls["modes"][0]["label"] = "新しい名前"
+        self.step(200, radio)
+        self.assertIs(radio.tx, current)
+        self.assertIsNot(radio.pending, older)
+        self.assertEqual(json.loads(current), original)
+        self.assertEqual(json.loads(radio.pending)["brightness"], 71)
+        self.assertEqual(json.loads(radio.pending)["controls"]["modes"][0]["label"], "新しい名前")
+
+    def test_status_byte_limit_includes_unicode_and_excludes_lf(self):
+        # UTF-8化前の文字数では上限を判定しない。
+        for text, allowed in (("x" * 4096, True), ("x" * 4097, False),
+                              ("🌟" * 1024, True), ("🌟" * 1025, False)):
+            with self.subTest(length=len(text), allowed=allowed):
+                with patch.object(runtime, "json", types.SimpleNamespace(dumps=lambda value: text)):
+                    if allowed:
+                        row = runtime.NanoBle.encode_status({})
+                        self.assertEqual(len(row), 4097)
+                        self.assertTrue(row.endswith(b"\n"))
+                    else:
+                        with self.assertRaises(ValueError):
+                            runtime.NanoBle.encode_status({})
+
+    def test_initialization_rejects_oversized_full_catalog_before_ble_start(self):
+        self.program.controls["modes"] = [{"id": "M%d" % i, "label": "🌟" * 24} for i in range(15)]
+        self.program.count = 300
+        self.program.output = [(0, 0, 0)] * 300
+        # CPython jsonのASCIIエスケープも含む実際のUTF-8結果で検査する。
+        with patch.object(fake_bluetooth, "BLE") as constructor:
+            with self.assertRaisesRegex(ValueError, "4096"):
+                runtime.NanoBle(self.program)
+            constructor.assert_not_called()
+        self.assertEqual(len(self.program.controls["modes"]), 15)
+        self.assertEqual(len(self.program.output), 300)
+
+    def test_full_sized_unicode_catalog_is_sent_without_truncation(self):
+        self.config["modes"] = [dict(BASE["modes"][0], id="M%011d" % i, label="🌟" * 24)
+                                for i in range(15)]
+        self.config["led_count"] = 300
+        with patch.object(runtime, "json", types.SimpleNamespace(
+            dumps=lambda value: json.dumps(value, ensure_ascii=False)
+        )):
+            # 実際のUTF-8で検査。16操作・最大LED数でも収まる組合せは切り詰めず使う。
+            self.program = runtime.LedProgram(self.config)
+            radio = self.radio()
+            radio.irq(21, (42, 247))
+            radio.ble.incoming(b"STATUS\n")
+            self.step(1000, radio)
+            row = b"".join(radio.ble.notifications).split(b"\n")[0]
+            self.assertLessEqual(len(row), 4096)
+            self.assertEqual(len(json.loads(row)["controls"]["modes"]), 15)
+            self.assertEqual(len(json.loads(row)["controls"]["actions"]), 1)
+            self.assertEqual(len(json.loads(row)["pixels"]), 1800)
+
+    def test_startup_counts_fixed_sparkle_without_truncating_modes(self):
+        for count, wireless, allowed in ((10, True, True), (15, True, True), (16, True, False),
+                                         (17, True, False), (0, True, False), (16, False, True)):
+            with self.subTest(count=count, wireless=wireless):
+                config = copy.deepcopy(BASE)
+                config["wireless"] = wireless
+                config["modes"] = [dict(BASE["modes"][0], id="M%d" % i) for i in range(count)]
+                if allowed:
+                    program = runtime.LedProgram(config)
+                    self.assertEqual(len(program.controls["modes"]), count)
+                    self.assertEqual(program.controls["actions"], [{"id": "SPARKLE", "label": "キラッと光る"}])
+                else:
+                    with self.assertRaises(ValueError):
+                        runtime.LedProgram(config)
+                self.assertEqual(len(config["modes"]), count)
+
+    def test_notify_retries_remain_bounded_at_large_mtu_and_restart_from_fresh_line(self):
+        radio = self.radio()
+        radio.irq(21, (42, 247))
+        radio.ble.incoming(b"STATUS\n")
+        self.step(200, radio)
+        self.assertTrue(radio.tx)
+        radio.ble.fail_notify = True
+        self.step(20, radio)
+        self.assertEqual(radio.ble.disconnections, [])
+        self.step(10, radio)
+        self.assertEqual(radio.ble.disconnections, [42])
+        self.assertEqual((radio.tx, radio.pending, radio.notify_bytes), (b"", None, 20))
+        radio.ble.notifications.clear()
+        radio.ble.fail_notify = False
+        radio.irq(1, (42, None, None))
+        radio.ble.incoming(b"STATUS\n")
+        self.step(1000, radio)
+        first = b"".join(radio.ble.notifications).split(b"\n")[0]
+        self.assertEqual(json.loads(first)["v"], 2)
+        self.assertTrue(all(len(chunk) <= 20 for chunk in radio.ble.notifications))
 
 
 class LedTransmissionTests(unittest.TestCase):
