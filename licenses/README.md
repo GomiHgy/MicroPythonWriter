@@ -4,6 +4,8 @@
 
 ## Web配信対象
 
+シミュレーション用Pyodideは、固定npm版0.29.3のコア5ファイルを無改変で`dist/simulation-runtime/`へ同梱する。ViteのJavaScriptバンドル一覧とは別の静的ランタイムとして扱い、`licenses/simulation/`の原文とソース入手先を第三者ライセンス全文へ追加する。出所は同フォルダーの`PROVENANCE.txt`と`sources.json`を参照。配布物のSHA-256とインストール元の一致をビルド後に検査する。これらの権利表示はアプリ独自コードのライセンスを変更しない。
+
 `public/icons.svg` は画面から参照されていないが、Vite により `dist/icons.svg` へコピーされ、Web配信物に含まれる。`licenses/manual-notices.txt` に適用宣言と CC0-1.0 全文を収録し、ビルド時の第三者ライセンス一覧へ同梱する。
 
 - 上流: [Vite / create-vite の React + TypeScript テンプレート](https://github.com/vitejs/vite/blob/520d13bfb14c4cf4fd8d3620e1fc5e6e815c9606/packages/create-vite/template-react-ts/public/icons.svg)

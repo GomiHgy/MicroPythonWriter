@@ -1,0 +1,12 @@
+# Simulation runtime provenance
+
+Pyodide 0.29.3 is copied unmodified from the pinned npm distribution. Only the five core files in build/simulationRuntime.ts are shipped; no optional Python packages are included.
+
+Source form (MPL-2.0): https://github.com/pyodide/pyodide/tree/0.29.3
+Source archive: https://github.com/pyodide/pyodide/archive/refs/tags/0.29.3.tar.gz
+hiwire source form (MPL-2.0): https://github.com/pyodide/hiwire/tree/6a1e67280a15d929ebeceee54a6358c9c8d5f697
+Build pins: https://github.com/pyodide/pyodide/blob/0.29.3/Makefile.envs and cpython/Makefile (CPython 3.13.2, Emscripten 4.0.9).
+
+The application adds separate hardware compatibility mocks at run time; it does not modify the distributed Pyodide/CPython binaries. These licenses do not establish a license for the application's own files. CPython-third-party.rst includes libmpdec and other incorporated CPython notices. Comments in CPython-hacl.txt and lz4-LICENSE.txt are the complete original source-file license headers; other files are complete original license documents. Source text newlines are normalized to LF; no terms are translated.
+
+Runtime hashes are emitted to simulation-runtime/provenance.json at build time.

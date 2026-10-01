@@ -3,10 +3,11 @@ import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { getBuildInfo } from './build/buildInfo.ts'
 import { LICENSE_METADATA, licenseNoticesPlugin } from './build/licenses.ts'
+import { simulationRuntimePlugin } from './build/simulationRuntime.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), licenseNoticesPlugin()],
+  plugins: [react(), simulationRuntimePlugin(), licenseNoticesPlugin()],
   base: './',
   build: { license: { fileName: LICENSE_METADATA } },
   define: { __APP_BUILD__: JSON.stringify(getBuildInfo(fileURLToPath(new URL('.', import.meta.url)))) },

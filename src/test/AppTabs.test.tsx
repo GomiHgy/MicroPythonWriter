@@ -2,6 +2,8 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import App from '../App'
 import { CodeEditor } from '../components/CodeEditor'
+import { SimulationPanel } from '../components/SimulationPanel'
+import { Terminal } from '../components/Terminal'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
@@ -60,6 +62,7 @@ vi.mock('react', async () => ({
 vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown, source: unknown, authoritative: unknown) => { harness.contexts.push(context); harness.initialSources.push(source); harness.sourceAuthorities.push(authoritative); return harness.programmer } }))
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
 vi.mock('../components/CodeEditor', () => ({ CodeEditor: () => null }))
+vi.mock('../components/SimulationPanel', () => ({ SimulationPanel: () => null }))
 vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
 vi.mock('../components/AiPreparationPanel', () => ({ AiPreparationPanel: () => null }))
@@ -111,6 +114,31 @@ function controllerTrial() {
 function assertNoUsbOperations() {
   for (const operation of ['connect', 'disconnect', 'run', 'stop', 'write', 'reset', 'load', 'setBoot', 'normalMode'] as const) expect(harness.programmer[operation], operation).not.toHaveBeenCalled()
 }
+
+it('エディタの右に独立したシミュレーション、その下に閉じた見守りログを置く', () => {
+  const view = render()
+  const workspace = find(view, element => element.props.className === 'workspace')
+  const simulator = find(workspace, element => element.type === SimulationPanel)
+  expect(simulator.props.source).toBe(harness.programmer.source)
+  const children = workspace.props.children as Element[]
+  expect(children[0].props.className).toBe('panel program-panel')
+  expect(children[1]).toBe(simulator)
+  expect(all(workspace, element => element.type === Terminal)).toHaveLength(0)
+  const records = find(view, element => element.props.className === 'program-records')
+  const folded = find(records, element => element.type === 'details')
+  expect(folded.props.open).toBeUndefined()
+  expect(find(folded, element => element.type === Terminal).props.log).toBe(harness.programmer.log)
+  assertNoUsbOperations()
+})
+
+it('ログを閉じていても実機エラーと修正への案内は隠さない', () => {
+  harness.programmer.error = { exceptionType: 'ValueError', message: 'test', stage: 'test', traceback: 'test' } as AppError
+  const view = render()
+  const records = find(view, element => element.props.className === 'program-records')
+  expect(byId(records, 'program-error-details').props.role).toBeUndefined()
+  const folded = find(records, element => element.type === 'details')
+  expect(all(folded, element => element.props.id === 'program-error-details')).toHaveLength(0)
+})
 
 it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
   setLocale(locale)

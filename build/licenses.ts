@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import type { Plugin } from 'vite'
+import { simulationLicenseReport, checkSimulationRuntime } from './simulationRuntime.ts'
 
 export const LICENSE_METADATA = 'third-party-licenses.json'
 export const LICENSE_INVENTORY = 'license-inventory.json'
@@ -135,7 +136,7 @@ export function createLicenseReport(root: string, rawEntries: unknown, inventory
     'Generated from the production bundle and installed license files. Original license texts are not translated.\n' +
     'This inventory does not establish a new license for the application, teaching materials, or templates.\n\n' +
     [...sections.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, section]) => section).join('\n') +
-    '\n# Manually recorded materials\n\n' + manual + '\n'
+    '\n# Manually recorded materials\n\n' + manual + '\n' + simulationLicenseReport(root)
 }
 
 export function checkLicenseArtifacts(root: string, outDir = 'dist'): number {
@@ -148,7 +149,7 @@ export function checkLicenseArtifacts(root: string, outDir = 'dist'): number {
   const inventory = JSON.parse(load(LICENSE_INVENTORY)) as LicenseInventory
   const expected = createLicenseReport(root, rawEntries, inventory)
   if (load(LICENSE_TEXT) !== expected) fail(LICENSE_TEXT, 'artifact differs from full original licenses/notices; rebuild required')
-  return new Set(inventory.packages.map(key)).size
+  return new Set(inventory.packages.map(key)).size + checkSimulationRuntime(root, output)
 }
 
 /** Vite標準のbuild.licenseを使用し、NOTICE・仮想ランタイム・手動素材だけ補足する。 */

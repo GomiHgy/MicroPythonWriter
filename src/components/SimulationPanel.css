@@ -1,0 +1,53 @@
+.simulation-panel { align-self: start; }
+.simulation-heading { display: flex; align-items: start; gap: 12px; justify-content: space-between; }
+.simulation-heading h2 { margin: 0; font-size: 1.13rem; }
+.simulation-only { flex-shrink: 0; padding: 5px 9px; border-radius: 99px; color: #146256; background: #e3f5f0; font-size: .76rem; font-weight: 750; }
+.simulation-intro, .simulation-help { color: #526b84; font-size: .83rem; line-height: 1.7; }
+.simulation-intro { margin: 10px 0 14px; }
+.simulation-help { margin: 9px 0; }
+.simulation-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.simulation-toolbar .run-button { flex: 1 1 220px; font-weight: 700; }
+.simulation-state { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; color: #526b84; font-size: .84rem; }
+.simulation-state.running { color: #087443; }
+.simulation-state span { font-variant-numeric: tabular-nums; }
+.simulation-warning { border-left: 4px solid #c38b21; padding: 10px 12px; background: #fff5d9; color: #775715; border-radius: 5px; font-size: .85rem; overflow-wrap: anywhere; }
+.simulation-warning pre { white-space: pre-wrap; max-height: 180px; overflow: auto; font-size: .8rem; }
+.simulation-display-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 14px 0 8px; color: #526b84; font-size: .8rem; }
+.simulation-display-meta { display: grid; gap: 3px; }
+.simulation-layout { display: flex; gap: 5px; }
+.simulation-layout button { padding: 7px 10px; font-size: .8rem; }
+.simulation-layout button[aria-pressed=true] { background: #165f9f; border-color: #165f9f; color: white; }
+.simulation-led-view { border: 1px solid #415970; border-radius: 12px; background: #101a24; overflow: auto; max-height: 400px; padding: 7px; }
+.simulation-led-view svg { display: block; width: 100%; max-height: 380px; }
+.simulation-inputs { margin-top: 16px; border-top: 1px solid #d1dde7; padding-top: 14px; }
+.simulation-inputs h3 { margin: 0 0 10px; font-size: .95rem; }
+.simulation-hardware-button { width: 100%; background: #edf3fa; color: #24445f; border: 2px solid #8ca7be; box-shadow: 0 3px 0 #8497a9; min-height: 48px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.simulation-hardware-button.pressed { background: #cbebff; color: #124b76; border-color: #1484d1; box-shadow: none; transform: translateY(2px); }
+.simulation-ble-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
+.simulation-ble-buttons button { flex: 1 1 100px; font-size: .85rem; }
+.simulation-brightness { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: .88rem; }
+/* 入力欄共通の余白を外し、0%と100%でつまみがレールの左右端に届くようにする。 */
+.simulation-brightness + input[type=range] { width: 100%; min-height: 34px; margin: 4px 0; padding: 0; border: 0; direction: ltr; accent-color: #197ac6; }
+.simulation-control-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.simulation-control-list h4 { flex-basis: 100%; margin: 0; font-size: .86rem; }
+.simulation-control-list button { padding: 10px 12px; }
+.simulation-control-list .simulation-help { margin: 0; }
+.simulation-details { border-top: 1px solid #d1dde7; margin-top: 14px; padding-top: 12px; font-size: .84rem; }
+.simulation-details summary { cursor: pointer; font-weight: 650; }
+.simulation-details > label { display: block; margin-top: 12px; }
+.simulation-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.simulation-config-grid label { display: grid; gap: 5px; }
+.simulation-config-grid label:first-child { grid-column: 1 / -1; }
+.simulation-config-grid input, .simulation-config-grid select, .simulation-trigger input { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; border: 1px solid #9bb0c2; border-radius: 8px; background: #f8fbff; color: #243b53; font: inherit; }
+.simulation-trigger { display: flex; gap: 7px; margin-top: 6px; }
+.simulation-trigger button { flex-shrink: 0; }
+.simulation-log { border-radius: 8px; padding: 12px; background: #101a24; color: #d5e7f6; max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; }
+:root[data-theme=dark] .simulation-only { background: #1d443d; color: #b0efdf; }
+:root[data-theme=dark] :is(.simulation-intro, .simulation-help, .simulation-state, .simulation-display-head) { color: #a8bccf; }
+:root[data-theme=dark] .simulation-state.running { color: #92e5c2; }
+:root[data-theme=dark] .simulation-warning { color: #ffe1a2; background: #393021; }
+:root[data-theme=dark] :is(.simulation-inputs, .simulation-details) { border-color: #384c5e; }
+:root[data-theme=dark] .simulation-hardware-button { background: #263b50; color: #e1effd; border-color: #6885a0; box-shadow: 0 3px 0 #0c1520; }
+:root[data-theme=dark] .simulation-hardware-button.pressed { background: #1c5881; border-color: #6cbdff; box-shadow: none; }
+:root[data-theme=dark] :is(.simulation-config-grid input, .simulation-config-grid select, .simulation-trigger input) { background: #142330; color: #e1effd; border-color: #597187; }
+@media (max-width: 480px) { .simulation-heading { flex-wrap: wrap; } .simulation-config-grid { grid-template-columns: 1fr; } .simulation-trigger { flex-wrap: wrap; } }

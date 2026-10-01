@@ -5,6 +5,8 @@ MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリア�
 
 ## 対応範囲
 
+- **画面内シミュレーション**: 「プログラム」のエディタ右側で、編集中のコードのLED・本体ボタン・NanoLED BLE操作を試せる。狭い画面では縦並び。その下の「見守りログ」は折りたたみ式。USB接続は不要。ブラウザ内のCPython互換層で動かすため、UIFlow2/MicroPythonや実機を完全再現するものではない。対応する新しいChrome/Edge（WebAssembly JSPI必須）を使う。[使い方・対応範囲](docs/simulation.md)
+
 ページ最下部に、アプリのバージョン（Gitコミットの先頭7桁）と生成日時（UTC）を表示する。機器のUIFlow2版とは別の情報。公開ビルドごとに自動で埋め込むため、利用時の外部通信は不要。未コミットの変更を含む場合はその旨を表示し、GitがないZIP環境などでは「取得できませんでした」とする。開発サーバーでは起動時点の情報になり、更新するにはサーバーを再起動する。
 
 - USB書込み: PC版 Google Chrome / Microsoft Edge。Web Serial APIが未対応ならUSB接続操作は無効になる。

@@ -173,6 +173,20 @@ describe('実際の本番バンドルの第三者ライセンス', () => {
     expect(text).toContain('THE SOFTWARE IS PROVIDED "AS IS"')
   })
 
+  it('シミュレーションの実行基盤と原文ライセンス・MPLソース入手先を同梱する', () => {
+    const report = assets.get(LICENSE_TEXT)!
+    expect(report).toContain('Pyodide 0.29.3')
+    expect(report).toContain('https://github.com/pyodide/pyodide/archive/refs/tags/0.29.3.tar.gz')
+    for (const file of ['Pyodide-MPL-2.0.txt', 'CPython-LICENSE.txt', 'CPython-third-party.rst', 'Emscripten-LICENSE.txt', 'hiwire-LICENSE.txt']) {
+      expect(report).toContain(readFileSync(join(root, 'licenses/simulation', file), 'utf8'))
+    }
+    for (const file of ['pyodide.mjs', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json', 'provenance.json']) {
+      expect(assets.has(`simulation-runtime/${file}`)).toBe(true)
+    }
+    expect(javascript).not.toContain('cdn.jsdelivr.net/pyodide')
+    expect(JSON.parse(assets.get('simulation-runtime/provenance.json')!).package).toBe('pyodide@0.29.3')
+  })
+
   it.each([
     'react', 'react-dom', 'scheduler',
     '@codemirror/autocomplete', '@codemirror/commands', '@codemirror/language', '@codemirror/lang-python', '@codemirror/state',
