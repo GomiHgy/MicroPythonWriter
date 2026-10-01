@@ -1,0 +1,16 @@
+.paste-code-tools { margin: 0 0 14px; }
+.paste-code-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.paste-code-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.paste-code-help, .paste-code-details { margin: 8px 0 0; color: #526b84; font-size: .86rem; line-height: 1.6; }
+.paste-code-details summary { cursor: pointer; }
+.paste-code-details p { margin: 6px 0 0; }
+.paste-code-notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; line-height: 1.6; overflow-wrap: anywhere; }
+.paste-code-notice p { margin: 0; }
+.paste-code-notice p + p { margin-top: 6px; }
+.paste-code-notice.success { background: #e6f6ec; color: #165438; border-left: 4px solid #438160; }
+.paste-code-notice.error { background: #fff0ed; color: #882e28; border-left: 4px solid #c95a52; }
+.paste-code-notice.info { background: #e5f0fd; color: #24527c; border-left: 4px solid #4b80b8; }
+:root[data-theme=dark] .paste-code-help, :root[data-theme=dark] .paste-code-details { color: #a8bccf; }
+:root[data-theme=dark] .paste-code-notice.success { background: #173c30; color: #d3f6e3; border-left-color: #65d39e; }
+:root[data-theme=dark] .paste-code-notice.error { background: #482b2e; color: #ffe1e1; border-left-color: #f28c91; }
+:root[data-theme=dark] .paste-code-notice.info { background: #25394f; color: #e0edff; border-left-color: #85baf4; }

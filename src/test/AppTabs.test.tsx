@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import App from '../App'
 import { CodeEditor } from '../components/CodeEditor'
+import { PasteCodeButton } from '../components/PasteCodeButton'
 import { SimulationPanel } from '../components/SimulationPanel'
 import { Terminal } from '../components/Terminal'
 import { BluetoothPanel } from '../components/BluetoothPanel'
@@ -62,6 +63,7 @@ vi.mock('react', async () => ({
 vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown, source: unknown, authoritative: unknown) => { harness.contexts.push(context); harness.initialSources.push(source); harness.sourceAuthorities.push(authoritative); return harness.programmer } }))
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
 vi.mock('../components/CodeEditor', () => ({ CodeEditor: () => null }))
+vi.mock('../components/PasteCodeButton', () => ({ PasteCodeButton: () => null }))
 vi.mock('../components/SimulationPanel', () => ({ SimulationPanel: () => null }))
 vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
@@ -1454,6 +1456,33 @@ it('通信処理中はプログラム画面の取り消しを無効化し、ハ�
   expect(harness.programmer.setSource).not.toHaveBeenCalled()
   expect(harness.setItem).not.toHaveBeenCalled()
   expect(harness.confirm).not.toHaveBeenCalled()
+  assertNoUsbOperations()
+})
+
+it('ペースト操作をエディター直前に置き、全置換をエディターとシミュレーターにだけ反映する', () => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  const view = render()
+  const panel = find(view, element => element.props.className === 'panel program-panel')
+  const children = panel.props.children as Element[]
+  const paste = find(panel, element => element.type === PasteCodeButton)
+  expect(children.indexOf(paste)).toBe(children.findIndex(element => element.type === CodeEditor) - 1)
+  expect(paste.props).toMatchObject({ source: harness.programmer.source, disabled: false, active: true })
+  const settingsBefore = structuredClone(currentProject().draft.settings)
+  event(paste, 'onReplace', 'from machine import Pin\nprint("pasted")\n')
+  const updated = render()
+  expect(find(updated, element => element.type === CodeEditor).props.value).toBe('from machine import Pin\nprint("pasted")\n')
+  expect(find(updated, element => element.type === SimulationPanel).props.source).toBe('from machine import Pin\nprint("pasted")\n')
+  expect(currentProject().draft.settings).toEqual(settingsBefore)
+  assertNoUsbOperations()
+})
+
+it('通信処理中やプログラム以外のタブではペーストを制限する情報を渡す', () => {
+  expect(find(render(), element => element.type === PasteCodeButton).props.active).toBe(false)
+  event(byId(render(), 'tab-program'), 'onClick')
+  harness.programmer.state = 'writing'
+  expect(find(render(), element => element.type === PasteCodeButton).props).toMatchObject({ disabled: true, active: true })
+  harness.programmer.state = 'disconnected'
+  expect(find(render(), element => element.type === PasteCodeButton).props.disabled).toBe(false)
   assertNoUsbOperations()
 })
 
