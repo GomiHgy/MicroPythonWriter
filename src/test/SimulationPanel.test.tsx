@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SimulationPanel, type SimulationPanelProps } from '../components/SimulationPanel'
 import { simulationMessages } from '../i18n/simulationMessages'
 import type { SimulationSnapshot } from '../services/simulation/types'
+import { observeLedCurrent } from '../services/simulation/LedCurrent'
 
 const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as { deps?: unknown[]; run: () => unknown }[], effectCursor: 0, pending: [] as (() => unknown)[], supported: true, emit: null as null | ((state: SimulationSnapshot) => void), locale: 'ja' as 'ja' | 'en' | 'zh', start: vi.fn(), pause: vi.fn(), resume: vi.fn(), reset: vi.fn(), button: vi.fn(), command: vi.fn(), dispose: vi.fn() }))
 vi.mock('react', async () => ({
@@ -40,7 +41,10 @@ vi.mock('../i18n', () => ({ useLocale: () => ({ locale: harness.locale, t: (key:
 
 type Element = ReactElement<Record<string, unknown>>
 let props: SimulationPanelProps
-const snapshot = (override: Partial<SimulationSnapshot> = {}): SimulationSnapshot => ({ phase: 'running', pixels: [[255, 0, 0], [0, 32, 0]], elapsedMs: 120, bleEnabled: false, modes: [], actions: [], log: '', error: '', ...override })
+const snapshot = (override: Partial<SimulationSnapshot> = {}): SimulationSnapshot => {
+  const pixels: SimulationSnapshot['pixels'] = override.pixels ?? [[255, 0, 0], [0, 32, 0]]
+  return { phase: 'running', pixels, ledCurrent: pixels.length ? observeLedCurrent(null, pixels) : null, elapsedMs: 120, bleEnabled: false, modes: [], actions: [], log: '', error: '', ...override }
+}
 function render() { harness.cursor = 0; harness.effectCursor = 0; const view = SimulationPanel(props); const effects = harness.pending.splice(0); effects.forEach(effect => effect()); return view }
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
   if (Array.isArray(node)) return node.flatMap(child => all(child, predicate))
@@ -275,6 +279,74 @@ describe('画面だけのLEDシミュレーションUI', () => {
     harness.locale = locale
     click(simulationMessages['コードのLED数を反映'][locale])
     expect(text(render())).toContain(simulationMessages['表示するLED数を{count}個に変更しました。コードや実機の設定は変更していません。'][locale].replace('{count}', '2'))
+  })
+
+  it('初回のLED出力前は0mAという実測風の値を出さず、リセットで電流と最大値を消す', () => {
+    expect(text(render())).toContain('最新コードからLEDへの出力を受け取ると計算します')
+    start({ ledCurrent: null })
+    expect(text(render())).not.toContain('約 0.0 mA')
+    const pixels: SimulationSnapshot['pixels'] = Array.from({ length: 30 }, () => [255, 255, 255])
+    harness.emit?.(snapshot({ pixels }))
+    expect(text(render())).toContain('約 1830.0 mA')
+    click('↺ リセット')
+    expect(text(render())).not.toContain('約 1830.0 mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('500mA')
+  })
+
+  it('表示個数10個でも全30個の出力を合計し、500mA超で1Aヒューズの注意を出す', () => {
+    start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
+    const view = text(render())
+    expect(view).toContain('約 1830.0 mA')
+    expect(view).toContain('GPIO 2に出力された全30個を計算')
+    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('1Aヒューズが働いて消灯する可能性')
+    expect(view).toContain('500mAは早めの注意基準で、1Aヒューズの作動点ではありません')
+    expect(harness.start).toHaveBeenCalledOnce()
+  })
+
+  it('補正後RGBにゲインと設定の最大輝度を二重適用しない', () => {
+    props.settings = { boardId: 'm5nanoc6', ledPin: 2, ledCount: 1, firmwareVersion: '', ledModel: 'WS2812B-MINI', maxBrightnessPercent: 20 }
+    start({ pixels: [[255, 178, 242]] })
+    expect(input('simulation-led-model').props.value).toBe('WS2812B-MINI')
+    expect(text(render())).toContain('約 32.4 mA')
+    expect(text(render())).toContain('二重に補正しません')
+  })
+
+  it('型番を変えると実行を止めず電流と最大値を再計算する', () => {
+    start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
+    change(input('simulation-led-model'), 'WS2812C-2020')
+    expect(text(render())).toContain('約 465.0 mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('500mA')
+    expect(harness.start).toHaveBeenCalledOnce()
+    expect(harness.pause).not.toHaveBeenCalled()
+    expect(props.settings).toBeNull()
+    expect(harness.command).not.toHaveBeenCalled()
+  })
+
+  it.each([500, 500.01])('500mAちょうどは注意を出さず、超えたときだけ注意する（%s）', peak => {
+    const ledCurrent = observeLedCurrent(null, [[0, 0, 0]])
+    ledCurrent.peakMa.WS2812B = peak
+    start({ ledCurrent })
+    expect(text(all(render(), node => node.props.role === 'alert')).includes('500mA')).toBe(peak > 500)
+  })
+
+  it('消灯後や一時停止中も再生中の最大値と注意を保持し、コード編集時は古い推定を隠す', () => {
+    const on: SimulationSnapshot['pixels'] = Array.from({ length: 30 }, () => [255, 255, 255])
+    start({ pixels: on })
+    const off: SimulationSnapshot['pixels'] = on.map(() => [0, 0, 0])
+    harness.emit?.(snapshot({ pixels: off, phase: 'paused', ledCurrent: observeLedCurrent(observeLedCurrent(null, on), off) }))
+    expect(text(render())).toContain('約 30.0 mA')
+    expect(text(render())).toContain('約 1830.0 mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('500mA')
+    props.source += '\n# edited'
+    expect(text(render())).not.toContain('約 1830.0 mA')
+    expect(text(render())).toContain('最新コードからLEDへの出力を受け取ると計算します')
+  })
+
+  it.each(['en', 'zh'] as const)('%sでも電流・警告・計算条件を翻訳する', locale => {
+    start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
+    harness.locale = locale
+    const result = text(render())
+    for (const key of ['LED全体の推定電流', 'この再生中に500mAを超える出力がありました', '電流の計算条件・注意点']) expect(result).toContain(simulationMessages[key][locale])
   })
 
   it('空コード・非対応ブラウザ・不正なLED数のときは開始しない', () => {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SimulationClient, initialSimulationSnapshot, isSimulationSupported } from '../services/simulation/SimulationClient'
 import { SimulationClock } from '../services/simulation/SimulationClock'
+import { observeLedCurrent } from '../services/simulation/LedCurrent'
 import type { SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from '../services/simulation/types'
 
 class FakeWorker {
@@ -30,6 +31,11 @@ beforeEach(() => {
 afterEach(() => { client.dispose(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers() })
 
 describe('simulation Worker lifecycle', () => {
+  it('does not treat the initial black display as an observed LED current', () => {
+    expect(initialSimulationSnapshot(37).ledCurrent).toBeNull()
+    client.start('pass', config)
+    expect(changes.at(-1)?.ledCurrent).toBeNull()
+  })
   it('loads only the explicitly supplied source and same-origin runtime', () => {
     client.start('print(123)', config)
     expect(changes.at(-1)?.phase).toBe('loading')
@@ -52,20 +58,24 @@ describe('simulation Worker lifecycle', () => {
     client.start('pass', config)
     const worker = FakeWorker.instances[0]
     const stale = worker.onmessage
-    worker.emit({ ...initialSimulationSnapshot(37), phase: 'running', bleEnabled: true })
+    worker.emit({ ...initialSimulationSnapshot(37), phase: 'running', bleEnabled: true, ledCurrent: observeLedCurrent(null, [[255, 255, 255]]) })
+    expect(changes.at(-1)?.ledCurrent?.peakMa.WS2812B).toBe(61)
     client.reset()
     stale?.({ data: { type: 'snapshot', snapshot: { ...initialSimulationSnapshot(), phase: 'running' } } } as MessageEvent<SimulationOutput>)
     expect(worker.terminated).toBe(true)
     expect(changes.at(-1)).toEqual(initialSimulationSnapshot(37))
+    expect(changes.at(-1)?.ledCurrent).toBeNull()
   })
   it('restarting cannot accept the previous Worker result', () => {
     client.start('first', config)
     const first = FakeWorker.instances[0]
     const stale = first.onmessage
+    first.emit({ ...initialSimulationSnapshot(), phase: 'running', ledCurrent: observeLedCurrent(null, [[255, 255, 255]]) })
     client.start('second', config)
     stale?.({ data: { type: 'snapshot', snapshot: { ...initialSimulationSnapshot(), phase: 'error', error: 'old' } } } as MessageEvent<SimulationOutput>)
     expect(first.terminated).toBe(true)
     expect(changes.at(-1)?.phase).toBe('loading')
+    expect(changes.at(-1)?.ledCurrent).toBeNull()
     expect(FakeWorker.instances).toHaveLength(2)
   })
   it('separates simulator pause from virtual BLE PAUSE and validates commands', () => {

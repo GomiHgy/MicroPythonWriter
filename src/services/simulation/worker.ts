@@ -2,6 +2,7 @@ import type { loadPyodide as LoadPyodide } from 'pyodide'
 import bootstrap from './hardware.py?raw'
 import { parseLedStatus } from '../bluetooth/protocol'
 import { SimulationClock } from './SimulationClock'
+import { observeLedCurrent } from './LedCurrent'
 import { restrictSimulationHost } from './restrictSimulationHost'
 import type { SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
 
@@ -37,6 +38,7 @@ function frame(pin: number, encoded: string): void {
   if (!Array.isArray(values) || values.length < 1 || values.length > 300) throw new Error('LED count must be between 1 and 300')
   if (!values.every(pixel => Array.isArray(pixel) && pixel.length === 3 && pixel.every(channel => Number.isInteger(channel) && channel >= 0 && channel <= 255))) throw new Error('Invalid RGB output')
   snapshot.pixels = values as [number, number, number][]
+  snapshot.ledCurrent = observeLedCurrent(snapshot.ledCurrent, snapshot.pixels)
   schedulePublish()
 }
 function bleOutput(text: string): void {
@@ -90,7 +92,7 @@ async function start(input: Extract<SimulationInput, { type: 'start' }>): Promis
   if (started) return
   started = true
   config = input.config
-  snapshot = { phase: 'loading', pixels: Array.from({ length: Math.max(1, Math.min(300, config.ledCount)) }, () => [0, 0, 0]), elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
+  snapshot = { phase: 'loading', pixels: Array.from({ length: Math.max(1, Math.min(300, config.ledCount)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
   clock.pause()
   publish()
   const heartbeat = setInterval(() => {

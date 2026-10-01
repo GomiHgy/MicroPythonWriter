@@ -6,6 +6,7 @@ import { serviceMessages } from '../../i18n/serviceMessages'
 import { createWorkshopContext, type WorkshopContext } from './WorkshopRules'
 import { buildMemoryPressureRules } from './MemoryPressureRules'
 import { buildLedTransmissionRules } from './LedTransmissionRules'
+import { buildRgbGainRules } from './RgbGainRules'
 import { nanoLedTransportRules, nanoLedV2Rules } from '../../i18n/promptMessages'
 
 function unknownProtocolRules(locale: Locale) {
@@ -136,7 +137,7 @@ ${fenced(error.traceback)}
 ## ${text.log}
 ${fenced(terminalLog)}
 
-${codeSection}${workshopSection}${context ? '' : `\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}\n\n${unknownProtocolRules(locale)}`}
+${codeSection}${workshopSection}${context ? '' : `\n\n${buildRgbGainRules(locale)}\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}\n\n${unknownProtocolRules(locale)}`}
 
 ## ${text.constraints}
 ${text.rules}

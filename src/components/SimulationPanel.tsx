@@ -4,17 +4,19 @@ import { useLocale } from '../i18n'
 import type { ProjectSettings } from '../services/projects/types'
 import { isSimulationSupported, SimulationClient } from '../services/simulation/SimulationClient'
 import type { SimulationConfig, SimulationSnapshot } from '../services/simulation/types'
+import { LED_MODELS } from '../services/workshop/WorkshopProfile'
+import { LED_CURRENT_PROFILES, LED_CURRENT_WARNING_MA } from '../services/simulation/LedCurrent'
 import './SimulationPanel.css'
 
 export interface SimulationPanelProps { source: string; settings: ProjectSettings | null; active?: boolean }
 
-const initialSnapshot = (): SimulationSnapshot => ({ phase: 'idle', pixels: [], elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' })
+const initialSnapshot = (): SimulationSnapshot => ({ phase: 'idle', pixels: [], ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' })
 const phaseLabels = { idle: '再生すると試せます', loading: 'シミュレーターを準備中…', running: 'シミュレーション中', paused: 'シミュレーションを一時停止中', finished: 'シミュレーションが終了しました', error: 'シミュレーションを続けられません' } as const
 
 export function SimulationPanel({ source, settings, active = true }: SimulationPanelProps) {
   const { t } = useLocale()
   const [snapshot, setSnapshot] = useState<SimulationSnapshot>(initialSnapshot)
-  const [overrides, setOverrides] = useState<Partial<Pick<SimulationConfig, 'boardId' | 'ledCount' | 'ledPin'>>>({})
+  const [overrides, setOverrides] = useState<Partial<Pick<SimulationConfig, 'boardId' | 'ledCount' | 'ledPin'> & Pick<ProjectSettings, 'ledModel'>>>({})
   const [layout, setLayout] = useState<'strip' | 'ring'>('strip')
   const [run, setRun] = useState<{ source: string; config: string } | null>(null)
   const [held, setHeld] = useState(false)
@@ -26,6 +28,8 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
   const pendingBrightness = useRef<number | null>(null)
   const boardId = overrides.boardId ?? settings?.boardId ?? 'm5nanoc6'
   const board = boardDefinitions[boardId]
+  const ledModel = overrides.ledModel ?? settings?.ledModel ?? 'WS2812B'
+  const currentProfile = LED_CURRENT_PROFILES[ledModel]
   const config: SimulationConfig = { boardId, ledPin: overrides.ledPin ?? settings?.ledPin ?? 2, ledCount: overrides.ledCount ?? settings?.ledCount ?? 10, buttonPin: board.buttonPin }
   const configKey = JSON.stringify(config)
   const validConfig = Number.isInteger(config.ledCount) && config.ledCount >= 1 && config.ledCount <= 300 && Number.isInteger(config.ledPin) && config.ledPin >= 0 && config.ledPin <= (boardId === 'm5nanoc6' ? 30 : 48)
@@ -36,6 +40,11 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
   const interactive = running && active && !stale
   const canPlay = supported && validConfig && Boolean(source.trim()) && !busy && active
   const canApplyLedCount = run !== null && !stale && !busy && snapshot.phase !== 'idle' && snapshot.pixels.length >= 1 && snapshot.pixels.length <= 300
+  // 実送信された全LEDの補正後RGBを使う。表示個数で切り捨てたり、ゲインを二重適用しない。
+  const ledCurrent = !stale && !busy && run !== null ? snapshot.ledCurrent : null
+  const currentMa = ledCurrent?.currentMa[ledModel]
+  const peakMa = ledCurrent?.peakMa[ledModel]
+  const currentWarning = peakMa !== undefined && peakMa > LED_CURRENT_WARNING_MA
   const applyLedCount = () => {
     if (!canApplyLedCount) return
     const ledCount = snapshot.pixels.length
@@ -142,6 +151,24 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
         return <g key={index}><circle cx={x} cy={y} r={dotRadius} fill={`rgb(${pixel.join(',')})`} stroke="#657990" strokeWidth="1" /><title>{`LED ${index + 1}: RGB ${pixel.join(', ')}`}</title>{index === 0 && <text x={x} y={y - dotRadius - 6} fill="#c4d9ed" textAnchor="middle" fontSize="10">1</text>}</g>
       })}
     </svg></div>
+    <section className={`simulation-current${currentWarning ? ' over-limit' : ''}`} aria-labelledby="simulation-current-title">
+      <h3 id="simulation-current-title">{t('LED全体の推定電流')}</h3>
+      <p className="simulation-help">{t('概算・実測ではありません')} · {ledModel}</p>
+      <label className="simulation-current-model" htmlFor="simulation-led-model">{t('電流推定に使うLED')}<select id="simulation-led-model" value={ledModel} onChange={event => setOverrides(previous => ({ ...previous, ledModel: event.target.value as ProjectSettings['ledModel'] }))}>{LED_MODELS.map(model => <option value={model} key={model}>{model}</option>)}</select></label>
+      <div className="simulation-current-values">
+        <div><span>{t('現在の出力')}</span><strong>{currentMa === undefined ? '—' : t('約 {value} mA', { value: currentMa.toFixed(1) })}</strong></div>
+        <div><span>{t('この再生中の最大')}</span><strong>{peakMa === undefined ? '—' : t('約 {value} mA', { value: peakMa.toFixed(1) })}</strong></div>
+      </div>
+      <p className="simulation-help">{ledCurrent ? t('GPIO {pin}に出力された全{count}個を計算しています。表示個数とは別です。', { pin: config.ledPin, count: ledCurrent.ledCount }) : t('最新コードからLEDへの出力を受け取ると計算します。')}</p>
+      {currentWarning && <div className="simulation-warning" role="alert"><strong>{t('この再生中に500mAを超える出力がありました')}</strong><p>{t('電源回路全体の電流や温度・時間によっては、1Aヒューズが働いて消灯する可能性があります。明るさや同時に光るLEDの数を減らしてください。')}</p><p>{t('500mAは早めの注意基準で、1Aヒューズの作動点ではありません。')}</p></div>}
+      <details className="simulation-details"><summary>{t('電流の計算条件・注意点')}</summary>
+        <p className="simulation-help">{t('参考モデル: {reference}。1色100%時 {channel} mA + 消灯時 {idle} mA/個として、出力RGBからPWM平均電流を合計します。', { reference: currentProfile.reference, channel: currentProfile.channelMa, idle: currentProfile.idleMa })} <a href={currentProfile.sourceUrl} target="_blank" rel="noopener noreferrer">{t('計算の参考資料 ↗')}</a></p>
+        <p className="simulation-help">{t('WS2812BとSK6812は白色60mA/個の参考値に待機分1mAを加えた仮定です。他の型番も参考版の係数であり、全製品の最大値を保証しません。')}</p>
+        <p className="simulation-help">{t('AI準備文のゲインは赤100%・緑70%・青95%です。コードが出力に適用したゲイン・輝度を含めて計算し、二重に補正しません。古いコードへ補正を自動追加する機能ではありません。')}</p>
+        <p className="simulation-help">{t('500mAは早めの注意基準で、1Aヒューズの作動点ではありません。本体・無線・他の部品の電流や突入電流は含みません。警告がなくても安全を保証しません。')}</p>
+        <p className="simulation-help">{t('LEDの版・互換品・電圧・温度で実際の電流は変わります。使うLEDの資料と実測で確認してください。一時停止・終了時は最後の出力を表示し、最大値はリセット・新規再生で消去します。')}</p>
+      </details>
+    </section>
     <div className="simulation-inputs"><h3>{t('内蔵ボタンを試す')}</h3><button type="button" className={`simulation-hardware-button${held && interactive ? ' pressed' : ''}`} disabled={!interactive} aria-pressed={held && interactive}
       onPointerDown={event => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); pressButton() }}
       onPointerUp={releaseButton} onPointerCancel={releaseButton} onLostPointerCapture={releaseButton} onBlur={releaseButton}

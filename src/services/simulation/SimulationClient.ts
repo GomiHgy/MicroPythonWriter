@@ -8,7 +8,7 @@ export function isSimulationSupported(): boolean {
 }
 
 export function initialSimulationSnapshot(count = 10): SimulationSnapshot {
-  return { phase: 'idle', pixels: Array.from({ length: Math.max(1, Math.min(300, count)) }, () => [0, 0, 0]), elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
+  return { phase: 'idle', pixels: Array.from({ length: Math.max(1, Math.min(300, count)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
 }
 
 /** 実機の通信クライアントとは独立した、使い捨てWorkerの管理。 */

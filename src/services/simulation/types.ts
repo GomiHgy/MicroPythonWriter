@@ -1,3 +1,5 @@
+import type { LedCurrentObservation } from './LedCurrent'
+
 export interface SimulationConfig {
   boardId: 'm5nanoc6' | 'atoms3lite'
   ledPin: number
@@ -9,6 +11,7 @@ export interface SimulationControl { id: string; label: string }
 export interface SimulationSnapshot {
   phase: SimulationPhase
   pixels: [number, number, number][]
+  ledCurrent: LedCurrentObservation | null
   elapsedMs: number
   bleEnabled: boolean
   modes: SimulationControl[]
