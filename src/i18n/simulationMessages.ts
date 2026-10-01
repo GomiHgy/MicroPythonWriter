@@ -11,7 +11,7 @@ export const simulationMessages: MessageCatalog = {
   '最新コードからLEDへの出力を受け取ると計算します。': { en: 'Calculated after receiving LED output from the latest code.', zh: '收到最新代码的LED输出后开始计算。' },
   'この再生中に500mAを超える出力がありました': { en: 'Output exceeded 500 mA during this run', zh: '本次运行中曾出现超过500mA的输出' },
   '500mAは早めの注意基準で、1Aヒューズの作動点ではありません。': { en: '500 mA is an early-warning threshold, not the trip point of a 1 A fuse.', zh: '500mA是提前警告阈值，并非1A保险丝的动作点。' },
-  '電源回路全体の電流や温度・時間によっては、1Aヒューズが働いて消灯する可能性があります。明るさや同時に光るLEDの数を減らしてください。': { en: 'Depending on total circuit current, temperature and duration, a 1 A fuse may operate and turn the lights off. Reduce brightness or the number of LEDs lit at once.', zh: '根据电源电路总电流、温度和持续时间，1A保险丝可能动作并导致熄灯。请降低亮度或同时点亮的LED数量。' },
+  '電源回路全体の電流や温度・時間によっては、1Aヒューズが働いて消灯する可能性があります。明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を500mA未満にすることを推奨します。': { en: 'Depending on total circuit current, temperature and duration, a 1 A fuse may operate and turn the lights off. We recommend reducing brightness or the number of LEDs lit at once to keep current consumption below 500 mA.', zh: '根据电源电路总电流、温度和持续时间，1A保险丝可能动作并导致熄灯。建议降低亮度或同时点亮的LED数量，将消耗电流控制在500mA以下（不含500mA）。' },
   '電流の計算条件・注意点': { en: 'Calculation assumptions and limits', zh: '电流计算条件与注意事项' },
   '参考モデル: {reference}。1色100%時 {channel} mA + 消灯時 {idle} mA/個として、出力RGBからPWM平均電流を合計します。': { en: 'Reference: {reference}. Uses {channel} mA per color at 100% plus {idle} mA idle per LED, summing PWM-average current from output RGB.', zh: '参考型号：{reference}。按每色100%时{channel}mA，加每颗LED待机{idle}mA，根据输出RGB合计PWM平均电流。' },
   '計算の参考資料 ↗': { en: 'Calculation reference ↗', zh: '计算参考资料 ↗' },

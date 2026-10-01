@@ -299,6 +299,7 @@ describe('画面だけのLEDシミュレーションUI', () => {
     expect(view).toContain('約 1830.0 mA')
     expect(view).toContain('GPIO 2に出力された全30個を計算')
     expect(text(all(render(), node => node.props.role === 'alert'))).toContain('1Aヒューズが働いて消灯する可能性')
+    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を500mA未満にすることを推奨します。')
     expect(view).toContain('500mAは早めの注意基準で、1Aヒューズの作動点ではありません')
     expect(harness.start).toHaveBeenCalledOnce()
   })
