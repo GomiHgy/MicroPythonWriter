@@ -13,6 +13,16 @@
 .boot-result.failed { border-color: #c95a52; background: #fff0ed; color: #882e28; }
 .boot-more { border-top: 1px solid #c8d6e3; margin-top: 16px; padding-top: 12px; }
 .boot-more summary { cursor: pointer; font-weight: 650; }
+.boot-troubleshooting h3 { margin: 22px 0 10px; font-size: 1rem; }
+.boot-troubleshooting h4 { margin: 0; }
+.boot-download-warning { padding: 14px; border-left: 4px solid #a77312; border-radius: 8px; background: #fff4da; color: #674400; }
+.boot-download-warning p { color: inherit; }
+.boot-download-boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.boot-download-boards > section { min-width: 0; padding: 16px; border: 1px solid #85b6df; border-radius: 10px; }
+.boot-reference-links { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.boot-troubleshooting a { overflow-wrap: anywhere; }
+:root[data-theme=dark] .boot-download-warning { color: #ffe2a3; background: #423521; }
+:root[data-theme=dark] .boot-download-warning p { color: inherit; }
 :root[data-theme=dark] .boot-mode-panel { border-color: #4e7ea5; }
 :root[data-theme=dark] .boot-mode-badge { background: #263e53; color: #d4e9fb; }
 :root[data-theme=dark] .boot-mode-badge.automatic { background: #53432a; color: #ffe2a3; }
@@ -20,4 +30,4 @@
 :root[data-theme=dark] .boot-result { background: #1c354c; color: #eef5ff; }
 :root[data-theme=dark] .boot-result.saved { background: #173d2e; color: #d1f8e2; }
 :root[data-theme=dark] .boot-result.failed { background: #462727; color: #ffe2dd; }
-@media (max-width: 600px) { .boot-mode-panel { padding: 16px; } .boot-mode-panel .boot-actions > button { width: 100%; } }
+@media (max-width: 600px) { .boot-mode-panel { padding: 16px; } .boot-mode-panel .boot-actions > button { width: 100%; } .boot-download-boards { grid-template-columns: minmax(0, 1fr); } }

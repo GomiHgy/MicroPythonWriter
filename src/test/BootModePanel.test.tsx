@@ -47,7 +47,10 @@ afterEach(() => setLocale('ja'))
 describe('自動起動解除の安全な案内', () => {
   it('未接続でも解除の手順と無効な解除ボタンを表示し、作品を消さないことを説明する', () => {
     const view = render()
-    expect(all(view, element => element.type === 'li')).toHaveLength(3)
+    const guide = all(view, element => element.type === 'ol' && element.props.className === 'boot-guide')[0]
+    expect(all(guide, element => element.type === 'li')).toHaveLength(3)
+    expect(text(view)).toContain('通常はダウンロードモードにする必要はありません')
+    expect(text(guide)).toContain('本体のボタンを押さずにUSB')
     expect(text(view)).toContain('接続しただけでは自動起動の設定は変わりません')
     expect(text(view)).toContain('作品のプログラムは消しません')
     const disable = button('自動実行しない設定に戻す')
@@ -198,6 +201,60 @@ describe('自動起動解除の安全な案内', () => {
         props.feedback = { mode, phase, saved } satisfies BootFeedback
         expect(text(render())).not.toMatch(/[ぁ-んァ-ヶ]/u)
       }
+    }
+    noOperations()
+  })
+
+  it.each(['disconnected', 'connection-lost', 'error', 'running', 'unsupported'] as const)('%sでも復旧案内の入口を表示し、機器を自動操作しない', state => {
+    props.state = state
+    const view = render()
+    const guide = all(view, element => element.props.id === 'boot-troubleshooting')[0]
+    expect(guide.type).toBe('details')
+    expect(guide.props.hidden).not.toBe(true)
+    expect(all(guide, element => element.type === 'summary').map(text)).toEqual(['困ったとき：停止できない・フリーズ・再起動を繰り返す'])
+    expect(text(guide)).toContain('再書き込みだけで直るとは限りません')
+    expect(text(guide)).toContain('機器内にしかない大切なコードがある場合は、消去・再書き込み前に相談')
+    expect(text(guide)).toContain('移行しただけでは、自動実行の設定はOFFになりません')
+    expect(text(guide)).toContain('このアプリの設定変更・コード読み込みはできません')
+    expect(text(guide)).toContain('元の自動実行設定は残ります')
+    expect(all(guide, element => element.type === 'button' || element.type === 'form' || 'onClick' in element.props)).toHaveLength(0)
+    noOperations()
+  })
+
+  it('NanoC6の押しながら給電とAtomS3Liteの専用リセット長押しを混同しない', () => {
+    const view = render()
+    const nano = all(view, element => element.props['aria-labelledby'] === 'boot-download-nanoc6')[0]
+    const atom = all(view, element => element.props['aria-labelledby'] === 'boot-download-atoms3lite')[0]
+    expect(text(nano)).toContain('USBと外部電源を外して')
+    expect(text(nano)).toContain('正面の本体ボタン（GPIO9）を押したまま')
+    expect(text(nano)).not.toContain('約2秒')
+    expect(text(atom)).toContain('リセットボタンを約2秒')
+    expect(text(atom)).toContain('緑LEDが点灯したら離します')
+    expect(text(atom)).toContain('離すと緑LEDが消え')
+    expect(text(atom)).toContain('作品を操作する正面ボタンとは別')
+    expect(text(atom)).toContain('液晶付きAtomS3など、別機種')
+    expect(text(atom)).not.toContain('GPIO9')
+  })
+
+  it('警告・設定のみの復旧・再書込み・通常起動での再確認の順で案内し、公式リンクだけを開く', () => {
+    const view = render()
+    const guide = all(view, element => element.props.id === 'boot-troubleshooting')[0]
+    const content = text(guide)
+    expect(content.indexOf('失われる可能性')).toBeLessThan(content.indexOf('正面の本体ボタン'))
+    expect(content.indexOf('Configure')).toBeLessThan(content.indexOf('再書き込みが必要な場合だけ'))
+    expect(content).toContain('「Run main.py directly」は選ばない')
+    expect(content).toContain('完了表示を確認するまで、USBを抜かない')
+    expect(content).toContain('「自動実行 OFF」を確認')
+    const links = all(guide, element => element.type === 'a')
+    expect(links.map(link => link.props.href)).toEqual([
+      'https://docs.m5stack.com/en/core/NanoC6', 'https://docs.m5stack.com/en/core/AtomS3-Lite',
+      'https://burner.m5stack.com/device/nanoc6', 'https://burner.m5stack.com/device/atoms3-lite',
+      'https://docs.m5stack.com/en/uiflow2/nanoc6/program', 'https://docs.m5stack.com/en/uiflow2/atoms3lite/program',
+    ])
+    for (const link of links) {
+      expect(link.props.target).toBe('_blank')
+      expect(link.props.rel).toBe('noopener noreferrer')
+      expect(link.props.onClick).toBeUndefined()
     }
     noOperations()
   })
