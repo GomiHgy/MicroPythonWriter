@@ -290,17 +290,17 @@ describe('画面だけのLEDシミュレーションUI', () => {
     expect(text(render())).toContain('約 1830.0 mA')
     click('↺ リセット')
     expect(text(render())).not.toContain('約 1830.0 mA')
-    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('500mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('600mA')
   })
 
-  it('表示個数10個でも全30個の出力を合計し、500mA超で1Aヒューズの注意を出す', () => {
+  it('表示個数10個でも全30個の出力を合計し、600mA超で1Aヒューズの注意を出す', () => {
     start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
     const view = text(render())
     expect(view).toContain('約 1830.0 mA')
     expect(view).toContain('GPIO 2に出力された全30個を計算')
     expect(text(all(render(), node => node.props.role === 'alert'))).toContain('1Aヒューズが働いて消灯する可能性')
-    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を500mA未満にすることを推奨します。')
-    expect(view).toContain('500mAは早めの注意基準で、1Aヒューズの作動点ではありません')
+    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を600mA未満にすることを推奨します。')
+    expect(view).toContain('600mAは早めの注意基準で、1Aヒューズの作動点ではありません')
     expect(harness.start).toHaveBeenCalledOnce()
   })
 
@@ -316,18 +316,18 @@ describe('画面だけのLEDシミュレーションUI', () => {
     start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
     change(input('simulation-led-model'), 'WS2812C-2020')
     expect(text(render())).toContain('約 465.0 mA')
-    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('500mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).not.toContain('600mA')
     expect(harness.start).toHaveBeenCalledOnce()
     expect(harness.pause).not.toHaveBeenCalled()
     expect(props.settings).toBeNull()
     expect(harness.command).not.toHaveBeenCalled()
   })
 
-  it.each([500, 500.01])('500mAちょうどは注意を出さず、超えたときだけ注意する（%s）', peak => {
+  it.each([500, 599.99, 600, 600.01])('600mAちょうどは注意を出さず、超えたときだけ注意する（%s）', peak => {
     const ledCurrent = observeLedCurrent(null, [[0, 0, 0]])
     ledCurrent.peakMa.WS2812B = peak
     start({ ledCurrent })
-    expect(text(all(render(), node => node.props.role === 'alert')).includes('500mA')).toBe(peak > 500)
+    expect(text(all(render(), node => node.props.role === 'alert')).includes('600mA')).toBe(peak > 600)
   })
 
   it('消灯後や一時停止中も再生中の最大値と注意を保持し、コード編集時は古い推定を隠す', () => {
@@ -337,7 +337,7 @@ describe('画面だけのLEDシミュレーションUI', () => {
     harness.emit?.(snapshot({ pixels: off, phase: 'paused', ledCurrent: observeLedCurrent(observeLedCurrent(null, on), off) }))
     expect(text(render())).toContain('約 30.0 mA')
     expect(text(render())).toContain('約 1830.0 mA')
-    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('500mA')
+    expect(text(all(render(), node => node.props.role === 'alert'))).toContain('600mA')
     props.source += '\n# edited'
     expect(text(render())).not.toContain('約 1830.0 mA')
     expect(text(render())).toContain('最新コードからLEDへの出力を受け取ると計算します')
@@ -347,7 +347,7 @@ describe('画面だけのLEDシミュレーションUI', () => {
     start({ pixels: Array.from({ length: 30 }, () => [255, 255, 255]) })
     harness.locale = locale
     const result = text(render())
-    for (const key of ['LED全体の推定電流', 'この再生中に500mAを超える出力がありました', '電流の計算条件・注意点']) expect(result).toContain(simulationMessages[key][locale])
+    for (const key of ['LED全体の推定電流', 'この再生中に600mAを超える出力がありました', '電流の計算条件・注意点']) expect(result).toContain(simulationMessages[key][locale])
   })
 
   it('空コード・非対応ブラウザ・不正なLED数のときは開始しない', () => {

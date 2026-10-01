@@ -9,7 +9,7 @@ export interface LedCurrentObservation {
   peakMa: Record<LedModel, number>
 }
 
-export const LED_CURRENT_WARNING_MA = 500
+export const LED_CURRENT_WARNING_MA = 600
 
 /**
  * 電流は実測値ではなく参考推定。同じ型番でも世代・互換品・電源条件で変わる。

@@ -160,12 +160,12 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
         <div><span>{t('この再生中の最大')}</span><strong>{peakMa === undefined ? '—' : t('約 {value} mA', { value: peakMa.toFixed(1) })}</strong></div>
       </div>
       <p className="simulation-help">{ledCurrent ? t('GPIO {pin}に出力された全{count}個を計算しています。表示個数とは別です。', { pin: config.ledPin, count: ledCurrent.ledCount }) : t('最新コードからLEDへの出力を受け取ると計算します。')}</p>
-      {currentWarning && <div className="simulation-warning" role="alert"><strong>{t('この再生中に500mAを超える出力がありました')}</strong><p>{t('電源回路全体の電流や温度・時間によっては、1Aヒューズが働いて消灯する可能性があります。明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を500mA未満にすることを推奨します。')}</p><p>{t('500mAは早めの注意基準で、1Aヒューズの作動点ではありません。')}</p></div>}
+      {currentWarning && <div className="simulation-warning" role="alert"><strong>{t('この再生中に600mAを超える出力がありました')}</strong><p>{t('電源回路全体の電流や温度・時間によっては、1Aヒューズが働いて消灯する可能性があります。明るさ、あるいは同時に光るLEDの数を減らし、消費電流値を600mA未満にすることを推奨します。')}</p><p>{t('600mAは早めの注意基準で、1Aヒューズの作動点ではありません。')}</p></div>}
       <details className="simulation-details"><summary>{t('電流の計算条件・注意点')}</summary>
         <p className="simulation-help">{t('参考モデル: {reference}。1色100%時 {channel} mA + 消灯時 {idle} mA/個として、出力RGBからPWM平均電流を合計します。', { reference: currentProfile.reference, channel: currentProfile.channelMa, idle: currentProfile.idleMa })} <a href={currentProfile.sourceUrl} target="_blank" rel="noopener noreferrer">{t('計算の参考資料 ↗')}</a></p>
         <p className="simulation-help">{t('WS2812BとSK6812は白色60mA/個の参考値に待機分1mAを加えた仮定です。他の型番も参考版の係数であり、全製品の最大値を保証しません。')}</p>
         <p className="simulation-help">{t('AI準備文のゲインは赤100%・緑70%・青95%です。コードが出力に適用したゲイン・輝度を含めて計算し、二重に補正しません。古いコードへ補正を自動追加する機能ではありません。')}</p>
-        <p className="simulation-help">{t('500mAは早めの注意基準で、1Aヒューズの作動点ではありません。本体・無線・他の部品の電流や突入電流は含みません。警告がなくても安全を保証しません。')}</p>
+        <p className="simulation-help">{t('600mAは早めの注意基準で、1Aヒューズの作動点ではありません。本体・無線・他の部品の電流や突入電流は含みません。警告がなくても安全を保証しません。')}</p>
         <p className="simulation-help">{t('LEDの版・互換品・電圧・温度で実際の電流は変わります。使うLEDの資料と実測で確認してください。一時停止・終了時は最後の出力を表示し、最大値はリセット・新規再生で消去します。')}</p>
       </details>
     </section>

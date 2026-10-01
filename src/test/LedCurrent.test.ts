@@ -44,14 +44,14 @@ describe('RGB LED current estimates from actual program output', () => {
     expect(estimateLedCurrent([[51, 35, 48]], model)).toBeCloseTo(idleMa + channelMa * 134 / 255)
   })
 
-  it('compares against 500 mA without rounding and warns only strictly above it', () => {
-    const boundary: Rgb[] = Array.from({ length: 50 }, (_, index) => [255, index < 45 ? 255 : 0, 0])
-    expect(LED_CURRENT_WARNING_MA).toBe(500)
-    expect(estimateLedCurrent(boundary, 'WS2812C-2020')).toBe(500)
+  it('compares against 600 mA without rounding and warns only strictly above it', () => {
+    const boundary: Rgb[] = Array.from({ length: 60 }, (_, index) => [255, index < 54 ? 255 : 0, 0])
+    expect(LED_CURRENT_WARNING_MA).toBe(600)
+    expect(estimateLedCurrent(boundary, 'WS2812C-2020')).toBe(600)
     expect(estimateLedCurrent(boundary, 'WS2812C-2020') > LED_CURRENT_WARNING_MA).toBe(false)
-    boundary[49][2] = 1
+    boundary[59][2] = 1
     expect(estimateLedCurrent(boundary, 'WS2812C-2020') > LED_CURRENT_WARNING_MA).toBe(true)
-    boundary[49][2] = 0
+    boundary[59][2] = 0
     boundary[0][1] = 254
     expect(estimateLedCurrent(boundary, 'WS2812C-2020') > LED_CURRENT_WARNING_MA).toBe(false)
   })
