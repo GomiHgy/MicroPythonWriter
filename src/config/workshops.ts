@@ -11,7 +11,7 @@ const sharedProfile: WorkshopProfile = {
   revision: 'writer-ai-1',
   displayName: 'M5NanoC6',
   firmwareVersion: null,
-  ledModel: null,
+  ledModel: 'WS2812B',
   ledCount: 10,
   ledPin: 2,
   ledBpp: 3,

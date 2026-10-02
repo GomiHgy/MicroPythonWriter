@@ -527,8 +527,8 @@ describe('AIの準備パネル', () => {
     const node = render(preparation())
     const aiLinks = find(node, element => element.props['aria-label'] === '好きなAIを開く')
     const links = all(aiLinks, element => element.type === 'a')
-    expect(links).toHaveLength(4)
-    expect(links.map(link => link.props.href)).toEqual(['https://chatgpt.com/', 'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.deepseek.com/'])
+    expect(links).toHaveLength(5)
+    expect(links.map(link => link.props.href)).toEqual(['https://chatgpt.com/', 'https://claude.ai/', 'https://gemini.google.com/', 'https://chat.deepseek.com/', 'https://grok.com/'])
     for (const link of links) {
       const url = new URL(link.props.href as string)
       expect(url.search).toBe(''); expect(url.hash).toBe('')
@@ -536,6 +536,16 @@ describe('AIの準備パネル', () => {
       expect(link.props.rel).toBe('noopener noreferrer')
       expect(link.props.onClick).toBeUndefined()
     }
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+  })
+  it.each(['ja', 'en', 'zh'] as const)('%sでもGrokへのリンクを表示し準備文を変更しない', locale => {
+    setLocale(locale)
+    const prep = preparation()
+    const node = render(prep)
+    const grok = find(node, element => element.type === 'a' && element.props.href === 'https://grok.com/')
+    const label = { ja: 'Grokを開く ↗', en: 'Open Grok ↗', zh: '打开 Grok ↗' }[locale]
+    expect(content(grok)).toBe(label)
+    expect(find(node, element => element.type === 'textarea').props.value).toBe(prep.prompt)
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
   })
   it('保存も同じ生成済み文字列を使用する', async () => {

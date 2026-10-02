@@ -5,6 +5,10 @@ import { LED_MODELS } from '../services/workshop/WorkshopProfile'
 
 afterEach(() => vi.unstubAllGlobals())
 describe('利用者のLED設定保存', () => {
+  it.each(workshopPresets)('$id は保存設定がなければWS2812Bで始まる', preset => {
+    vi.stubGlobal('localStorage', { getItem: () => null })
+    expect(restoreLedSettings(preset, preset.profile).profile.ledModel).toBe('WS2812B')
+  })
   it.each(['{', '[]', '{"ledCount":10,"maxBrightnessPercent":20,"ledPin":-1}', '{"ledCount":10,"maxBrightnessPercent":101,"ledPin":2}'])('破損・不正データを適用しない %s', raw => {
     vi.stubGlobal('localStorage', { getItem: () => raw })
     const preset = workshopPresets[0]
@@ -38,7 +42,7 @@ describe('利用者のLED設定保存', () => {
     vi.stubGlobal('localStorage', { setItem })
     const preset = workshopPresets[0]
     saveLedSettings(preset, preset.profile)
-    expect(setItem).toHaveBeenCalledWith(ledSettingsKey(preset), '{"ledCount":10,"maxBrightnessPercent":20,"ledPin":2,"firmwareVersion":null,"ledModel":null,"verificationInvalidated":true}')
+    expect(setItem).toHaveBeenCalledWith(ledSettingsKey(preset), '{"ledCount":10,"maxBrightnessPercent":20,"ledPin":2,"firmwareVersion":null,"ledModel":"WS2812B","verificationInvalidated":true}')
   })
   it.each(LED_MODELS)('%s をそのまま保存して復元する', ledModel => {
     const values = new Map<string, string>()
