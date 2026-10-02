@@ -76,7 +76,7 @@ describe('WorkshopProfileの設定検証', () => {
     const atom = workshopPresets.find(preset => preset.profile.boardId === 'atoms3lite')!
     expect(atom.id).toBe('atom-s3-lite-led-default')
     expect(atom.profile.materialId).not.toBe(workshopPresets[0].profile.materialId)
-    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, baseline: { code: '', verification: null } })
+    expect(atom.profile).toMatchObject({ boardId: 'atoms3lite', firmwareVersion: null, ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, baseline: { code: '', verification: null } })
     expect(buildStartPrompt(createWorkshopContext(atom.profile))).toBe('')
   })
 
@@ -96,11 +96,11 @@ describe('WorkshopProfileの設定検証', () => {
     expect(isWorkshopProfile(value)).toBe(false)
     expect(isWorkshopProfile({ ...profile(), boardId: 'esp32-s3' })).toBe(false)
   })
-  it('配布プリセットで未確定の実機設定を推測しない', () => {
+  it('配布プリセットはLED型番をWS2812Bとし、対象版や実機確認は推測しない', () => {
     const preset = workshopPresets[0]
     expect(preset.id).toBe('nano-c6-led-default')
-    expect(preset.profile).toMatchObject({ firmwareVersion: null, ledModel: null, ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, ledBpp: 3, baseline: { code: '', verification: null } })
-    expect(validateWorkshopProfile(preset.profile)).toHaveLength(2)
+    expect(preset.profile).toMatchObject({ firmwareVersion: null, ledModel: 'WS2812B', ledCount: 10, ledPin: 2, maxBrightnessPercent: 20, ledBpp: 3, baseline: { code: '', verification: null } })
+    expect(validateWorkshopProfile(preset.profile)).toHaveLength(1)
     expect(buildStartPrompt(createWorkshopContext(preset.profile))).toBe('')
   })
 
