@@ -24,8 +24,8 @@ export function LedCodeSettingsPanel({ source, onReplace, disabled = false }: { 
   const invalid = updated === null
   const changed = updated !== null && updated !== source
 
-  return <section className="led-code-settings" aria-label={t('コード内のLED設定')}>
-    <h3>{t('コード内のLED設定')}</h3>
+  return <details className="led-code-settings" aria-label={t('コード内のLED設定')}>
+    <summary><h3>{t('コード内のLED設定')}</h3></summary>
     <p>{t('コードから読み取った値を変更できます。反映後、上の「実行」で機器を動かしてください。')}</p>
     <div className="led-code-fields">
       {(['count', 'brightness'] as const).map(key => {
@@ -51,5 +51,5 @@ export function LedCodeSettingsPanel({ source, onReplace, disabled = false }: { 
     </div>
     {applied?.after === source && <p role="status">{t('コードに反映しました。機器への書き込み・実行はまだ行っていません。')}</p>}
     <details><summary>{t('読み取れる設定と注意点')}</summary><p>{t('LED_COUNT / NUM_LEDS と MAX_BRIGHTNESS（0〜1）/ MAX_BRIGHTNESS_PERCENT（0〜100）の単純な数値代入に対応します。各項目の定義が1つの場合のみ変更できます。')}</p><p>{t('最大輝度を上げると消費電流が増えます。配線・電源を確認してください。AIの準備やシミュレーターの表示設定は変更しません。シミュレーションにはリセット後に反映されます。')}</p></details>
-  </section>
+  </details>
 }

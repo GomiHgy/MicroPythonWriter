@@ -1,5 +1,7 @@
 .led-code-settings { border: 1px solid #597086; border-radius: 10px; padding: 14px; margin: 14px 0; }
-.led-code-settings h3 { margin: 0 0 8px; }
+.led-code-settings > summary { padding: 4px 0; }
+.led-code-settings > summary h3 { display: inline; margin: 0; }
+.led-code-settings > summary:focus-visible { outline: 2px solid #438de0; outline-offset: 4px; border-radius: 4px; }
 .led-code-settings p, .led-code-settings small, .led-code-settings details { font-size: .86rem; line-height: 1.6; }
 .led-code-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .led-code-fields label, .led-code-fields small { display: block; overflow-wrap: anywhere; }

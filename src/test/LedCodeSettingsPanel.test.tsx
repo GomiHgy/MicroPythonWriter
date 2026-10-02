@@ -29,6 +29,13 @@ const buttons = () => all(render(), node => node.type === 'button')
 const change = (index: number, value: string) => (inputs()[index].props.onChange as (event: unknown) => void)({ target: { value } })
 const click = (index = 0) => (buttons()[index].props.onClick as () => void)()
 beforeEach(() => { state.slots = []; state.locale = 'ja'; source = 'LED_COUNT = 10\nMAX_BRIGHTNESS = 0.2\n'; disabled = false; replace.mockClear() })
+it('初期状態は折りたたまれ、見出しから開ける標準detailsを使う', () => {
+  const view = render()
+  expect(view.type).toBe('details')
+  expect(view.props.open).toBeUndefined()
+  expect(all(view, node => node.type === 'summary')[0].props.children).toMatchObject({ type: 'h3', props: { children: 'コード内のLED設定' } })
+  expect(replace).not.toHaveBeenCalled()
+})
 it('読み取った値を表示し、クリックまでコードを変更しない。反映を通知し取り消せる', () => {
   expect(inputs().map(input => input.props.value)).toEqual(['10', '20'])
   expect(buttons()[0].props.disabled).toBe(true)
