@@ -12,10 +12,11 @@ import { bootMessages } from './bootMessages'
 import { programLibraryMessages } from './programLibraryMessages'
 import { simulationMessages } from './simulationMessages'
 import { pasteMessages } from './pasteMessages'
+import { ledCodeMessages } from './ledCodeMessages'
 import type { Locale, MessageParams } from './types'
 
 export type { Locale, MessageCatalog, MessageParams } from './types'
-export const messages = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages }
+export const messages = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages, ...ledCodeMessages }
 export const isLocale = (value: unknown): value is Locale => value === 'ja' || value === 'en' || value === 'zh'
 const readLocale = (): Locale => { try { const value = localStorage.getItem('mpw-language'); return isLocale(value) ? value : 'ja' } catch { return 'ja' } }
 let currentLocale = readLocale()

@@ -3,6 +3,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import App from '../App'
 import { CodeEditor } from '../components/CodeEditor'
 import { PasteCodeButton } from '../components/PasteCodeButton'
+import { LedCodeSettingsPanel } from '../components/LedCodeSettingsPanel'
 import { SimulationPanel } from '../components/SimulationPanel'
 import { Terminal } from '../components/Terminal'
 import { BluetoothPanel } from '../components/BluetoothPanel'
@@ -64,6 +65,7 @@ vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown, sou
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
 vi.mock('../components/CodeEditor', () => ({ CodeEditor: () => null }))
 vi.mock('../components/PasteCodeButton', () => ({ PasteCodeButton: () => null }))
+vi.mock('../components/LedCodeSettingsPanel', () => ({ LedCodeSettingsPanel: () => null }))
 vi.mock('../components/SimulationPanel', () => ({ SimulationPanel: () => null }))
 vi.mock('../components/Terminal', () => ({ Terminal: () => null }))
 vi.mock('../components/BluetoothPanel', () => ({ BluetoothPanel: () => null }))
@@ -1473,6 +1475,21 @@ it('ペースト操作をエディター直前に置き、全置換をエディ�
   expect(find(updated, element => element.type === CodeEditor).props.value).toBe('from machine import Pin\nprint("pasted")\n')
   expect(find(updated, element => element.type === SimulationPanel).props.source).toBe('from machine import Pin\nprint("pasted")\n')
   expect(currentProject().draft.settings).toEqual(settingsBefore)
+  assertNoUsbOperations()
+})
+
+it('LED設定はエディターとシミュレーターへ反映し、機器や準備設定を変更しない', () => {
+  event(byId(render(), 'tab-program'), 'onClick')
+  const panel = find(render(), element => element.type === LedCodeSettingsPanel)
+  expect(panel.props).toMatchObject({ source: harness.programmer.source, disabled: false })
+  const settingsBefore = structuredClone(currentProject().draft.settings)
+  const source = 'LED_COUNT = 37\nMAX_BRIGHTNESS = 0.35\n'
+  event(panel, 'onReplace', source)
+  expect(find(render(), element => element.type === CodeEditor).props.value).toBe(source)
+  expect(find(render(), element => element.type === SimulationPanel).props.source).toBe(source)
+  expect(currentProject().draft.settings).toEqual(settingsBefore)
+  harness.programmer.state = 'writing'
+  expect(find(render(), element => element.type === LedCodeSettingsPanel).props.disabled).toBe(true)
   assertNoUsbOperations()
 })
 

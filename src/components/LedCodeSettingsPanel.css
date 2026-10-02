@@ -1,0 +1,10 @@
+.led-code-settings { border: 1px solid #597086; border-radius: 10px; padding: 14px; margin: 14px 0; }
+.led-code-settings h3 { margin: 0 0 8px; }
+.led-code-settings p, .led-code-settings small, .led-code-settings details { font-size: .86rem; line-height: 1.6; }
+.led-code-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.led-code-fields label, .led-code-fields small { display: block; overflow-wrap: anywhere; }
+.led-code-fields input { width: 100%; box-sizing: border-box; margin: 6px 0; }
+.led-code-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.led-code-settings summary { cursor: pointer; }
+.led-code-settings [role=status] { border-left: 4px solid #438160; padding-left: 10px; }
+@media (max-width: 480px) { .led-code-fields { grid-template-columns: 1fr; } }

@@ -7,6 +7,7 @@ import bootSource from '../components/BootModePanel.tsx?raw'
 import programLibrarySource from '../components/ProgramLibraryPanel.tsx?raw'
 import simulationSource from '../components/SimulationPanel.tsx?raw'
 import pasteSource from '../components/PasteCodeButton.tsx?raw'
+import ledCodeSource from '../components/LedCodeSettingsPanel.tsx?raw'
 import ts from 'typescript'
 
 afterEach(() => { setLocale('ja'); vi.unstubAllGlobals() })
@@ -63,7 +64,7 @@ describe('表示言語', () => {
     expect(translate('zh', `main.py.tmp の構文確認に失敗しました。\n${details}`)).toBe(`main.py.tmp 语法检查失败。\n${details}`)
   })
   it('Appの日本語テキストと画面の固定翻訳キーを網羅する', () => {
-    const sources = [['src/App.tsx', appSource], ['src/components/AiPreparationPanel.tsx', preparationSource], ['src/components/BluetoothPanel.tsx', bluetoothSource], ['src/components/BootModePanel.tsx', bootSource], ['src/components/ProgramLibraryPanel.tsx', programLibrarySource], ['src/components/SimulationPanel.tsx', simulationSource], ['src/components/PasteCodeButton.tsx', pasteSource]]
+    const sources = [['src/App.tsx', appSource], ['src/components/AiPreparationPanel.tsx', preparationSource], ['src/components/BluetoothPanel.tsx', bluetoothSource], ['src/components/BootModePanel.tsx', bootSource], ['src/components/ProgramLibraryPanel.tsx', programLibrarySource], ['src/components/SimulationPanel.tsx', simulationSource], ['src/components/PasteCodeButton.tsx', pasteSource], ['src/components/LedCodeSettingsPanel.tsx', ledCodeSource]]
     for (const [file, text] of sources) {
       const tree = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
       const visit = (node: ts.Node) => {
