@@ -1,6 +1,7 @@
 import type { WorkshopContext } from './WorkshopRules'
 import { boardDefinitions } from '../../config/boards'
 import { MAX_NAMED_CONTROLS } from '../../config/bleLimits'
+import { buildButtonGestureQuestion } from './ButtonGestureRules'
 
 function namedControlsCheck(context: WorkshopContext, generating = false): string {
   if (!context.controllerEnabled || (context.bleSource !== 'bundled-candidate' && !context.profile.baseline.verification?.nanoLedV2)) return ''
@@ -47,6 +48,7 @@ ${context.rules}
 - Ask one question at a time, with 3–5 beginner-friendly choices including "Choose for me". Ask at most 6 necessary questions and do not repeat answered questions.
 - Do not ask users for GPIOs, UUIDs, RGB values, internal RGB gain correction, firmware versions or the fixed 200ms fade. Do not offer unavailable features.
 ${controllerQuestions(context)}
+${buildButtonGestureQuestion(context.locale, context.profile.features.button)}
 ${namedControlsCheck(context)}
 - Turn wishes such as "cute" or "magical" into color, lighting pattern, direction, speed, trigger, repetition, ending state and mood. Use fixed defaults for unimportant omissions and briefly explain adopted defaults.
 - After questions, summarize startup behavior, enabled button/BLE actions, colors, patterns, speed, repetition, ending state, mood and defaults in English, and ask for confirmation.
@@ -70,6 +72,7 @@ ${context.rules}
 - 每次只问一个问题，提供 3–5 个适合初学者的选项，并包含“帮我决定”。必要问题最多 6 个，不重复询问已回答的内容。
 - 不要向用户询问 GPIO、UUID、RGB 数值、内部 RGB 增益校正、固件版本或固定的 200ms 渐变等设置，也不要提供不可用功能选项。
 ${controllerQuestions(context)}
+${buildButtonGestureQuestion(context.locale, context.profile.features.button)}
 ${namedControlsCheck(context)}
 - 将“可爱”“像魔法一样”等愿望具体化为颜色、发光方式、方向、速度、触发条件、重复、结束状态和氛围。不重要的省略项采用固定规范中的默认值，并简短说明。
 - 提问结束后，用简体中文整理启动行为、可用按钮和 BLE 操作、颜色、发光方式、速度、重复、结束状态、氛围及默认值，请用户确认。
@@ -93,6 +96,7 @@ ${context.rules}
 - 質問は一度に1問、初心者向けの選択肢を3〜5個付け、「おまかせ」を選べるようにする。必要な質問は最大6問。回答済みの内容を繰り返し質問しない。
 - GPIO、UUID、RGB値、内部RGBゲイン補正、ファームウェア版、固定の200msフェード時間などの設定値を利用者に質問しない。利用不可の機能を選択肢へ入れない。
 ${controllerQuestions(context)}
+${buildButtonGestureQuestion(context.locale, context.profile.features.button)}
 ${namedControlsCheck(context)}
 - 「かわいく」「魔法みたい」などの希望を、色・光り方・方向・速さ・きっかけ・繰り返し・終了後の状態・雰囲気へ具体化する。重要でない省略事項は固定仕様の標準設定を使い、採用した標準設定を短く説明する。
 - 質問が終わったら、起動時、利用可能なボタン操作・BLE操作、色、光り方、速さ、繰り返し、終了後、雰囲気、使用する標準設定を日本語で整理して確認してもらう。

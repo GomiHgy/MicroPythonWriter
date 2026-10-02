@@ -5,7 +5,7 @@ import { simulationMessages } from '../i18n/simulationMessages'
 import type { SimulationSnapshot } from '../services/simulation/types'
 import { observeLedCurrent } from '../services/simulation/LedCurrent'
 
-const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as { deps?: unknown[]; run: () => unknown }[], effectCursor: 0, pending: [] as (() => unknown)[], supported: true, emit: null as null | ((state: SimulationSnapshot) => void), locale: 'ja' as 'ja' | 'en' | 'zh', start: vi.fn(), pause: vi.fn(), resume: vi.fn(), reset: vi.fn(), button: vi.fn(), command: vi.fn(), dispose: vi.fn() }))
+const harness = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as { deps?: unknown[]; run: () => unknown }[], effectCursor: 0, pending: [] as (() => unknown)[], supported: true, emit: null as null | ((state: SimulationSnapshot) => void), locale: 'ja' as 'ja' | 'en' | 'zh', start: vi.fn(), pause: vi.fn(), resume: vi.fn(), reset: vi.fn(), button: vi.fn(), buttonGesture: vi.fn(), command: vi.fn(), dispose: vi.fn() }))
 vi.mock('react', async () => ({
   ...await vi.importActual<typeof import('react')>('react'),
   useState: <Value,>(initial: Value | (() => Value)) => {
@@ -33,6 +33,7 @@ vi.mock('../services/simulation/SimulationClient', () => ({
     resume = harness.resume
     reset = harness.reset
     button = harness.button
+    buttonGesture = harness.buttonGesture
     command = harness.command
     dispose = harness.dispose
   },
@@ -79,7 +80,7 @@ describe('画面だけのLEDシミュレーションUI', () => {
     expect(text(view)).toContain('実機への書き込みやBluetooth通信は行いません')
     expect(text(view)).toContain('GPIO 2・LED 10個')
     expect(button('▶ シミュレーションを再生').props.disabled).toBe(false)
-    expect(button('● 本体ボタン（押している間ON）').props.disabled).toBe(true)
+    for (const label of ['シングルクリック', 'ダブルクリック', '1秒長押し']) expect(button(label).props.disabled).toBe(true)
     expect(text(view)).not.toContain('BLEリモコンを試す（仮想通信）')
     expect(harness.start).not.toHaveBeenCalled()
     click('▶ シミュレーションを再生')
@@ -127,32 +128,40 @@ describe('画面だけのLEDシミュレーションUI', () => {
     harness.emit?.(snapshot())
     render()
     expect(harness.pause).toHaveBeenCalledOnce()
-    expect(button('● 本体ボタン（押している間ON）').props.disabled).toBe(true)
+    for (const label of ['シングルクリック', 'ダブルクリック', '1秒長押し']) expect(button(label).props.disabled).toBe(true)
   })
 
-  it('本体ボタンはポインターの押下・解放・キャンセルを伝える', () => {
+  it.each([['シングルクリック', 'single'], ['ダブルクリック', 'double'], ['1秒長押し', 'long']] as const)('%sは1回のクリックで%sの入力列を要求する', (label, kind) => {
     start()
-    const press = { button: 0, pointerId: 4, currentTarget: { setPointerCapture: vi.fn() } }
-    invoke(button('● 本体ボタン（押している間ON）'), 'onPointerDown', press)
-    expect(press.currentTarget.setPointerCapture).toHaveBeenCalledWith(4)
-    expect(harness.button).toHaveBeenLastCalledWith(true)
-    expect(button('● ボタンを押しています').props['aria-pressed']).toBe(true)
-    invoke(button('● ボタンを押しています'), 'onPointerCancel')
-    expect(harness.button).toHaveBeenLastCalledWith(false)
-    expect(button('● 本体ボタン（押している間ON）').props['aria-pressed']).toBe(false)
+    click(label)
+    expect(harness.buttonGesture).toHaveBeenCalledExactlyOnceWith(kind)
+    expect(harness.command).not.toHaveBeenCalled()
+    // ネイティブbuttonのclickを使い、マウス/タッチ/Space/Enterで同じ操作にする。
+    expect(button(label).props.onPointerDown).toBeUndefined()
+    expect(button(label).props.onKeyDown).toBeUndefined()
   })
 
-  it('キーボードの押下・解放とフォーカス喪失に対応し、キーリピートは再押下しない', () => {
-    start()
-    const key = { key: ' ', repeat: false, preventDefault: vi.fn() }
-    invoke(button('● 本体ボタン（押している間ON）'), 'onKeyDown', key)
-    invoke(button('● ボタンを押しています'), 'onKeyDown', { ...key, repeat: true })
-    expect(harness.button.mock.calls.filter(call => call[0] === true)).toHaveLength(1)
-    invoke(button('● ボタンを押しています'), 'onKeyUp', key)
-    expect(harness.button).toHaveBeenLastCalledWith(false)
-    invoke(button('● 本体ボタン（押している間ON）'), 'onKeyDown', { ...key, key: 'Enter' })
-    invoke(button('● ボタンを押しています'), 'onBlur')
-    expect(harness.button).toHaveBeenLastCalledWith(false)
+  it('入力列の実行中は3つとも無効にして、完了通知で戻す', () => {
+    start({ buttonGesture: 'long' })
+    for (const label of ['シングルクリック', 'ダブルクリック', '1秒長押し']) {
+      expect(button(label).props.disabled).toBe(true)
+      click(label)
+    }
+    expect(harness.buttonGesture).not.toHaveBeenCalled()
+    expect(text(render())).toContain('ボタン操作を再現中')
+    harness.emit?.(snapshot({ buttonGesture: null }))
+    expect(button('ダブルクリック').props.disabled).toBe(false)
+  })
+
+  it.each(['paused', 'finished', 'error'] as const)('%s中は仮想ボタン入力を送らない', phase => {
+    start({ phase })
+    click('シングルクリック'); click('ダブルクリック'); click('1秒長押し')
+    expect(harness.buttonGesture).not.toHaveBeenCalled()
+  })
+
+  it.each(['en', 'zh'] as const)('%sでも3つのボタンを表示する', locale => {
+    harness.locale = locale
+    for (const label of ['シングルクリック', 'ダブルクリック', '1秒長押し']) expect(button(simulationMessages[label][locale]).props.disabled).toBe(true)
   })
 
   it('BLE有効後だけ標準命令・コードから受け取った名前付きモードと演出を表示する', () => {

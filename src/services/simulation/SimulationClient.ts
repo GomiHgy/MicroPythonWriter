@@ -1,5 +1,5 @@
 import { encodeCommand } from '../bluetooth/protocol'
-import type { SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
+import type { ButtonGesture, SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
 
 export function isSimulationSupported(): boolean {
   if (typeof Worker === 'undefined' || typeof WebAssembly === 'undefined') return false
@@ -8,7 +8,7 @@ export function isSimulationSupported(): boolean {
 }
 
 export function initialSimulationSnapshot(count = 10): SimulationSnapshot {
-  return { phase: 'idle', pixels: Array.from({ length: Math.max(1, Math.min(300, count)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
+  return { phase: 'idle', pixels: Array.from({ length: Math.max(1, Math.min(300, count)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, buttonGesture: null, modes: [], actions: [], log: '', error: '' }
 }
 
 /** 実機の通信クライアントとは独立した、使い捨てWorkerの管理。 */
@@ -19,6 +19,8 @@ export class SimulationClient {
   private loadingStarted = 0
   private disposed = false
   private pauseRequested = false
+  private gesturePending = false
+  private manualButtonPressed = false
   private snapshot = initialSimulationSnapshot()
   private readonly onChange: (snapshot: SimulationSnapshot) => void
 
@@ -40,11 +42,13 @@ export class SimulationClient {
       this.worker.terminate()
     }
     this.worker = undefined
+    this.gesturePending = false
+    this.manualButtonPressed = false
   }
 
   private fail(error: string): void {
     this.release()
-    this.publish({ ...this.snapshot, phase: 'error', bleEnabled: false, error })
+    this.publish({ ...this.snapshot, phase: 'error', bleEnabled: false, buttonGesture: null, error })
   }
 
   start(source: string, config: SimulationConfig): void {
@@ -69,6 +73,7 @@ export class SimulationClient {
         if (this.worker !== worker || this.disposed) return
         this.lastHeartbeat = Date.now()
         if (event.data.type === 'snapshot') {
+          if (event.data.snapshot.buttonGesture || event.data.snapshot.phase !== 'running') this.gesturePending = false
           this.publish(event.data.snapshot)
           if (event.data.snapshot.phase === 'running' && this.pauseRequested) this.send({ type: 'pause' })
           if (event.data.snapshot.phase === 'finished' || event.data.snapshot.phase === 'error') this.release()
@@ -93,13 +98,26 @@ export class SimulationClient {
   pause(): void {
     // 読み込み中にタブを離れた場合も、開始直後に停止要求を引き継ぐ。
     this.pauseRequested = true
+    this.manualButtonPressed = false
     if (this.snapshot.phase === 'running') this.send({ type: 'pause' })
   }
   resume(): void {
     this.pauseRequested = false
     if (this.snapshot.phase === 'paused') this.send({ type: 'resume' })
   }
-  button(pressed: boolean): void { if (this.snapshot.phase === 'running' || !pressed) this.send({ type: 'button', pressed }) }
+  button(pressed: boolean): void {
+    if (!pressed) this.gesturePending = false
+    if ((this.snapshot.phase === 'running' && !this.pauseRequested && !this.snapshot.buttonGesture && !this.gesturePending) || !pressed) {
+      this.manualButtonPressed = pressed
+      this.send({ type: 'button', pressed })
+    }
+  }
+  buttonGesture(gesture: ButtonGesture): void {
+    if (this.disposed || this.snapshot.phase !== 'running' || this.pauseRequested || this.gesturePending || this.snapshot.buttonGesture || this.manualButtonPressed) return
+    if (!['single', 'double', 'long'].includes(gesture)) return
+    this.gesturePending = true
+    this.send({ type: 'button-gesture', gesture })
+  }
   command(command: string): void {
     if (this.snapshot.phase !== 'running' || !this.snapshot.bleEnabled) return
     try { this.send({ type: 'ble', command: new TextDecoder().decode(encodeCommand(command)) }) }

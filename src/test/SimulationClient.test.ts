@@ -103,6 +103,70 @@ describe('simulation Worker lifecycle', () => {
     client.button(true); client.button(false)
     expect(worker.messages.slice(1)).toEqual([{ type: 'button', pressed: true }, { type: 'button', pressed: false }])
   })
+  it('does not overlap manual input with a pending automatic gesture', () => {
+    client.start('pass', config)
+    const worker = FakeWorker.instances[0]
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running' })
+    client.button(true)
+    client.buttonGesture('single')
+    expect(worker.messages.at(-1)).toEqual({ type: 'button', pressed: true })
+    client.button(false)
+    client.buttonGesture('single')
+    client.button(true)
+    expect(worker.messages.slice(1)).toEqual([
+      { type: 'button', pressed: true }, { type: 'button', pressed: false }, { type: 'button-gesture', gesture: 'single' },
+    ])
+  })
+  it('sends one gesture request and waits for Worker completion instead of scheduling UI timers', () => {
+    client.start('pass', config)
+    const worker = FakeWorker.instances[0]
+    client.buttonGesture('single')
+    expect(worker.messages).toHaveLength(1)
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running' })
+    client.buttonGesture('double')
+    client.buttonGesture('long')
+    // 開始より前に送信されていたsnapshotでも、未応答の要求を重ねない。
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running' })
+    client.buttonGesture('single')
+    expect(worker.messages.slice(1)).toEqual([{ type: 'button-gesture', gesture: 'double' }])
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running', buttonGesture: 'double' })
+    vi.advanceTimersByTime(2000)
+    client.buttonGesture('single')
+    expect(worker.messages).toHaveLength(2)
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running', buttonGesture: null })
+    client.buttonGesture('long')
+    expect(worker.messages.at(-1)).toEqual({ type: 'button-gesture', gesture: 'long' })
+  })
+  it('rejects gestures as soon as pause is requested and clears pending input after reset', () => {
+    client.start('pass', config)
+    const worker = FakeWorker.instances[0]
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running' })
+    client.buttonGesture('long')
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running', buttonGesture: 'long' })
+    client.pause()
+    client.buttonGesture('single')
+    expect(worker.messages.at(-1)).toEqual({ type: 'pause' })
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'paused' })
+    client.buttonGesture('double')
+    expect(worker.messages.at(-1)).toEqual({ type: 'pause' })
+    client.reset()
+    expect(changes.at(-1)?.buttonGesture).toBeNull()
+    client.start('pass', config)
+    const second = FakeWorker.instances[1]
+    second.emit({ ...initialSimulationSnapshot(), phase: 'running' })
+    client.buttonGesture('single')
+    expect(second.messages.at(-1)).toEqual({ type: 'button-gesture', gesture: 'single' })
+  })
+  it('clears an in-progress gesture when the Worker fails', () => {
+    client.start('pass', config)
+    const worker = FakeWorker.instances[0]
+    worker.emit({ ...initialSimulationSnapshot(), phase: 'running', buttonGesture: 'long' })
+    worker.onerror?.({ message: 'failed' } as ErrorEvent)
+    expect(changes.at(-1)?.phase).toBe('error')
+    expect(changes.at(-1)?.buttonGesture).toBeNull()
+    client.buttonGesture('single')
+    expect(worker.messages).toHaveLength(1)
+  })
   it('remembers a pause requested while runtime assets are still loading', () => {
     client.start('pass', config)
     const worker = FakeWorker.instances[0]

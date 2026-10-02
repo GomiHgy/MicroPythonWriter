@@ -7,6 +7,7 @@ export interface SimulationConfig {
   buttonPin: number
 }
 export type SimulationPhase = 'idle' | 'loading' | 'running' | 'paused' | 'finished' | 'error'
+export type ButtonGesture = 'single' | 'double' | 'long'
 export interface SimulationControl { id: string; label: string }
 export interface SimulationSnapshot {
   phase: SimulationPhase
@@ -14,6 +15,7 @@ export interface SimulationSnapshot {
   ledCurrent: LedCurrentObservation | null
   elapsedMs: number
   bleEnabled: boolean
+  buttonGesture?: ButtonGesture | null
   modes: SimulationControl[]
   actions: SimulationControl[]
   log: string
@@ -23,6 +25,7 @@ export type SimulationInput =
   | { type: 'start'; source: string; config: SimulationConfig; runtimeUrl: string }
   | { type: 'pause' | 'resume' }
   | { type: 'button'; pressed: boolean }
+  | { type: 'button-gesture'; gesture: ButtonGesture }
   | { type: 'ble'; command: string }
 export type SimulationOutput =
   | { type: 'snapshot'; snapshot: SimulationSnapshot }

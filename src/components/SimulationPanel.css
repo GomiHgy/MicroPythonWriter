@@ -29,7 +29,8 @@
 .simulation-current-model select { min-width: 0; max-width: 100%; padding: 7px 9px; border: 1px solid #9bb0c2; border-radius: 8px; background: #f8fbff; color: #243b53; font: inherit; }
 .simulation-inputs { margin-top: 16px; border-top: 1px solid #d1dde7; padding-top: 14px; }
 .simulation-inputs h3 { margin: 0 0 10px; font-size: .95rem; }
-.simulation-hardware-button { width: 100%; background: #edf3fa; color: #24445f; border: 2px solid #8ca7be; box-shadow: 0 3px 0 #8497a9; min-height: 48px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.simulation-gesture-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.simulation-hardware-button { width: 100%; background: #edf3fa; color: #24445f; border: 2px solid #8ca7be; box-shadow: 0 3px 0 #8497a9; min-height: 48px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .simulation-hardware-button.pressed { background: #cbebff; color: #124b76; border-color: #1484d1; box-shadow: none; transform: translateY(2px); }
 .simulation-ble-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
 .simulation-ble-buttons button { flex: 1 1 100px; font-size: .85rem; }

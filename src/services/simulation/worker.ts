@@ -2,6 +2,7 @@ import type { loadPyodide as LoadPyodide } from 'pyodide'
 import bootstrap from './hardware.py?raw'
 import { parseLedStatus } from '../bluetooth/protocol'
 import { SimulationClock } from './SimulationClock'
+import { SimulationButtonInput } from './SimulationButtonInput'
 import { observeLedCurrent } from './LedCurrent'
 import { restrictSimulationHost } from './restrictSimulationHost'
 import type { SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
@@ -11,7 +12,11 @@ const scope = globalThis as typeof globalThis & { postMessage: (message: Simulat
 let snapshot: SimulationSnapshot
 let config: SimulationConfig
 let clock = new SimulationClock(undefined, true)
-let pressed = false
+const button = new SimulationButtonInput(() => clock.now(), gesture => {
+  if (!snapshot) return
+  snapshot.buttonGesture = gesture
+  publish()
+})
 let started = false
 let commands: string[] = []
 let notifyLine = ''
@@ -60,7 +65,7 @@ function bleOutput(text: string): void {
 }
 const bridge = {
   now: () => clock.now(),
-  button: () => pressed,
+  button: () => button.read(),
   frame,
   bleOutput,
   bleActive: (enabled: boolean) => {
@@ -84,6 +89,7 @@ const bridge = {
     // 0msもイベントループへ必ず戻す。busy loopのtraceからもボタン/停止要求を処理できる。
     do {
       await new Promise<void>(resolve => setTimeout(resolve, clock.isPaused ? 20 : Math.min(20, Math.max(0, deadline - clock.now()))))
+      button.update()
     } while (clock.isPaused || clock.now() < deadline)
   },
 }
@@ -92,11 +98,12 @@ async function start(input: Extract<SimulationInput, { type: 'start' }>): Promis
   if (started) return
   started = true
   config = input.config
-  snapshot = { phase: 'loading', pixels: Array.from({ length: Math.max(1, Math.min(300, config.ledCount)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' }
+  snapshot = { phase: 'loading', pixels: Array.from({ length: Math.max(1, Math.min(300, config.ledCount)) }, () => [0, 0, 0]), ledCurrent: null, elapsedMs: 0, bleEnabled: false, buttonGesture: null, modes: [], actions: [], log: '', error: '' }
   clock.pause()
   publish()
   const heartbeat = setInterval(() => {
     scope.postMessage({ type: 'heartbeat' })
+    button.update()
     if (snapshot.phase === 'running') schedulePublish()
   }, 500)
   try {
@@ -118,11 +125,11 @@ async function start(input: Extract<SimulationInput, { type: 'start' }>): Promis
     snapshot.error = (error instanceof Error ? error.message : String(error)).slice(-8192)
   } finally {
     clock.pause()
-    pressed = false
     snapshot.bleEnabled = false
     clearInterval(heartbeat)
     if (updateTimer !== undefined) clearTimeout(updateTimer)
     updateTimer = undefined
+    button.cancel()
     publish()
   }
 }
@@ -131,8 +138,9 @@ scope.onmessage = (event: MessageEvent<SimulationInput>) => {
   const input = event.data
   if (input.type === 'start') { void start(input); return }
   if (!snapshot || (snapshot.phase !== 'running' && snapshot.phase !== 'paused')) return
-  if (input.type === 'pause') { clock.pause(); pressed = false; snapshot.phase = 'paused'; publish() }
+  if (input.type === 'pause') { clock.pause(); snapshot.phase = 'paused'; button.cancel(); publish() }
   else if (input.type === 'resume') { clock.resume(); snapshot.phase = 'running'; publish() }
-  else if (input.type === 'button') pressed = input.pressed
+  else if (input.type === 'button') button.manual(input.pressed, snapshot.phase === 'running')
+  else if (input.type === 'button-gesture') button.start(input.gesture, snapshot.phase === 'running')
   else if (input.type === 'ble' && snapshot.phase === 'running' && snapshot.bleEnabled && commands.length < 16 && /^[\x20-\x7e]{1,19}\n$/.test(input.command)) commands.push(input.command)
 }

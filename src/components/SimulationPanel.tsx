@@ -3,7 +3,7 @@ import { boardDefinitions, type BoardId } from '../config/boards'
 import { useLocale } from '../i18n'
 import type { ProjectSettings } from '../services/projects/types'
 import { isSimulationSupported, SimulationClient } from '../services/simulation/SimulationClient'
-import type { SimulationConfig, SimulationSnapshot } from '../services/simulation/types'
+import type { ButtonGesture, SimulationConfig, SimulationSnapshot } from '../services/simulation/types'
 import { LED_MODELS } from '../services/workshop/WorkshopProfile'
 import { LED_CURRENT_PROFILES, LED_CURRENT_WARNING_MA } from '../services/simulation/LedCurrent'
 import './SimulationPanel.css'
@@ -12,6 +12,7 @@ export interface SimulationPanelProps { source: string; settings: ProjectSetting
 
 const initialSnapshot = (): SimulationSnapshot => ({ phase: 'idle', pixels: [], ledCurrent: null, elapsedMs: 0, bleEnabled: false, modes: [], actions: [], log: '', error: '' })
 const phaseLabels = { idle: '再生すると試せます', loading: 'シミュレーターを準備中…', running: 'シミュレーション中', paused: 'シミュレーションを一時停止中', finished: 'シミュレーションが終了しました', error: 'シミュレーションを続けられません' } as const
+const gestureLabels: Record<ButtonGesture, string> = { single: 'シングルクリック', double: 'ダブルクリック', long: '1秒長押し' }
 
 export function SimulationPanel({ source, settings, active = true }: SimulationPanelProps) {
   const { t } = useLocale()
@@ -19,12 +20,10 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
   const [overrides, setOverrides] = useState<Partial<Pick<SimulationConfig, 'boardId' | 'ledCount' | 'ledPin'> & Pick<ProjectSettings, 'ledModel'>>>({})
   const [layout, setLayout] = useState<'strip' | 'ring'>('strip')
   const [run, setRun] = useState<{ source: string; config: string } | null>(null)
-  const [held, setHeld] = useState(false)
   const [brightness, setBrightness] = useState(100)
   const [trigger, setTrigger] = useState('')
   const [appliedLedCount, setAppliedLedCount] = useState<number | null>(null)
   const client = useRef<SimulationClient | null>(null)
-  const pressed = useRef(false)
   const pendingBrightness = useRef<number | null>(null)
   const boardId = overrides.boardId ?? settings?.boardId ?? 'm5nanoc6'
   const board = boardDefinitions[boardId]
@@ -54,28 +53,15 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
     setAppliedLedCount(ledCount)
   }
 
-  const releaseButton = () => {
-    if (!pressed.current) return
-    pressed.current = false
-    setHeld(false)
-    client.current?.button(false)
-  }
-  const pressButton = () => {
-    if (!interactive || pressed.current) return
-    pressed.current = true
-    setHeld(true)
-    client.current?.button(true)
-  }
+  const releaseButton = () => { client.current?.button(false) }
+  const tryGesture = (kind: ButtonGesture) => { if (interactive && !snapshot.buttonGesture) client.current?.buttonGesture(kind) }
   const pause = () => { releaseButton(); pendingBrightness.current = null; client.current?.pause() }
   const play = () => {
     if (!canPlay) return
     if (snapshot.phase === 'paused' && !stale) { client.current?.resume(); return }
     releaseButton()
     pendingBrightness.current = null
-    client.current ??= new SimulationClient(next => {
-      setSnapshot(next)
-      if (next.phase !== 'running') setHeld(false)
-    })
+    client.current ??= new SimulationClient(setSnapshot)
     setRun({ source, config: configKey })
     setAppliedLedCount(null)
     client.current.start(source, config)
@@ -99,15 +85,12 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
   useEffect(() => {
     if (active && !stale) return
     // 入力を離してから停止する。別タブへ移動しても押しっぱなしにしない。
-    pressed.current = false
     pendingBrightness.current = null
     client.current?.button(false)
     client.current?.pause()
   }, [active, stale, running])
   useEffect(() => {
     const leave = () => {
-      pressed.current = false
-      setHeld(false)
       pendingBrightness.current = null
       client.current?.button(false)
       if (document.hidden) client.current?.pause()
@@ -169,12 +152,13 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
         <p className="simulation-help">{t('LEDの版・互換品・電圧・温度で実際の電流は変わります。使うLEDの資料と実測で確認してください。一時停止・終了時は最後の出力を表示し、最大値はリセット・新規再生で消去します。')}</p>
       </details>
     </section>
-    <div className="simulation-inputs"><h3>{t('内蔵ボタンを試す')}</h3><button type="button" className={`simulation-hardware-button${held && interactive ? ' pressed' : ''}`} disabled={!interactive} aria-pressed={held && interactive}
-      onPointerDown={event => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); pressButton() }}
-      onPointerUp={releaseButton} onPointerCancel={releaseButton} onLostPointerCapture={releaseButton} onBlur={releaseButton}
-      onKeyDown={event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); if (!event.repeat) pressButton() } }}
-      onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); releaseButton() } }}>
-      {t(held && interactive ? '● ボタンを押しています' : '● 本体ボタン（押している間ON）')}</button><p className="simulation-help">{t('短く押す・2回押す・長押しを試せます。動きはコードの内容で決まります。キーボードはSpaceまたはEnterです。')}</p></div>
+    <div className="simulation-inputs"><h3>{t('内蔵ボタンを試す')}</h3>
+      <div className="simulation-gesture-buttons" role="group" aria-label={t('内蔵ボタンを試す')} aria-busy={interactive && Boolean(snapshot.buttonGesture)}>
+        {(Object.keys(gestureLabels) as ButtonGesture[]).map(kind => <button key={kind} type="button" className={`simulation-hardware-button${snapshot.buttonGesture === kind && interactive ? ' pressed' : ''}`} disabled={!interactive || Boolean(snapshot.buttonGesture)} onClick={() => tryGesture(kind)}>{t(gestureLabels[kind])}</button>)}
+      </div>
+      {interactive && snapshot.buttonGesture && <p className="simulation-help" role="status">{t('ボタン操作を再現中です。次の操作まで少しお待ちください。')}</p>}
+      <p className="simulation-help">{t('各ボタンを1回押すだけで、その操作を再現します。キーボードはSpaceまたはEnterです。対応する判定処理がコードにない場合、その操作の動きは再現できません。')}</p>
+    </div>
     {snapshot.bleEnabled ? <div className="simulation-inputs simulation-ble"><h3>{t('BLEリモコンを試す（仮想通信）')}</h3><div className="simulation-ble-buttons"><button type="button" disabled={!interactive} onClick={() => send('PLAY')}>{t('▶ LEDを再生')}</button><button type="button" className="quiet-button" disabled={!interactive} onClick={() => send('PAUSE')}>{t('Ⅱ LEDを停止')}</button><button type="button" className="quiet-button" disabled={!interactive} onClick={() => send('OFF')}>{t('○ ライトを消す')}</button></div>
       <label className="simulation-brightness" htmlFor="simulation-brightness"><span>{t('仮想リモコンの明るさ')}</span><strong>{brightness}%</strong></label><input id="simulation-brightness" type="range" min="0" max="100" step="1" value={brightness} disabled={!interactive} onChange={event => { const value = Number(event.target.value); setBrightness(value); pendingBrightness.current = value }} onPointerUp={commitBrightness} onKeyUp={commitBrightness} onBlur={commitBrightness} onPointerCancel={() => { pendingBrightness.current = null }} />
       {snapshot.modes.length > 0 && <div className="simulation-control-list" role="group" aria-label={t('仮想モード')}><h4>{t('モードを選ぶ')}</h4>{snapshot.modes.map(mode => <button type="button" className="quiet-button" disabled={!interactive} key={mode.id} onClick={() => send(`MODE ${mode.id}`)}>{mode.label}</button>)}</div>}
