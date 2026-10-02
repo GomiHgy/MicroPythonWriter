@@ -349,6 +349,43 @@ it.each(['running', 'error', 'connection-lost', 'disconnected'])('操作結果�
   assertNoUsbOperations()
 })
 
+it.each(['ja', 'en', 'zh'] as const)('主操作は実行と自動実行設定の2つで、補助操作は折りたたむ（%s）', locale => {
+  setLocale(locale)
+  const view = render()
+  const main = find(view, element => element.props.className === 'main-actions')
+  const buttons = all(main, element => element.type === 'button')
+  expect(buttons).toHaveLength(2)
+  expect(all(buttons[0], element => element.type === 'span')[0].props.children).toBe(translate(locale, '▶ 実行'))
+  expect(all(buttons[1], element => element.type === 'span')[0].props.children).toBe(translate(locale, '電源を入れたら自動実行'))
+  const more = find(view, element => element.props.className === 'program-more-actions')
+  expect(more.type).toBe('details')
+  expect(more.props.open).toBeUndefined()
+  expect(all(more, element => element.type === 'button')).toHaveLength(2)
+  assertNoUsbOperations()
+})
+
+it('自動実行は保存済みの現在コードの起動設定だけを変更する', () => {
+  const button = find(render(), element => element.props.className === 'auto-run-button')
+  expect(button.props.disabled).toBe(false)
+  event(button, 'onClick')
+  expect(harness.programmer.setBoot).toHaveBeenCalledExactlyOnceWith(0)
+  expect(harness.programmer.write).not.toHaveBeenCalled()
+  expect(harness.programmer.run).not.toHaveBeenCalled()
+  expect(harness.programmer.load).not.toHaveBeenCalled()
+})
+
+it.each(['unsaved', 'edited', 'unsupported', 'busy', 'error'])('自動実行設定は%sの場合に禁止する', reason => {
+  if (reason === 'unsaved') harness.programmer.writtenSource = null
+  if (reason === 'edited') harness.programmer.source = 'print("edited")'
+  if (reason === 'unsupported') harness.programmer.info.bootOptionSupported = false
+  if (reason === 'busy') harness.programmer.state = 'uploading'
+  if (reason === 'error') harness.programmer.state = 'error'
+  const button = find(render(), element => element.props.className === 'auto-run-button')
+  expect(button.props.disabled).toBe(true)
+  event(button, 'onClick')
+  assertNoUsbOperations()
+})
+
 it('初回接続だけでは書込み成功を表示しない', () => {
   harness.programmer.state = 'raw-repl-ready'
   expect(all(render(), element => element.type === ProgramResult)).toHaveLength(0)

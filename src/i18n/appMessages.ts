@@ -1,6 +1,13 @@
 import type { MessageCatalog } from './types'
 
 export const appMessages: MessageCatalog = {
+  '電源を入れたら自動実行': { en: 'Run automatically on power-on', zh: '通电后自动运行' },
+  '機器に保存したコードを、次の電源投入時にも動かします。': { en: 'Run the code saved on the device on future power-ons too.', zh: '下次通电时也运行设备中保存的代码。' },
+  '機器をUSBでつなぎ、操作できる状態になってから設定してください。': { en: 'Connect the device via USB and wait until it is ready before changing this setting.', zh: '请通过USB连接设备，待设备可操作后再设置。' },
+  '先に「実行」で今のコードを機器へ送り、実物の動きを確認してください。': { en: 'First use Run to send the current code to the device and check its physical behavior.', zh: '请先点击“运行”，将当前代码发送到设备并确认实物的动作。' },
+  '実物の動きを確認できたら設定してください。設定後は機器を再起動します。解除は「自動実行しない設定に戻す」から行えます。': { en: 'Enable this after checking the physical behavior. The device will restart. Use “Disable automatic execution” to turn it off.', zh: '确认实物动作后再设置。设置后设备将重启。可通过“恢复为不自动运行”解除。' },
+  'まず「実行」で試し、完成したら「電源を入れたら自動実行」を設定してください。「実行」だけでは起動設定は変わりません。': { en: 'Try Run first, then enable automatic execution on power-on when ready. Run alone does not change the startup setting.', zh: '先点击“运行”进行尝试，完成后设置“通电后自动运行”。仅点击“运行”不会更改启动设置。' },
+  'その他の操作': { en: 'Other operations', zh: '其他操作' },
   'アプリのバージョン情報': { en: 'App version information', zh: '应用版本信息' },
   'バージョン': { en: 'Version', zh: '版本' },
   '取得できませんでした': { en: 'Unavailable', zh: '无法获取' },

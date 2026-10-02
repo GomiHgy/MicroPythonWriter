@@ -60,7 +60,14 @@
 .section-heading, .panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .section-heading h2, .panel-head h2 { margin: 0; font-size: 1.13rem; }
 .section-heading p:not(.eyebrow), .panel-head p:not(.eyebrow) { margin: .25rem 0 0; color: #59718a; font-size: .9rem; }
-.main-actions { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(180px, 1fr) minmax(160px, .8fr); gap: 10px; margin-top: 16px; }
+.main-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.auto-run-button { background: #1365b5; }
+.auto-run-hint { font-size: .9rem; line-height: 1.6; }
+.program-more-actions { margin-top: 12px; }
+.program-more-actions summary { cursor: pointer; }
+.program-more-actions > div { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.program-more-actions button { text-align: left; }
+.program-more-actions button small { display: block; margin-top: 4px; }
 .main-actions button { min-height: 66px; text-align: left; }
 .main-actions button span, .main-actions button small { display: block; }
 .main-actions button span { font-weight: 800; font-size: 1rem; }
