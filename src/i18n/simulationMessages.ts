@@ -1,6 +1,13 @@
 import type { MessageCatalog } from './types'
 
 export const simulationMessages: MessageCatalog = {
+  '見やすい表示': { en: 'Easy-to-see display', zh: '易于观察的显示' },
+  '出力RGBそのまま': { en: 'Unchanged output RGB', zh: '直接显示输出RGB' },
+  '見やすい表示：画面用に明るさを補正しています。実物の明るさを再現するものではありません。': { en: 'Easy-to-see display: brightness is adjusted for the screen. It does not reproduce the brightness of physical LEDs.', zh: '易于观察的显示：针对屏幕调整亮度，并非再现实物LED的亮度。' },
+  '出力RGBそのまま：画面用の明るさ補正をせずに表示しています。': { en: 'Unchanged output RGB: shown without screen brightness adjustment.', zh: '直接显示输出RGB：不进行屏幕亮度调整。' },
+  'LED表示の詳細設定': { en: 'LED display options', zh: 'LED显示详细设置' },
+  '画面の明るさ': { en: 'On-screen brightness', zh: '屏幕亮度' },
+  '表示だけを変更します。コード・実機への出力・電流推定は変わりません。': { en: 'Only the display changes. Your code, device output and current estimates are unchanged.', zh: '仅更改显示效果，代码、实机输出及电流估算不变。' },
   'LED全体の推定電流': { en: 'Estimated total LED current', zh: 'LED总电流估算' },
   '概算・実測ではありません': { en: 'Estimate, not a measurement', zh: '仅为估算，并非实测' },
   '電流推定に使うLED': { en: 'LED type for estimation', zh: '用于估算的LED型号' },

@@ -83,13 +83,13 @@ export class BluetoothController {
   constructor(options: BluetoothControllerOptions = {}) {
     this.bluetooth = options.bluetooth ?? defaultBluetooth()
     const secure = options.secureContext ?? (typeof isSecureContext !== 'undefined' && isSecureContext)
-    this.supported = secure && !!this.bluetooth
+    this.supported = secure && typeof this.bluetooth?.requestDevice === 'function'
     this.timeoutMs = options.timeoutMs ?? 10000
     this.pollMs = options.pollMs ?? 2000
     this.snapshot = Object.freeze({
       ...EMPTY_STATE,
       phase: this.supported ? 'disconnected' : 'unsupported',
-      error: this.supported ? null : !secure ? 'Bluetooth接続にはHTTPSまたはlocalhostで開いてください。' : 'このブラウザではBluetoothに接続できません。パソコンやAndroidの対応するChrome・Edgeで開いてください。',
+      error: this.supported ? null : !secure ? 'Bluetooth接続にはHTTPSまたはlocalhostで開いてください。' : 'このブラウザはWeb Bluetoothに対応していません。',
     })
   }
 

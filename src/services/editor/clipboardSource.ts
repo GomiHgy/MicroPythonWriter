@@ -1,8 +1,9 @@
 import { pythonLanguage } from '@codemirror/lang-python'
+import { isArduinoSource } from './sourceLanguage'
 
 export type ClipboardSourceResult =
   | { ok: true; source: string }
-  | { ok: false; reason: 'empty' | 'too-large' | 'not-python' | 'ambiguous' }
+  | { ok: false; reason: 'empty' | 'too-large' | 'not-python' | 'ambiguous' | 'arduino' }
 
 export const MAX_CLIPBOARD_SOURCE_LENGTH = 1_000_000
 
@@ -57,6 +58,7 @@ export function extractClipboardSource(text: string): ClipboardSourceResult {
 
   const lines = source.split('\n')
   const candidates: string[] = []
+  let hasArduinoBlock = false
   for (let index = 0; index < lines.length; index++) {
     const opening = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/.exec(lines[index])
     if (!opening) continue
@@ -67,14 +69,17 @@ export function extractClipboardSource(text: string): ClipboardSourceResult {
     index = start
     while (index < lines.length && !closing.test(lines[index])) index++
     if (index === lines.length) return { ok: false, reason: 'not-python' }
+    const block = lines.slice(start, index).join('\n') + (index > start ? '\n' : '')
     if (['', 'python', 'py', 'micropython'].includes(language)) {
       // コードブロックの改行も含め、コード部分の空白はそのまま保つ。
-      candidates.push(lines.slice(start, index).join('\n') + (index > start ? '\n' : ''))
+      candidates.push(block)
     }
+    else if (['cpp', 'c++', 'c', 'arduino', 'ino'].includes(language)) hasArduinoBlock ||= isArduinoSource(block)
   }
   if (candidates.length > 1) return { ok: false, reason: 'ambiguous' }
-  if (candidates.length === 0) return { ok: false, reason: 'not-python' }
+  if (candidates.length === 0) return { ok: false, reason: hasArduinoBlock || isArduinoSource(source) ? 'arduino' : 'not-python' }
   if (!candidates[0].trim()) return { ok: false, reason: 'empty' }
+  if (isArduinoSource(candidates[0])) return { ok: false, reason: 'arduino' }
   return looksLikePython(candidates[0])
     ? { ok: true, source: candidates[0] }
     : { ok: false, reason: 'not-python' }

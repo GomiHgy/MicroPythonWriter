@@ -202,9 +202,43 @@ describe('Bluetoothコントローラの接続と受信状態', () => {
   it('未対応環境では接続を無効にして対応環境を案内する', () => {
     harness.snapshot = { ...harness.snapshot, phase: 'unsupported' }
     const view = panel()
+    const connect = button(view, 'Bluetoothでつなぐ')
+    expect(connect.props.disabled).toBe(true)
+    expect(connect.props['aria-describedby']).toBe('bluetooth-support-help')
+    const card = find(view, element => element.type === 'section' && String(element.props.className).split(' ').includes('device-card'))
+    const help = find(card, element => element.props.id === 'bluetooth-support-help')
+    expect(help.props.role).toBe('alert')
+    expect(content(help)).toContain('Web Bluetoothに対応していません')
+    expect(content(help)).toContain('パソコン版Chrome・Edge')
+    expect(content(help)).toContain('Android版Chrome')
+    expect(content(help)).toContain('HTTPS')
+    expect(content(help)).toContain('iPhone・iPadのSafari')
+    expect(content(card)).not.toContain('電源を入れて')
+    event(connect, 'onClick')
+    expect(harness.connect).not.toHaveBeenCalled()
+  })
+
+  it('安全でないページはブラウザ非対応とは別の理由を接続ボタンのそばに表示する', () => {
+    harness.snapshot = { ...harness.snapshot, phase: 'unsupported', error: 'Bluetooth接続にはHTTPSまたはlocalhostで開いてください。' }
+    const view = panel()
+    const help = find(view, element => element.props.id === 'bluetooth-support-help')
+    expect(content(help)).toContain('Bluetooth接続にはHTTPSまたはlocalhostで開いてください。')
+    expect(content(help)).not.toContain('Web Bluetoothに対応していません')
+    expect(content(availability(view))).toContain('Bluetooth接続にはHTTPSまたはlocalhostで開いてください。')
     expect(button(view, 'Bluetoothでつなぐ').props.disabled).toBe(true)
-    expect(content(view)).toContain('HTTPS')
-    expect(content(view)).toContain('iPhone・iPad')
+  })
+
+  it.each(['en', 'zh'] as const)('非対応の案内と接続ボタンの無効状態は%sでもページを開いた直後に表示する', locale => {
+    harness.locale = locale
+    harness.snapshot = { ...harness.snapshot, phase: 'unsupported', error: 'このブラウザはWeb Bluetoothに対応していません。' }
+    const view = panel()
+    const help = find(view, element => element.props.id === 'bluetooth-support-help')
+    expect(content(help)).toContain(bluetoothMessages['このブラウザはWeb Bluetoothに対応していません。'][locale])
+    expect(content(help)).toContain('Chrome')
+    expect(content(help)).toContain('Android')
+    expect(content(help)).not.toMatch(/[ぁ-んァ-ヶ]/u)
+    expect(button(view, bluetoothMessages['Bluetoothでつなぐ'][locale]).props.disabled).toBe(true)
+    expect(harness.connect).not.toHaveBeenCalled()
   })
 
   it('接続途中では二重接続を防ぎ、キャンセルできる', () => {

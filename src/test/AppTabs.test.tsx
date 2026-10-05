@@ -140,8 +140,11 @@ it('ログを閉じていても実機エラーと修正への案内は隠さな�
   const view = render()
   const records = find(view, element => element.props.className === 'program-records')
   expect(byId(records, 'program-error-details').props.role).toBeUndefined()
-  const folded = find(records, element => element.type === 'details')
+  const folded = find(records, element => element.type === 'details' && element.props.className === 'panel terminal-panel')
   expect(all(folded, element => element.props.id === 'program-error-details')).toHaveLength(0)
+  const help = find(view, element => element.props.className === 'notice danger program-repair-fallback')
+  expect(help.props.role).toBe('alert')
+  expect(find(help, element => element.type === 'button').props.children).toBe('AIに修正を頼む文章をコピー')
 })
 
 it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
@@ -564,6 +567,35 @@ it('修正依頼の秘密情報確認は現在の編集欄ではなく持ち出�
 it('エラー後に変更された編集コードへ過去のエラー行を表示しない', () => {
   harness.programmer.error = { exceptionType: 'Error', message: 'test', traceback: 'test', intentionalInterrupt: false, stage: '実行', repairPrompt: 'old error', sourceSnapshot: 'old code', sourceKnown: true, line: 7 }
   expect(find(render(), element => element.type === CodeEditor).props.errorLine).toBeUndefined()
+})
+
+it('実行結果から失敗時のコードを使う修正依頼をコピーし、別エラーへ成功通知を持ち越さない', async () => {
+  harness.programmer.state = 'error'
+  harness.programmer.programFeedback = { id: 8, phase: 'failed', operation: 'run', source: 'failing code', saved: true, failedAt: 'runtime' }
+  harness.programmer.error = { exceptionType: 'NameError', message: 'missing', traceback: 'record', intentionalInterrupt: false, stage: 'DEVICE_RUNTIME_ERROR', repairPrompt: 'request for failing code', sourceSnapshot: 'failing code', sourceKnown: true, line: 12 }
+  const writeText = vi.fn(async () => {})
+  vi.stubGlobal('navigator', { clipboard: { writeText } })
+  const result = find(render(), element => element.type === ProgramResult)
+  expect(result.props.repairLine).toBe(12)
+  await event(result, 'onCopyRepair')
+  expect(writeText).toHaveBeenCalledWith('request for failing code')
+  expect(find(render(), element => element.type === ProgramResult).props.copyNotice).toMatchObject({ failed: false })
+  harness.programmer.error = { ...harness.programmer.error, repairPrompt: 'next failure' }
+  expect(find(render(), element => element.type === ProgramResult).props.copyNotice).toBeUndefined()
+  assertNoUsbOperations()
+})
+
+it('USB切断の結果は再接続を案内し、AIによるコード修正を主操作にしない', () => {
+  harness.programmer.state = 'connection-lost'
+  harness.programmer.programFeedback = { id: 8, phase: 'disconnected', operation: 'run', source: 'known code', saved: false }
+  harness.programmer.error = { exceptionType: 'SerialDisconnectedError', message: 'lost', traceback: '', intentionalInterrupt: false, stage: 'SERIAL_DISCONNECTED', repairPrompt: 'connection record' }
+  const result = find(render(), element => element.type === ProgramResult)
+  expect(result.props.onCopyRepair).toBeUndefined()
+  expect(result.props.onReconnect).toBe(harness.programmer.reconnect)
+  const details = byId(render(), 'program-error-details')
+  expect(details.type).toBe('details')
+  expect(details.props.open).toBeUndefined()
+  assertNoUsbOperations()
 })
 
 it('機器上のコードが未取得の場合は編集コードにエラー行を表示しない', () => {

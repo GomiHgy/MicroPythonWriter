@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PasteCodeButton, type PasteCodeButtonProps } from '../components/PasteCodeButton'
 import { pasteMessages } from '../i18n/pasteMessages'
+import { CopyLanguageRecoveryButton } from '../components/SourceLanguageNotice'
 
 const harness = vi.hoisted(() => ({
   slots: [] as unknown[], cursor: 0,
@@ -95,6 +96,13 @@ describe('コード全体のクリップボード貼り付け', () => {
     harness.readText.mockResolvedValue('以下のコードです。\n```python\n' + insertedSource + '```\n実行して確認してください。')
     await click()
     expect(harness.replace).toHaveBeenCalledExactlyOnceWith(insertedSource)
+  })
+  it('Arduinoコードは現コードを維持し、MicroPython版を頼むコピー導線をその場に表示する', async () => {
+    harness.readText.mockResolvedValue('#include <Arduino.h>\nvoid setup() {}\nvoid loop() {}')
+    await click()
+    expect(harness.replace).not.toHaveBeenCalled()
+    expect(text(render())).toContain('Arduino用のC++コードです')
+    expect(all(render(), node => node.type === CopyLanguageRecoveryButton)).toHaveLength(1)
   })
 
   it('読み取り中はボタン無効で、再描画前の連打も追加要求しない', async () => {

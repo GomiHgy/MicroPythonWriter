@@ -55,6 +55,7 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
 
   const connected = state.phase === 'connected'
   const connecting = state.phase === 'connecting'
+  const unsupported = state.phase === 'unsupported'
   const stale = connected && state.receivedAt !== null && now - state.receivedAt > MAX_STATUS_AGE_MS
   const waitingTooLong = connected && state.receivedAt === null && state.connectedAt !== null && now - state.connectedAt > MAX_STATUS_AGE_MS
   const canControl = connected && state.status !== null && !stale
@@ -62,9 +63,9 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
   const legacy = state.status?.v === 1
   const canPlay = canControl && artwork !== null && (artwork.playback !== 'playing' || artwork.action !== null)
   const canPause = canControl && artwork !== null && artwork.playback === 'playing'
-  const connectionLabel = state.phase === 'unsupported' ? '接続非対応' : connecting ? '接続中' : !connected ? '未接続' : !state.status ? '状態待ち' : legacy ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）'
-  const availabilityReason = state.phase === 'unsupported'
-    ? 'この環境では操作できません。対応するChrome・Edgeで開いてください。'
+  const connectionLabel = unsupported ? '接続非対応' : connecting ? '接続中' : !connected ? '未接続' : !state.status ? '状態待ち' : legacy ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）'
+  const availabilityReason = unsupported
+    ? state.error ?? 'このブラウザはWeb Bluetoothに対応していません。'
     : connecting ? '機器を選び、接続が完了するまで待ってください。'
     : !connected ? 'まだ機器とつながっていません。対応プログラムを実行し、「Bluetoothでつなぐ」を押してください。'
     : !state.status ? 'Bluetoothには接続できました。機器から操作一覧と状態が届くまで待っています。通信仕様はまだ未確認です。'
@@ -81,7 +82,7 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
   const actionName = artwork?.controls.actions.find(item => item.id === artwork.action)?.label
   const appearance = (kind: RemoteButton['kind'], id: string, label: string): RemoteButton => remoteButtons.find(button => button.kind === kind && button.id === id) ?? { kind, id, label, icon: kind === 'mode' ? 'light' : 'star' }
   const title = connected ? t('{name} とつながっています', { name: state.deviceName ?? 'M5NanoC6 / AtomS3Lite' }) : t(connecting ? '機器につないでいます…' : '光を、手元でコントロール')
-  const description = t(connected ? 'ボタンやスライダーで光り方を変えてみよう。' : connecting ? '機器を選んだら、このまま少し待ってください。' : 'M5NanoC6／AtomS3Liteの電源を入れて、「Bluetoothでつなぐ」を押してください。')
+  const description = t(connected ? 'ボタンやスライダーで光り方を変えてみよう。' : connecting ? '機器を選んだら、このまま少し待ってください。' : unsupported ? 'Bluetooth接続には、Web Bluetoothに対応したブラウザが必要です。' : 'M5NanoC6／AtomS3Liteの電源を入れて、「Bluetoothでつなぐ」を押してください。')
   const customValid = /^[A-Z][A-Z0-9_]{0,15}$/.test(custom.trim().toUpperCase()) && !['BRIGHTNESS', 'SPEED', 'MODE', 'ACTION', 'PLAY', 'PAUSE'].includes(custom.trim().toUpperCase())
   const send = async (command: string) => {
     const session = state.connectedAt
@@ -95,13 +96,16 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
       <div className="status-badge" aria-hidden="true">{connected ? '✓' : connecting ? '…' : '⌁'}</div>
       <div className="device-copy"><p className="eyebrow">{t('コードを書かずに、光をあそぼう')}</p><h2>{title}</h2><p>{description}</p></div>
       <div className="device-actions">
-        <button className="connect-button" disabled={state.phase === 'unsupported' || connecting || connected} onClick={() => void controller.connect()}>{t('Bluetoothでつなぐ')}</button>
+        <button className="connect-button" disabled={unsupported || connecting || connected} aria-describedby={unsupported ? 'bluetooth-support-help' : undefined} onClick={() => { if (!unsupported) void controller.connect() }}>{t('Bluetoothでつなぐ')}</button>
         {(connected || connecting) && <button className="quiet-button" onClick={() => controller.disconnect()}>{t(connecting ? 'キャンセル' : '接続を切る')}</button>}
       </div>
+      {unsupported && <div id="bluetooth-support-help" className="notice warn bluetooth-support-help" role="alert">
+        <strong>{t(state.error ?? 'このブラウザはWeb Bluetoothに対応していません。')}</strong>
+        <p>{t('パソコン版Chrome・Edge、またはAndroid版Chromeで開いてください。HTTPSのページ（開発時はlocalhost）が必要です。iPhone・iPadのSafariでは使えません。')}</p>
+      </div>}
     </section>
 
-    {state.phase === 'unsupported' && <div className="notice warn" role="alert">{t('この環境ではBluetooth接続を使えません。パソコン版Chrome・Edge、またはAndroid版Chromeで、HTTPSのページ（開発時はlocalhost）を開いてください。iPhone・iPadの標準ブラウザでは使えません。')}</div>}
-    {state.error && state.phase !== 'unsupported' && <div className="notice warn" role="alert">{t(state.error)}</div>}
+    {state.error && !unsupported && <div className="notice warn" role="alert">{t(state.error)}</div>}
     <p className="bluetooth-guide">{t('はじめてなら、プログラム画面で対応プログラムを「実行」しよう。タブを変えてもプログラムは止まりません。')}</p>
     {artwork && <div className="remote-view-toggle"><strong>{projectName}</strong><button className="quiet-button" aria-pressed={focused} onClick={() => setFocused(value => !value)}>{t(focused ? '設定も表示する' : '作品を使う画面にする')}</button></div>}
 

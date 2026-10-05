@@ -94,6 +94,7 @@ function setup(options: { timeoutMs?: number; pollMs?: number; api?: BluetoothAp
 afterEach(() => {
   clients.splice(0).forEach(client => client.dispose())
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe('NanoLED commands', () => {
@@ -324,6 +325,42 @@ describe('Web Bluetooth controller', () => {
     expect(unsupported.getSnapshot()).toMatchObject({ phase: 'unsupported', error: expect.stringContaining('ブラウザ') })
     const insecure = new BluetoothController({ bluetooth: { requestDevice: vi.fn() }, secureContext: false })
     expect(insecure.getSnapshot()).toMatchObject({ phase: 'unsupported', error: expect.stringContaining('HTTPS') })
+  })
+
+  it.each([undefined, {}, { requestDevice: undefined }, { requestDevice: true }])('requestDeviceを使えないブラウザは接続前から非対応になる: %j', async bluetooth => {
+    vi.stubGlobal('navigator', { bluetooth })
+    vi.stubGlobal('isSecureContext', true)
+    const client = new BluetoothController()
+    clients.push(client)
+    const initial = client.getSnapshot()
+    expect(initial).toMatchObject({ phase: 'unsupported', error: 'このブラウザはWeb Bluetoothに対応していません。' })
+    await client.connect()
+    expect(await client.send('STATUS')).toBe(false)
+    client.disconnect()
+    expect(client.getSnapshot()).toBe(initial)
+  })
+
+  it('安全でないページではAPIがあっても選択画面を開かず、HTTPSを案内する', async () => {
+    const requestDevice = vi.fn()
+    vi.stubGlobal('navigator', { bluetooth: { requestDevice } })
+    vi.stubGlobal('isSecureContext', false)
+    const client = new BluetoothController()
+    clients.push(client)
+    expect(client.getSnapshot()).toMatchObject({ phase: 'unsupported', error: 'Bluetooth接続にはHTTPSまたはlocalhostで開いてください。' })
+    await client.connect()
+    client.disconnect()
+    expect(requestDevice).not.toHaveBeenCalled()
+    expect(client.getSnapshot().phase).toBe('unsupported')
+  })
+
+  it('対応ブラウザではページを開いた時点で接続ボタンを有効にでき、APIを自動実行しない', () => {
+    const requestDevice = vi.fn()
+    vi.stubGlobal('navigator', { bluetooth: { requestDevice } })
+    vi.stubGlobal('isSecureContext', true)
+    const client = new BluetoothController()
+    clients.push(client)
+    expect(client.getSnapshot()).toMatchObject({ phase: 'disconnected', error: null })
+    expect(requestDevice).not.toHaveBeenCalled()
   })
 
   it('ユーザー操作まで接続せず、名前で選択しNUSを許可する', async () => {

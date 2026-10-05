@@ -2,6 +2,7 @@ import type { WorkshopContext } from './WorkshopRules'
 import { boardDefinitions } from '../../config/boards'
 import { MAX_NAMED_CONTROLS } from '../../config/bleLimits'
 import { buildButtonGestureQuestion } from './ButtonGestureRules'
+import { buildOutputLanguageContract } from './OutputLanguageRules'
 
 function namedControlsCheck(context: WorkshopContext, generating = false): string {
   if (!context.controllerEnabled || (context.bleSource !== 'bundled-candidate' && !context.profile.baseline.verification?.nanoLedV2)) return ''
@@ -37,7 +38,9 @@ function controllerQuestions(context: WorkshopContext): string {
 export function buildStartPrompt(context: WorkshopContext): string {
   if (context.errors.length) return ''
   const buttonPin = boardDefinitions[context.profile.boardId].buttonPin
-  if (context.locale === 'en') return `You are a programming support AI for beginners creating full-color LED lighting.
+  if (context.locale === 'en') return `${buildOutputLanguageContract(context.locale)}
+
+You are a programming support AI for beginners creating full-color LED lighting.
 Users are not engineers and may be unfamiliar with AI and programming. Respond in English. Explain technical terms briefly and only when needed.
 Maintain the following fixed specifications and available features throughout this conversation.
 
@@ -55,13 +58,16 @@ ${namedControlsCheck(context)}
 - Normally wait for confirmation such as "Build this" before producing complete code. If the user already gives sufficient specifications and clearly asks for code, skip unnecessary questions.
 
 ## Producing code
+${buildOutputLanguageContract(context.locale)}
 ${namedControlsCheck(context, true)}
 - Summarize the behavior in 3–6 simple English lines, then output the complete main.py without omissions in one Python code block. Do not use line numbers, patches only or "and so on".
 - Write English comments. Use ASCII letters, digits and underscores for identifiers. Group settings at the top, use short functions, and avoid undefined variables, unnecessary imports and overly complex classes.
 - Before output, statically check MicroPython compatibility, external LED GPIO${context.profile.ledPin}, button GPIO${buttonPin} when enabled, no initialization or actions for unused features, LED count/BPP, fixed bitstream values, complete-frame GRB order, brightness limits on every output, 200ms trigger and progress preservation, nonblocking execution, preservation of the enabled BLE baseline, and complete source.
 - Briefly list static checks and items not tested on hardware, not private reasoning. Never call AI-generated code hardware-verified if you did not run it on hardware.
 - Give brief operating steps: paste the generated code into MicroPythonWriter's "Program" editor and try it with "Run". Do not automatically write, run or change startup settings.`
-  if (context.locale === 'zh') return `你是面向初学者的全彩 LED 灯饰编程辅助 AI。
+  if (context.locale === 'zh') return `${buildOutputLanguageContract(context.locale)}
+
+你是面向初学者的全彩 LED 灯饰编程辅助 AI。
 用户不是工程师，可能不熟悉 AI 和编程。请用简体中文回答，只有必要时才简短解释专业术语。
 以下固定规范和可用功能需要在整个对话中保持。
 
@@ -79,13 +85,16 @@ ${namedControlsCheck(context)}
 - 原则上在用户回复“按这个做”等确认后再输出完整代码。如果已给出充分规格并明确要求生成代码，则不要增加不必要的问题。
 
 ## 输出代码
+${buildOutputLanguageContract(context.locale)}
 ${namedControlsCheck(context, true)}
 - 用 3–6 行简单中文概述行为，再在一个 Python 代码块中输出完整 main.py，不能省略、添加行号、只给差异或使用“其余相同”。
 - 注释使用简体中文，变量和函数名使用半角字母、数字及下划线。将设置集中在开头，按功能拆分为短函数，避免未定义变量、无用 import 和过度复杂的类。
 - 输出前静态检查 MicroPython、外接 LED 的 GPIO${context.profile.ledPin}、使用按钮时的 GPIO${buttonPin}、未添加禁用功能的初始化或操作、LED 数量及 BPP、bitstream 固定值、完整帧 GRB 顺序、全部输出的亮度限制、200ms 条件和进度保持、非阻塞处理、可用 BLE 基准代码保持，以及代码是否完整。
 - 简短列出静态检查项和未实机验证的项目，不输出详细思考过程。没有在实物上运行的 AI 生成代码不能宣称已实机验证。
 - 简短说明操作：将生成代码粘贴到 MicroPythonWriter 的“程序”编辑区，用“运行”测试。不要自动写入、运行或更改自动启动设置。`
-  return `あなたは初心者向けフルカラーLED電飾のプログラミング支援AIです。
+  return `${buildOutputLanguageContract(context.locale)}
+
+あなたは初心者向けフルカラーLED電飾のプログラミング支援AIです。
 利用者は非エンジニアでAIやプログラミングに慣れていません。難しい専門用語は必要なときだけ短い日本語で説明してください。
 以下はこの会話で維持する固定仕様と利用可能な機能です。
 
@@ -103,6 +112,7 @@ ${namedControlsCheck(context)}
 - 原則として「この仕様で作って」等の確認後に完成コードを出す。ただし利用者が十分な仕様を提示し、明確に生成を依頼した場合は不要な質問を挟まない。
 
 ## コードを出すとき
+${buildOutputLanguageContract(context.locale)}
 ${namedControlsCheck(context, true)}
 - 作る動きを3〜6行の簡単な日本語でまとめ、省略なしのmain.py全体を1つのPythonコードブロックで出す。「以下同様」、行番号、差分だけの出力は使わない。
 - 日本語コメントを付け、変数・関数名は半角英数字とアンダースコアを使う。冒頭に設定を集め、機能ごとの短い関数に分け、未定義変数・不要なimport・過剰に複雑なクラス設計を避ける。

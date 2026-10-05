@@ -15,6 +15,14 @@
 .program-result-checks .confirmed { color: #087443; background: #f7fffa; }
 .program-result .program-result-error { white-space: pre-wrap; max-height: 8em; overflow: auto; font-size: .88rem; margin: 14px 0; color: inherit; }
 .program-result .program-result-note { padding-top: 12px; border-top: 1px dashed currentColor; margin: 14px 0 0; font-size: .9rem; font-weight: 650; color: inherit; }
+.program-result-repair { margin: 16px 0; padding: 16px; border: 1px solid var(--result-accent); border-radius: 10px; background: var(--result-surface); }
+.program-result-repair p { color: inherit; }
+.program-result-repair .repair-copy-button { width: 100%; padding: 14px 18px; background: #2369bb; border-color: #2369bb; color: #fff; font-size: 1rem; font-weight: 750; }
+.program-result-repair ol { margin: 14px 0 0; padding-inline-start: 22px; line-height: 1.8; font-size: .9rem; }
+.program-result .program-result-repair-note { margin: 10px 0 0; font-size: .8rem; }
+.program-result .repair-copy-notice { margin: 12px 0; padding: 10px; color: #087443; background: #edf9f2; border-radius: 6px; font-weight: 700; }
+.program-result .repair-copy-notice.failed { color: var(--result-ink); background: var(--result-surface); border: 1px solid var(--result-accent); }
+.program-result-repair textarea, .program-records .error textarea { width: 100%; margin-top: 10px; padding: 10px; box-sizing: border-box; font: .8rem/1.5 monospace; }
 .program-result-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 14px; }
 .program-result-recovery p { flex: 1 1 250px; margin: 0; font-size: .85rem; line-height: 1.6; }
 :root[data-theme=dark] .program-result { --result-accent: #53c78c; --result-surface: #17352b; --result-ink: #d4f5e3; border-color: var(--result-accent); background: var(--result-surface); }

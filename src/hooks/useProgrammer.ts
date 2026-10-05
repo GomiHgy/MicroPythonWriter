@@ -10,6 +10,7 @@ import { WebSerialTransport } from '../services/serial/WebSerialTransport'
 import { SerialDisconnectedError, type AppError, type DeviceInfo, type DeviceState, type ParsedTraceback } from '../types'
 import type { ProgramFeedback } from '../types/programFeedback'
 import type { BootFeedback } from '../types/bootFeedback'
+import { isArduinoSource } from '../services/editor/sourceLanguage'
 
 const starter = 'print("Hello from M5NanoC6 / AtomS3Lite")\n'
 const emptyInfo: DeviceInfo = { deviceName: '未接続', microPythonVersion: '未取得', firmwareInfo: '未取得', nanoC6Confirmed: false, bootOptionSupported: false, nvsFallbackSupported: false }
@@ -146,8 +147,16 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     return trap('プログラム読込み', async () => { if (!device.current || programOperation.current !== undefined) return; const next = await device.current.files.readMain(); fileSnapshot.current = { ...snapshot, source: next, sourceKnown: true }; if (source && source !== starter && !confirm(translate(getLocale(), 'ローカルの未保存編集を上書きしますか？'))) return; setSource(next) }, undefined, deviceContext())
   }
   const updateProgram = async (execute: boolean) => {
+    if (programOperation.current !== undefined) return
+    // 接続状態・停止・保存など、機器に影響する操作より前に言語違いを知らせる。
+    // Pythonの構文エラーはここで拒否せず、従来どおり実行時の診断へ渡す。
+    if (isArduinoSource(source)) {
+      const message = translate(getLocale(), 'Arduino用のC++コードです。MicroPython版をAIに頼んでください。機器への書き込み・実行はしていません。')
+      saveError('SOURCE_LANGUAGE_MISMATCH', { exceptionType: 'ARDUINO_SOURCE_DETECTED', message, traceback: message, intentionalInterrupt: false }, capture())
+      return
+    }
     const target = device.current
-    if (!target || programOperation.current !== undefined || !['raw-repl-ready', 'stopped', 'running', 'running-no-marker'].includes(machine.current.state)) return
+    if (!target || !['raw-repl-ready', 'stopped', 'running', 'running-no-marker'].includes(machine.current.state)) return
     if (!execute && !confirm(translate(getLocale(), '既存のmain.pyをmain.py.bakへ退避して、編集内容で更新します。実行はしません。続ける？'))) return
     const id = ++runId.current
     programOperation.current = id

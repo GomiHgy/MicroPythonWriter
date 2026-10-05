@@ -553,6 +553,62 @@ export const appMessages: MessageCatalog = {
     "en": "Python code editor",
     "zh": "Python 代码编辑器"
   },
+  "プログラムにエラーがあります。下のボタンで修正依頼をコピーし、コードを作ったAIとの会話に貼り付けてください。": {
+    "en": "The program has an error. Copy the repair request below and paste it into the AI conversation where you created the code.",
+    "zh": "程序出现错误。请用下方按钮复制修复请求，粘贴到生成代码时的 AI 对话中。"
+  },
+  "エラーが起きたコードの{line}行目を確認します。": {
+    "en": "Check line {line} of the code that produced the error.",
+    "zh": "请检查出错代码的第 {line} 行。"
+  },
+  "AIに修正を頼む文章をコピー": {
+    "en": "Copy a repair request for AI",
+    "zh": "复制给 AI 的修复请求"
+  },
+  "プログラムを直して試す手順": {
+    "en": "Steps to repair and try the program",
+    "zh": "修复并重试程序的步骤"
+  },
+  "コードを作ったAIとの会話に貼って送る": {
+    "en": "Paste and send it in the AI conversation where you created the code",
+    "zh": "粘贴到生成代码时的 AI 对话中并发送"
+  },
+  "AIが返した修正版を、下のコード欄に貼る": {
+    "en": "Paste the corrected code from AI into the editor below",
+    "zh": "将 AI 返回的修正版粘贴到下方代码编辑区"
+  },
+  "もう一度「実行」で試す": {
+    "en": "Press “Run” to try again",
+    "zh": "再次点击“运行”进行测试"
+  },
+  "修正依頼には、エラーが起きたときのコードと記録を入れます。": {
+    "en": "The repair request includes the code and records captured when the error occurred.",
+    "zh": "修复请求包含出错时记录的代码和日志。"
+  },
+  "エラーの詳しい記録": {
+    "en": "Detailed error record",
+    "zh": "错误详细记录"
+  },
+  "プログラムにエラーがあります": {
+    "en": "The program has an error",
+    "zh": "程序出现错误"
+  },
+  "修正依頼を手動でコピー": {
+    "en": "Copy the repair request manually",
+    "zh": "手动复制修复请求"
+  },
+  "AIへの修正依頼文": {
+    "en": "AI repair request text",
+    "zh": "给 AI 的修复请求文字"
+  },
+  "コピーできませんでした。修正依頼の文章を手動でコピーしてください。": {
+    "en": "Could not copy the request. Copy the repair request text manually.",
+    "zh": "无法复制。请手动复制修复请求文字。"
+  },
+  "修正依頼には、実行コードが未取得であることとエラーの記録を入れます。": {
+    "en": "The repair request includes the error records and states that the executed code has not been retrieved.",
+    "zh": "修复请求包含错误记录，并注明尚未取得实际运行的代码。"
+  },
   "シリアルターミナル": {
     "en": "Serial terminal",
     "zh": "串口终端"

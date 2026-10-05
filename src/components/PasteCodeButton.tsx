@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
 import { extractClipboardSource } from '../services/editor/clipboardSource'
+import type { WorkshopContext } from '../services/prompt/WorkshopRules'
+import { CopyLanguageRecoveryButton } from './SourceLanguageNotice'
 import './PasteCodeButton.css'
 
 export interface PasteCodeButtonProps {
@@ -8,6 +10,7 @@ export interface PasteCodeButtonProps {
   onReplace: (source: string) => void
   disabled?: boolean
   active?: boolean
+  workshop?: WorkshopContext | null
 }
 
 const rejectionMessages = {
@@ -15,12 +18,13 @@ const rejectionMessages = {
   'not-python': 'Pythonコードとして確認できませんでした。AIの説明文ではなく、コード全体をコピーしてください。今のコードは変更していません。',
   ambiguous: '複数のコードや未完了のコード枠が含まれています。使いたいPythonコードを1つだけコピーしてください。今のコードは変更していません。',
   'too-large': 'コピーしたテキストが大きすぎます。100万文字以内のPythonコードをコピーしてください。今のコードは変更していません。',
+  arduino: 'Arduino用のC++コードです。MicroPython版をAIに頼んでください。今のコードは変更していません。',
 } as const
 
-export function PasteCodeButton({ source, onReplace, disabled = false, active = true }: PasteCodeButtonProps) {
+export function PasteCodeButton({ source, onReplace, disabled = false, active = true, workshop }: PasteCodeButtonProps) {
   const { t } = useLocale()
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; message: string; manualFallback?: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ kind: 'success' | 'error' | 'info'; message: string; manualFallback?: boolean; arduino?: boolean } | null>(null)
   const [undo, setUndo] = useState<{ before: string; inserted: string } | null>(null)
   const pending = useRef(false)
   const mounted = useRef(false)
@@ -58,7 +62,7 @@ export function PasteCodeButton({ source, onReplace, disabled = false, active = 
       }
       const result = extractClipboardSource(clipboardText)
       if (!result.ok) {
-        setNotice({ kind: 'error', message: rejectionMessages[result.reason] })
+        setNotice({ kind: 'error', message: rejectionMessages[result.reason], arduino: result.reason === 'arduino' })
         return
       }
       if (result.source === before.source) {
@@ -95,6 +99,6 @@ export function PasteCodeButton({ source, onReplace, disabled = false, active = 
     <p className="paste-code-help">{t('コピーしたPythonコードで、下の内容をすべて置き換えます。機器への書き込み・実行はしません。')}</p>
     <details className="paste-code-details"><summary>{t('コードの確認について')}</summary><p>{t('コードの判定は、安全性や実機での動作を保証するものではありません。内容が分からないコードは実行しないでください。')}</p></details>
     {undo && source !== undo.inserted && <p className="paste-code-help">{t('貼り付け後にコードが変わったため、「貼り付け前に戻す」は使えません。')}</p>}
-    {notice && <div className={`paste-code-notice ${notice.kind}`} role="status" aria-live="polite" aria-atomic="true"><p>{t(notice.message)}</p>{notice.manualFallback && <p>{t('手動で貼り付けるには、下のコード欄で全選択して貼り付けます（PC: Ctrl+A → Ctrl+V、Mac: ⌘A → ⌘V）。')}</p>}</div>}
+    {notice && <div className={`paste-code-notice ${notice.kind}`} role="status" aria-live="polite" aria-atomic="true"><p>{t(notice.message)}</p>{notice.manualFallback && <p>{t('手動で貼り付けるには、下のコード欄で全選択して貼り付けます（PC: Ctrl+A → Ctrl+V、Mac: ⌘A → ⌘V）。')}</p>}{notice.arduino && <CopyLanguageRecoveryButton workshop={workshop} disabled={disabled || !active} />}</div>}
   </div>
 }

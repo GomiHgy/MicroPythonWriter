@@ -6,6 +6,7 @@ import { isSimulationSupported, SimulationClient } from '../services/simulation/
 import type { ButtonGesture, SimulationConfig, SimulationSnapshot } from '../services/simulation/types'
 import { LED_MODELS } from '../services/workshop/WorkshopProfile'
 import { LED_CURRENT_PROFILES, LED_CURRENT_WARNING_MA } from '../services/simulation/LedCurrent'
+import { ledDisplayRgb, type LedDisplayMode } from '../services/simulation/LedDisplay'
 import './SimulationPanel.css'
 
 export interface SimulationPanelProps { source: string; settings: ProjectSettings | null; active?: boolean }
@@ -19,6 +20,7 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
   const [snapshot, setSnapshot] = useState<SimulationSnapshot>(initialSnapshot)
   const [overrides, setOverrides] = useState<Partial<Pick<SimulationConfig, 'boardId' | 'ledCount' | 'ledPin'> & Pick<ProjectSettings, 'ledModel'>>>({})
   const [layout, setLayout] = useState<'strip' | 'ring'>('strip')
+  const [displayMode, setDisplayMode] = useState<LedDisplayMode>('visible')
   const [run, setRun] = useState<{ source: string; config: string } | null>(null)
   const [brightness, setBrightness] = useState(100)
   const [trigger, setTrigger] = useState('')
@@ -100,7 +102,7 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
     return () => { window.removeEventListener('blur', leave); document.removeEventListener('visibilitychange', leave) }
   }, [])
 
-  const pixels = Array.from({ length: config.ledCount >= 1 && config.ledCount <= 300 ? config.ledCount : 10 }, (_, index) => snapshot.pixels[index] ?? [0, 0, 0])
+  const pixels: SimulationSnapshot['pixels'] = Array.from({ length: config.ledCount >= 1 && config.ledCount <= 300 ? config.ledCount : 10 }, (_, index) => snapshot.pixels[index] ?? [0, 0, 0])
   const lit = pixels.filter(pixel => pixel.some(value => value > 0)).length
   const columns = Math.min(pixels.length, 20)
   const rows = Math.ceil(pixels.length / columns)
@@ -131,9 +133,18 @@ export function SimulationPanel({ source, settings, active = true }: SimulationP
         const angle = (index / pixels.length) * Math.PI * 2 - Math.PI / 2
         const x = layout === 'ring' ? 180 + Math.cos(angle) * 110 : 20 + ((index % columns) + .5) * (320 / columns)
         const y = layout === 'ring' ? 150 + Math.sin(angle) * 110 : (height - rows * 23) / 2 + Math.floor(index / columns) * 23 + 11.5
-        return <g key={index}><circle cx={x} cy={y} r={dotRadius} fill={`rgb(${pixel.join(',')})`} stroke="#657990" strokeWidth="1" /><title>{`LED ${index + 1}: RGB ${pixel.join(', ')}`}</title>{index === 0 && <text x={x} y={y - dotRadius - 6} fill="#c4d9ed" textAnchor="middle" fontSize="10">1</text>}</g>
+        const displayRgb = ledDisplayRgb(pixel, displayMode)
+        const glow = displayMode === 'visible' && pixel.some(value => value > 0)
+          ? { filter: `drop-shadow(0 0 ${Math.max(1, dotRadius * .65)}px rgba(${displayRgb.join(',')},${Math.max(...displayRgb) / 255 * .55}))` }
+          : undefined
+        return <g key={index}><circle cx={x} cy={y} r={dotRadius} fill={`rgb(${displayRgb.join(',')})`} style={glow} stroke="#657990" strokeWidth="1" /><title>{`LED ${index + 1}: RGB ${pixel.join(', ')}`}</title>{index === 0 && <text x={x} y={y - dotRadius - 6} fill="#c4d9ed" textAnchor="middle" fontSize="10">1</text>}</g>
       })}
     </svg></div>
+    <p className="simulation-help">{t(displayMode === 'visible' ? '見やすい表示：画面用に明るさを補正しています。実物の明るさを再現するものではありません。' : '出力RGBそのまま：画面用の明るさ補正をせずに表示しています。')}</p>
+    <details className="simulation-details simulation-display-settings"><summary>{t('LED表示の詳細設定')}</summary>
+      <label htmlFor="simulation-display-mode">{t('画面の明るさ')}<select id="simulation-display-mode" value={displayMode} onChange={event => setDisplayMode(event.target.value as LedDisplayMode)}><option value="visible">{t('見やすい表示')}</option><option value="output">{t('出力RGBそのまま')}</option></select></label>
+      <p className="simulation-help">{t('表示だけを変更します。コード・実機への出力・電流推定は変わりません。')}</p>
+    </details>
     <section className={`simulation-current${currentWarning ? ' over-limit' : ''}`} aria-labelledby="simulation-current-title">
       <h3 id="simulation-current-title">{t('LED全体の推定電流')}</h3>
       <p className="simulation-help">{t('概算・実測ではありません')} · {ledModel}</p>

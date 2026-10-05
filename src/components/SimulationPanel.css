@@ -19,6 +19,8 @@
 .simulation-layout button[aria-pressed=true] { background: #165f9f; border-color: #165f9f; color: white; }
 .simulation-led-view { border: 1px solid #415970; border-radius: 12px; background: #101a24; overflow: auto; max-height: 400px; padding: 7px; }
 .simulation-led-view svg { display: block; width: 100%; max-height: 380px; }
+.simulation-display-settings > label { display: grid; gap: 7px; }
+.simulation-display-settings select { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; border: 1px solid #9bb0c2; border-radius: 8px; background: #f8fbff; color: #243b53; font: inherit; }
 .simulation-current { margin-top: 12px; padding: 14px; border: 1px solid #a8bccf; border-radius: 10px; background: #f3f7fb; }
 .simulation-current h3 { margin: 0; font-size: .95rem; }
 .simulation-current-values { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 12px; }
@@ -61,5 +63,5 @@
 :root[data-theme=dark] :is(.simulation-inputs, .simulation-details) { border-color: #384c5e; }
 :root[data-theme=dark] .simulation-hardware-button { background: #263b50; color: #e1effd; border-color: #6885a0; box-shadow: 0 3px 0 #0c1520; }
 :root[data-theme=dark] .simulation-hardware-button.pressed { background: #1c5881; border-color: #6cbdff; box-shadow: none; }
-:root[data-theme=dark] :is(.simulation-config-grid input, .simulation-config-grid select, .simulation-trigger input) { background: #142330; color: #e1effd; border-color: #597187; }
+:root[data-theme=dark] :is(.simulation-config-grid input, .simulation-config-grid select, .simulation-trigger input, .simulation-display-settings select) { background: #142330; color: #e1effd; border-color: #597187; }
 @media (max-width: 480px) { .simulation-heading { flex-wrap: wrap; } .simulation-config-grid { grid-template-columns: 1fr; } .simulation-trigger { flex-wrap: wrap; } }

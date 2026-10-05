@@ -7,6 +7,13 @@
 .paste-code-notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; line-height: 1.6; overflow-wrap: anywhere; }
 .paste-code-notice p { margin: 0; }
 .paste-code-notice p + p { margin-top: 6px; }
+.source-language-notice > p { margin-top: 6px; }
+.language-recovery-tools { margin-top: 12px; }
+.language-recovery-tools button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.language-recovery-tools details { margin-top: 10px; }
+.language-recovery-tools summary { cursor: pointer; }
+.language-recovery-tools textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 8px; padding: 10px; resize: vertical; color: #203449; background: #fff; border: 1px solid #8498ad; border-radius: 8px; }
+:root[data-theme=dark] .language-recovery-tools textarea { color: #edf4fb; background: #101923; border-color: #647a91; }
 .paste-code-notice.success { background: #e6f6ec; color: #165438; border-left: 4px solid #438160; }
 .paste-code-notice.error { background: #fff0ed; color: #882e28; border-left: 4px solid #c95a52; }
 .paste-code-notice.info { background: #e5f0fd; color: #24527c; border-left: 4px solid #4b80b8; }

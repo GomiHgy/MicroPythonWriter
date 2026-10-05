@@ -8,6 +8,8 @@ import { buildMemoryPressureRules } from './MemoryPressureRules'
 import { buildLedTransmissionRules } from './LedTransmissionRules'
 import { buildRgbGainRules } from './RgbGainRules'
 import { nanoLedTransportRules, nanoLedV2Rules } from '../../i18n/promptMessages'
+import { buildOutputLanguageContract } from './OutputLanguageRules'
+import { buildLanguageRecoveryPrompt } from './LanguageRecoveryPrompt'
 
 function unknownProtocolRules(locale: Locale) {
   const guards = {
@@ -97,6 +99,7 @@ const copy = {
 export class RepairPromptBuilder {
   build(error: ParsedTraceback, source: string, device: DeviceInfo, terminalLog: string, stage: string, workshop: WorkshopContext | null = null, options: { sourceKnown?: boolean; locale?: Locale } = {}) {
     const locale = options.locale ?? workshop?.locale ?? 'ja'
+    if (error.exceptionType === 'ARDUINO_SOURCE_DETECTED') return buildLanguageRecoveryPrompt(workshop, locale)
     const text = copy[locale]
     // Locale may change, but the captured profile/code/device must not change.
     const context = workshop && workshop.locale !== locale ? createWorkshopContext(workshop.profile, locale) : workshop
@@ -112,7 +115,9 @@ export class RepairPromptBuilder {
     const stageOutput = stageLabel !== stage && /^[A-Z][A-Z0-9_]*$/.test(stage) ? `${stageLabel} (${stage})` : stageLabel
     const codeSection = sourceKnown ? `## ${text.knownSource}\n${fenced(source, 'python')}` : `## ${text.unknownSource}`
     const workshopSection = context ? `\n\n## ${text.workshop}\n${context.errors.length ? `${text.invalid}\n${context.errors.map(message => `- ${message}`).join('\n')}\n\n` : ''}${context.rules}` : ''
-    return `${text.intro.replace('{board}', target)}
+    return `${buildOutputLanguageContract(locale)}
+
+${text.intro.replace('{board}', target)}
 ${sourceKnown ? text.knownError : text.unknownError}
 
 ## ${text.environment}
@@ -140,6 +145,7 @@ ${fenced(terminalLog)}
 ${codeSection}${workshopSection}${context ? '' : `\n\n${buildRgbGainRules(locale)}\n\n${buildLedTransmissionRules(locale)}\n\n${buildMemoryPressureRules(locale, true)}\n\n${unknownProtocolRules(locale)}`}
 
 ## ${text.constraints}
+${buildOutputLanguageContract(locale)}
 ${text.rules}
 - ${blocked ? text.blocked : text.complete}
 - ${text.evidence}`

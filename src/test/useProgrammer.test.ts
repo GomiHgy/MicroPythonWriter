@@ -114,6 +114,59 @@ function kit(label: string) {
 }
 
 describe('修正依頼のコードと教材のスナップショット', () => {
+  it.each(['run', 'write'] as const)('Arduinoコードの%sは機器の停止・保存・実行より前に拒否し、動作中セッションを維持する', async operation => {
+    selectedWorkshop = kit('language-guard')
+    await render().connect()
+    render().setSource('print("already running")')
+    await render().run()
+    const running = render().state
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockClear()
+    vi.mocked(FileTransferService.prototype.writeMain).mockClear()
+    vi.mocked(MicroPythonDevice.prototype.validateMain).mockClear()
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockClear()
+    vi.mocked(confirm).mockClear()
+    render().setSource('#include <Arduino.h>\nvoid setup() { }\nvoid loop() { delay(10); }')
+    await render()[operation]()
+    expect(render().state).toBe(running)
+    expect(render().runningSource).toBe('print("already running")')
+    expect(RawReplClient.prototype.stopLongRunning).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+    expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(render().error).toMatchObject({ exceptionType: 'ARDUINO_SOURCE_DETECTED', stage: 'SOURCE_LANGUAGE_MISMATCH' })
+    expect(render().error?.repairPrompt).toContain('target-language-guard')
+    callbacks.at(-1)?.onComplete?.({ state: 'completed', stdout: 'old artwork complete', stderr: '', intentionalStop: false })
+    expect(render().state).toBe('raw-repl-ready')
+    expect(render().programFeedback?.phase).toBe('completed')
+  })
+  it('Pythonの一般的な構文エラーとC++サンプル入りコメントはArduino判定で拒否しない', async () => {
+    await render().connect()
+    const source = '# void setup() { }\n"""void loop() { }"""\ndef broken(:\n    pass'
+    render().setSource(source)
+    vi.mocked(MicroPythonDevice.prototype.validateMain).mockRejectedValueOnce(new Error('SyntaxError: invalid syntax'))
+    await render().run()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledWith(source, true, true)
+    expect(MicroPythonDevice.prototype.validateMain).toHaveBeenCalledOnce()
+    expect(render().error?.exceptionType).not.toBe('ARDUINO_SOURCE_DETECTED')
+    expect(render().error?.repairPrompt).toContain(source)
+  })
+  it('アップロード中の編集と再実行ではArduino警告を混ぜず、先行した書き込みを完了する', async () => {
+    await render().connect()
+    const original = 'print("in-flight original")'
+    render().setSource(original)
+    const entered = deferred(), finish = deferred()
+    vi.mocked(FileTransferService.prototype.writeMain).mockImplementationOnce(async () => { entered.resolve(); await finish.promise; return 100 })
+    const pending = render().run()
+    await entered.promise
+    render().setSource('void setup() {}\nvoid loop() {}')
+    await render().run()
+    expect(render().error).toBeUndefined()
+    expect(render().programFeedback?.phase).toBe('writing')
+    finish.resolve(); await pending
+    expect(render().runningSource).toBe(original)
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledOnce()
+  })
   it.each(['', 'project source'])('一式保存した作品下書きのコードを古いmpw-sourceより優先する (%s)', source => {
     projectFallback = source; preferProjectSource = true
     vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'mpw-source' ? 'old independent source' : null, setItem: vi.fn() })

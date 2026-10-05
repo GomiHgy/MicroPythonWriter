@@ -1,6 +1,18 @@
 import type { MessageCatalog } from './types'
 
 export const pasteMessages: MessageCatalog = {
+  'Arduino用のC++コードです': { en: 'This is Arduino C++ code', zh: '这是 Arduino C++ 代码' },
+  'Arduino用のC++コードです。MicroPython版をAIに頼んでください。今のコードは変更していません。': { en: 'This is Arduino C++ code. Ask the AI for a MicroPython version. Your current code has not been changed.', zh: '这是 Arduino C++ 代码。请让 AI 改为 MicroPython 版本。当前代码未被修改。' },
+  'Arduino用のC++コードです。MicroPython版をAIに頼んでください。機器への書き込み・実行はしていません。': { en: 'This is Arduino C++ code. Ask the AI for a MicroPython version. Nothing has been written to the device or run.', zh: '这是 Arduino C++ 代码。请让 AI 改为 MicroPython 版本。未写入设备或运行。' },
+  'MicroPythonWriterで使うにはMicroPython版が必要です。コードを作ったAIとの会話に、下の依頼文を貼って送ってください。作品の光り方は維持して書き直すように頼みます。': { en: 'MicroPythonWriter needs a MicroPython version. Paste the request below into the AI conversation that created your code. It asks to preserve your lighting effects when rewriting.', zh: 'MicroPythonWriter 需要 MicroPython 版本。请将下方请求粘贴并发送到生成代码的 AI 对话中，要求改写时保持作品的灯光效果。' },
+  'AIにMicroPython版を頼む文章をコピー': { en: 'Copy request for a MicroPython version', zh: '复制 MicroPython 版本改写请求' },
+  '依頼文をコピー中…': { en: 'Copying request…', zh: '正在复制请求…' },
+  'コピーしました。コードを作ったAIとの会話に貼って送る → MicroPython版のコードをコピー → 下のコード欄へ貼り付け → 「実行」の順に進めてください。': { en: 'Copied. Paste and send in the AI conversation that created the code → Copy the MicroPython code → Paste it into the editor below → Press Run.', zh: '已复制。粘贴并发送到生成代码的 AI 对话 → 复制 MicroPython 代码 → 粘贴到下方编辑区 → 点击“运行”。' },
+  'コピーをキャンセルしました。依頼文の内容を確認してください。': { en: 'Copy cancelled. Check the request text.', zh: '已取消复制。请检查请求内容。' },
+  'コピーできませんでした。下の依頼文を選択して手動でコピーし、コードを作ったAIとの会話に貼って送ってください。': { en: 'Could not copy. Select the request below and copy it manually, then paste and send in the AI conversation that created your code.', zh: '无法复制。请选中下方请求并手动复制，再粘贴并发送到生成代码的 AI 对话。' },
+  'AIに頼む文章を見る・手動でコピー': { en: 'View request / copy manually', zh: '查看请求／手动复制' },
+  'MicroPython版への修正依頼文': { en: 'Request to rewrite for MicroPython', zh: 'MicroPython 版本改写请求' },
+  'SOURCE_LANGUAGE_MISMATCH': { en: 'Program language mismatch', zh: '程序语言不匹配' },
   'コピーしたテキストをペースト': { en: 'Paste copied text', zh: '粘贴复制的文本' },
   'コピーしたテキストを読み取り中…': { en: 'Reading copied text…', zh: '正在读取复制的文本…' },
   '貼り付け前に戻す': { en: 'Undo this paste', zh: '恢复粘贴前的代码' },

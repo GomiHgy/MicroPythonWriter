@@ -15,6 +15,8 @@
 .bluetooth-panel .device-copy { min-width: 0; overflow-wrap: anywhere; }
 .bluetooth-panel .section-heading > div { min-width: 0; }
 .bluetooth-panel .notice { margin-top: 12px; }
+.bluetooth-panel .bluetooth-support-help { grid-column: 1 / -1; margin-top: 0; }
+.bluetooth-support-help p { margin: 8px 0 0; line-height: 1.8; }
 .bluetooth-guide { color: #526b84; line-height: 1.8; font-size: .9rem; margin: 16px 2px; }
 .text-button { color: #075fac; background: transparent; border: 0; padding: 1px 3px; text-decoration: underline; text-underline-offset: 3px; }
 .controller-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 16px; }

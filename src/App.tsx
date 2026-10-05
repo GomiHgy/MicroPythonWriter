@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CodeEditor } from './components/CodeEditor'
 import { PasteCodeButton } from './components/PasteCodeButton'
+import { SourceLanguageNotice } from './components/SourceLanguageNotice'
 import { LedCodeSettingsPanel } from './components/LedCodeSettingsPanel'
 import { Terminal } from './components/Terminal'
 import { SimulationPanel } from './components/SimulationPanel'
@@ -15,9 +16,11 @@ import { getBoardDefinition } from './config/boards'
 import { createProject, loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
 import type { ArtworkProject, ProjectSettings, ProjectSnapshot, RemoteButton } from './services/projects/types'
 import type { SavedProgram } from './services/programs/ProgramLibrary'
+import { canOfferProgramRepair } from './services/programs/programErrorHelp'
 import { isLedModel } from './services/workshop/WorkshopProfile'
 import { buildStarterProgram, starterAvailability } from './services/projects/StarterProgram'
 import { hasSensitiveAssignments } from './services/prompt/RepairPromptBuilder'
+import { copyPreparationPrompt } from './services/prompt/PromptExport'
 import { useProgrammer } from './hooks/useProgrammer'
 import { useWorkshopPreparation } from './hooks/useWorkshopPreparation'
 import { isLocale, useLocale } from './i18n'
@@ -76,7 +79,10 @@ export default function App() {
   const [wrap, setWrap] = useState(() => readPreference('mpw-wrap') !== 'false')
   const [autoScroll, setAutoScroll] = useState(() => readPreference('mpw-autoscroll') !== 'false')
   const [timestamps, setTimestamps] = useState(false)
-  const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean; detail?: string }>()
+  const [copyNotice, setCopyNotice] = useState<{ text: string; failed: boolean; detail?: string; prompt: string }>()
+  const copyingRepair = useRef(false)
+  const canRepairCode = canOfferProgramRepair(app.error)
+  const currentCopyNotice = copyNotice?.prompt === app.error?.repairPrompt ? copyNotice : undefined
   const ready = app.state === 'raw-repl-ready' || app.state === 'stopped'
   const running = app.state === 'running' || app.state === 'running-no-marker'
   const canModifyProgram = ready || running
@@ -290,16 +296,20 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = locale === 'zh' ? 'zh-CN' : locale; document.title = 'M5NanoC6 / AtomS3Lite — MicroPython Writer' }, [locale])
 
   const copyPrompt = async () => {
-    if (!app.error) return
-    if (hasSensitiveAssignments(app.error.repairPrompt) && !confirm(t('修正依頼のコード・設定・ログにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してコピーしますか？検出は補助で、すべての秘密情報を見つけられるわけではありません。'))) return
+    const prompt = app.error?.repairPrompt
+    if (!prompt || copyingRepair.current) return
+    if (hasSensitiveAssignments(prompt) && !confirm(t('修正依頼のコード・設定・ログにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してコピーしますか？検出は補助で、すべての秘密情報を見つけられるわけではありません。'))) return
+    copyingRepair.current = true
     try {
       if (!navigator.clipboard?.writeText) throw new Error('コピー機能はHTTPSまたはlocalhostでのみ使えます。')
-      await navigator.clipboard.writeText(app.error.repairPrompt)
-      setCopyNotice({ text: '✓ AI修正依頼プロンプトをコピーしました。', failed: false })
+      // 秘密情報の確認は上で修正依頼全文に対して済ませる。応答のないコピーも待ち続けない。
+      const result = await copyPreparationPrompt(prompt, () => true)
+      if (!result.ok) throw new Error('コピーできませんでした。修正依頼の文章を手動でコピーしてください。')
+      setCopyNotice({ text: '✓ AI修正依頼プロンプトをコピーしました。', failed: false, prompt })
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : 'クリップボードへの書込みが許可されませんでした。'
-      setCopyNotice({ text: 'コピーに失敗しました: {message}', detail: message, failed: true })
-    }
+      setCopyNotice({ text: 'コピーに失敗しました: {message}', detail: message, failed: true, prompt })
+    } finally { copyingRepair.current = false }
   }
 
   const stampLog = () => timestamps ? app.log.split(/(?<=\n)/).map(line => `[${new Date().toLocaleTimeString()}] ${line}`).join('') : app.log
@@ -374,20 +384,58 @@ export default function App() {
 
     {app.info.deviceName !== '未接続' && !(app.info.boardConfirmed || app.info.nanoC6Confirmed) && <div className="notice warn">{t("M5NanoC6／AtomS3Liteとしては確認できませんでした。一般的なMicroPython機器として操作します。")}</div>}
 
+    {app.error && canRepairCode && app.programFeedback?.phase !== 'failed' && <section className="notice danger program-repair-fallback" role="alert">
+      <h2>{t('プログラムにエラーがあります')}</h2>
+      <p>{t(app.error.message)}</p>
+      <button onClick={copyPrompt}>{t('AIに修正を頼む文章をコピー')}</button>
+      {currentCopyNotice && <p className={`copy-notice${currentCopyNotice.failed ? ' failed' : ''}`} role="status">{t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') })}</p>}
+      <ol aria-label={t('プログラムを直して試す手順')}><li>{t('コードを作ったAIとの会話に貼って送る')}</li><li>{t('AIが返した修正版を、下のコード欄に貼る')}</li><li>{t('もう一度「実行」で試す')}</li></ol>
+    </section>}
+
     {(connected || app.programFeedback) && <section className="action-card">
       <div className="section-heading"><div><p className="eyebrow">{t("プログラムを試す")}</p><h2>{t(app.programFeedback ? '機器への書き込みと実行' : 'まずは「実行」を押そう')}</h2><p>{t("実行すると、編集内容を機器へ保存してから動かします。")}</p></div>{running && <button className="stop-button" onClick={app.stop}>{t("■ 停止")}</button>}</div>
       {app.programFeedback && <ProgramResult feedback={app.programFeedback} source={app.source} connected={connected} onShowError={app.error ? () => {
-        const details = document.getElementById('program-error-details')
+        const details = document.getElementById('program-error-details') as HTMLDetailsElement | null
+        if (details) details.open = true
         details?.scrollIntoView({ block: 'start' })
         details?.focus({ preventScroll: true })
-      } : undefined} onRecover={app.state === 'error' ? app.normalMode : undefined} />}
+      } : undefined} onRecover={app.state === 'error' ? app.normalMode : undefined}
+        onCopyRepair={canRepairCode ? copyPrompt : undefined} repairLine={app.error?.sourceKnown === false ? undefined : app.error?.line}
+        repairSourceKnown={app.error?.sourceKnown !== false}
+        repairPrompt={app.error?.repairPrompt}
+        copyNotice={currentCopyNotice ? { message: t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') }), failed: currentCopyNotice.failed } : undefined}
+        onReconnect={app.state === 'connection-lost' ? app.reconnect : undefined} />}
       <div className="main-actions"><button className="run-button" disabled={!canModifyProgram} onClick={runProject}><span>{t("▶ 実行")}</span><small>{t(runDescription)}</small></button><button className="auto-run-button" disabled={!canEnableAutoRun} aria-describedby="auto-run-hint" onClick={() => { if (canEnableAutoRun) return app.setBoot(0) }}><span>{t("電源を入れたら自動実行")}</span><small>{t("機器に保存したコードを、次の電源投入時にも動かします。")}</small></button></div>
       <p id="auto-run-hint" className="auto-run-hint">{t(autoRunHint)}</p>
       {!app.programFeedback && <p className="action-tip">{t("まず「実行」で試し、完成したら「電源を入れたら自動実行」を設定してください。「実行」だけでは起動設定は変わりません。")}</p>}
       <details className="program-more-actions"><summary>{t("その他の操作")}</summary><div><button className="update-button" disabled={!canModifyProgram} onClick={app.write}><span>{t("プログラム更新")}</span><small>{t("保存だけ。今は動かしません。")}</small></button><button className="load-button" disabled={!ready} onClick={app.load}>{t("保存済みのプログラムを読む")}</button></div></details>
     </section>}
 
-    <section className="workspace"><div className="panel program-panel"><div className="panel-head"><div><p className="eyebrow">{t("プログラム")}</p><h2>{t("LEDやボタンの動きを書く場所")}</h2><p>{t("ここを書き換えて、上の「実行」で試します。")}</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} />{t("長い行を折り返す")}</label></div><LedCodeSettingsPanel source={app.source} onReplace={app.setSource} disabled={busy} /><PasteCodeButton source={app.source} onReplace={app.setSource} disabled={busy} active={activeTab === "program"} /><CodeEditor label={t("Pythonコードエディタ")} value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.sourceKnown !== false && (app.error?.sourceSnapshot === undefined || app.error.sourceSnapshot === app.source) ? app.error?.line : undefined} onSave={app.write} onRun={runProject} /><p className="shortcut-note">{t("ショートカット: Ctrl+Sでプログラム更新、Ctrl+Enterで実行")}</p></div><SimulationPanel source={app.source} settings={librarySettings} active={activeTab === "program"} /></section><section className="program-records"><details className="panel terminal-panel"><summary><span className="eyebrow">{t("見守りログ")}</span><h2>{t("うまくいかない時に見る記録")}</h2></summary><div className="panel-head"><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t("自動スクロール")}</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} />{t("時刻")}</label><button className="quiet-button" onClick={() => app.setLog('')}>{t("消去")}</button></span></div><Terminal label={t("シリアルターミナル")} log={stampLog()} dark={dark} autoScroll={autoScroll} /></details>{app.error && <section id="program-error-details" className="panel error" tabIndex={-1} aria-live="assertive"><p className="eyebrow">{t("困ったとき")}</p><h2>⚠ {app.error.exceptionType}</h2><p>{t(app.error.message)}</p><dl><dt>{t("起きた場所")}</dt><dd>{t(app.error.stage)}</dd><dt>{t("確認する行")}</dt><dd>{app.error.line ?? t('見つけられませんでした')} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl><pre>{app.error.traceback}</pre>{app.error.sourceKnown === false && <p>{t("機器上の実行コードは未取得です。編集中のコードと同じとは確認できていません。")}</p>}{app.error.sourceKnown !== false && app.error.sourceSnapshot !== undefined && app.error.sourceSnapshot !== app.source && <p>{t("編集内容はエラー発生時から変わっています。AIへの修正依頼には、エラーが起きた時のコードを入れます。")}</p>}<button onClick={copyPrompt}>{t("AIに相談する文章をコピー")}</button>{copyNotice && <p className={`copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{t(copyNotice.text, { message: t(copyNotice.detail ?? '') })}</p>}</section>}</section>
+    <section className="workspace">
+      <div className="panel program-panel">
+        <div className="panel-head"><div><p className="eyebrow">{t("プログラム")}</p><h2>{t("LEDやボタンの動きを書く場所")}</h2><p>{t("ここを書き換えて、上の「実行」で試します。")}</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} />{t("長い行を折り返す")}</label></div>
+        <LedCodeSettingsPanel source={app.source} onReplace={app.setSource} disabled={busy} />
+        <SourceLanguageNotice source={app.source} workshop={matchingPreparation ? preparation.context : null} disabled={busy || activeTab !== 'program'} />
+        <PasteCodeButton source={app.source} onReplace={app.setSource} disabled={busy} active={activeTab === "program"} workshop={matchingPreparation ? preparation.context : null} />
+        <CodeEditor label={t("Pythonコードエディタ")} value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.sourceKnown !== false && (app.error?.sourceSnapshot === undefined || app.error.sourceSnapshot === app.source) ? app.error?.line : undefined} onSave={app.write} onRun={runProject} />
+        <p className="shortcut-note">{t("ショートカット: Ctrl+Sでプログラム更新、Ctrl+Enterで実行")}</p>
+      </div>
+      <SimulationPanel source={app.source} settings={librarySettings} active={activeTab === "program"} />
+    </section>
+    <section className="program-records">
+      <details className="panel terminal-panel"><summary><span className="eyebrow">{t("見守りログ")}</span><h2>{t("うまくいかない時に見る記録")}</h2></summary><div className="panel-head"><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t("自動スクロール")}</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} />{t("時刻")}</label><button className="quiet-button" onClick={() => app.setLog('')}>{t("消去")}</button></span></div><Terminal label={t("シリアルターミナル")} log={stampLog()} dark={dark} autoScroll={autoScroll} /></details>
+      {app.error && <details id="program-error-details" className="panel error" tabIndex={-1}>
+        <summary><span className="eyebrow">{t("困ったとき")}</span><h2>{t('エラーの詳しい記録')} — {app.error.exceptionType}</h2></summary>
+        <h3>⚠ {app.error.exceptionType}</h3><p>{t(app.error.message)}</p>
+        <dl><dt>{t("起きた場所")}</dt><dd>{t(app.error.stage)}</dd><dt>{t("確認する行")}</dt><dd>{app.error.line ?? t('見つけられませんでした')} {app.error.codeLine && `: ${app.error.codeLine}`}</dd></dl>
+        <pre>{app.error.traceback}</pre>
+        {app.error.sourceKnown === false && <p>{t("機器上の実行コードは未取得です。編集中のコードと同じとは確認できていません。")}</p>}
+        {app.error.sourceKnown !== false && app.error.sourceSnapshot !== undefined && app.error.sourceSnapshot !== app.source && <p>{t("編集内容はエラー発生時から変わっています。AIへの修正依頼には、エラーが起きた時のコードを入れます。")}</p>}
+        <button onClick={copyPrompt}>{t("AIに相談する文章をコピー")}</button>
+        <details open={currentCopyNotice?.failed}><summary>{t('修正依頼を手動でコピー')}</summary><textarea readOnly rows={9} value={app.error.repairPrompt} aria-label={t('AIへの修正依頼文')} /></details>
+        {currentCopyNotice && <p className={`copy-notice${currentCopyNotice.failed ? ' failed' : ''}`} role="status">{t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') })}</p>}
+      </details>}
+    </section>
 
     <footer>{t("このページはコードとログを外部へ送信しません。実機の動きを確認できた時だけ、「電源を入れたら自動で実行する」を使ってください。")}</footer>
     </div>

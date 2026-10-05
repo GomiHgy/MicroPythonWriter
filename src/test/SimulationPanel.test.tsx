@@ -201,14 +201,56 @@ describe('画面だけのLEDシミュレーションUI', () => {
     expect(input('simulation-brightness').props.disabled).toBe(true)
   })
 
-  it('テープ・リング切り替えで実行をやり直さず、出力RGBをそのまま描く', () => {
+  it('初期は低輝度を見やすく補正し、テープ・リング切り替えで実行をやり直さない', () => {
     start()
-    expect(all(render(), element => element.type === 'circle' && element.props.fill === 'rgb(0,32,0)')).toHaveLength(1)
+    expect(input('simulation-display-mode').props.value).toBe('visible')
+    expect(all(render(), element => element.type === 'circle' && element.props.fill === 'rgb(0,99,0)')).toHaveLength(1)
+    expect(text(all(render(), element => element.type === 'title'))).toContain('LED 2: RGB 0, 32, 0')
     click('リング')
     expect(button('リング').props['aria-pressed']).toBe(true)
     expect(button('テープ').props['aria-pressed']).toBe(false)
     expect(harness.start).toHaveBeenCalledOnce()
     expect(find(element => element.type === 'svg').props['aria-label']).toContain('10個中2個')
+  })
+
+  it('出力そのまま表示へ切り替えてもコード・実行・電流・最大値・600mA警告は変えない', () => {
+    const output: SimulationSnapshot['pixels'] = Array.from({ length: 37 }, () => [51, 35, 48])
+    const ledCurrent = observeLedCurrent(observeLedCurrent(null, Array.from({ length: 37 }, () => [255, 178, 242])), output)
+    start({ pixels: output, ledCurrent })
+    const original = structuredClone({ props, output, ledCurrent })
+    const currentBefore = text(all(render(), element => element.props['aria-labelledby'] === 'simulation-current-title'))
+    expect(currentBefore).toContain('600mA')
+    expect(all(render(), element => element.type === 'circle' && element.props.fill === 'rgb(124,104,120)')).toHaveLength(10)
+    expect(find(element => element.type === 'details' && element.props.className === 'simulation-details simulation-display-settings').props.open).toBeUndefined()
+    change(input('simulation-display-mode'), 'output')
+    expect(all(render(), element => element.type === 'circle' && element.props.fill === 'rgb(51,35,48)' && element.props.style === undefined)).toHaveLength(10)
+    expect(text(all(render(), element => element.props['aria-labelledby'] === 'simulation-current-title'))).toBe(currentBefore)
+    expect({ props, output, ledCurrent }).toEqual(original)
+    expect(harness.start).toHaveBeenCalledOnce()
+    expect(harness.pause).not.toHaveBeenCalled()
+    expect(harness.command).not.toHaveBeenCalled()
+    change(input('simulation-display-mode'), 'visible')
+    expect(text(all(render(), element => element.props['aria-labelledby'] === 'simulation-current-title'))).toBe(currentBefore)
+  })
+
+  it('消灯は補正表示でも黒のままで光のにじみを出さず、フェードの差を保つ', () => {
+    start({ pixels: [[0, 0, 0], [1, 0, 0], [51, 0, 0], [255, 0, 0]] })
+    const off = all(render(), element => element.type === 'circle' && element.props.fill === 'rgb(0,0,0)')
+    expect(off).toHaveLength(7)
+    expect(off.every(element => element.props.style === undefined)).toBe(true)
+    for (const red of [13, 124, 255]) {
+      const dot = find(element => element.type === 'circle' && element.props.fill === `rgb(${red},0,0)`)
+      expect(dot.props.style).toMatchObject({ filter: expect.stringContaining('drop-shadow') })
+    }
+  })
+
+  it.each(['en', 'zh'] as const)('%sでも表示補正の選択肢と注意を翻訳する', locale => {
+    harness.locale = locale
+    const result = text(render())
+    for (const key of ['見やすい表示', '出力RGBそのまま', 'LED表示の詳細設定', '表示だけを変更します。コード・実機への出力・電流推定は変わりません。']) expect(result).toContain(simulationMessages[key][locale])
+    expect(result).toContain(simulationMessages['見やすい表示：画面用に明るさを補正しています。実物の明るさを再現するものではありません。'][locale])
+    change(input('simulation-display-mode'), 'output')
+    expect(text(render())).toContain(simulationMessages['出力RGBそのまま：画面用の明るさ補正をせずに表示しています。'][locale])
   })
 
   it('表示中の機器・GPIOを折りたたみ外にも示し、出力LED数の不一致を知らせる', () => {

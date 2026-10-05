@@ -116,6 +116,45 @@ describe('機器への書き込み結果', () => {
     expect(all(view, element => 'dangerouslySetInnerHTML' in element.props || element.type === 'img')).toHaveLength(0)
   })
 
+  it('コードのエラーは結果欄で修正依頼をコピーでき、その場で再実行まで案内する', () => {
+    const onCopyRepair = vi.fn()
+    const view = render({ phase: 'failed', failedAt: 'runtime' }, {
+      onCopyRepair, repairLine: 12, copyNotice: { message: 'コピーしました', failed: false },
+    })
+    const copy = all(view, element => element.type === 'button' && text(element) === 'AIに修正を頼む文章をコピー')[0]
+    expect(copy).toBeDefined()
+    expect(onCopyRepair).not.toHaveBeenCalled()
+    ;(copy.props.onClick as () => void)()
+    expect(onCopyRepair).toHaveBeenCalledOnce()
+    expect(text(view)).toContain('12行目')
+    expect(text(view)).toContain('コードを作ったAIとの会話に貼って送る')
+    expect(text(view)).toContain('AIが返した修正版を、下のコード欄に貼る')
+    expect(text(view)).toContain('もう一度「実行」で試す')
+    expect(text(all(view, element => element.props.role === 'status')[0])).toBe('コピーしました')
+    expect(text(render({ phase: 'running' }, { onCopyRepair }))).not.toContain('AIに修正を頼む文章をコピー')
+  })
+
+  it('実行コード未取得とコピー失敗を、修正依頼の成功として表示しない', () => {
+    const view = render({ phase: 'failed', failedAt: 'runtime' }, {
+      onCopyRepair: vi.fn(), repairSourceKnown: false, repairPrompt: 'captured failing code and log', copyNotice: { message: 'コピーに失敗しました', failed: true },
+    })
+    expect(text(view)).toContain('実行コードが未取得であること')
+    expect(text(view)).not.toContain('エラーが起きたときのコードと記録を入れます')
+    expect(all(view, element => element.props.className === 'repair-copy-notice failed')).toHaveLength(1)
+    expect(all(view, element => element.type === 'textarea')[0].props).toMatchObject({ readOnly: true, value: 'captured failing code and log' })
+  })
+
+  it('通信切断ではAI修正ではなく、明示的な再接続を案内する', () => {
+    const onReconnect = vi.fn()
+    const view = render({ phase: 'disconnected' }, { connected: false, onReconnect })
+    expect(text(view)).not.toContain('AIに修正を頼む文章をコピー')
+    const reconnect = all(view, element => element.type === 'button')[0]
+    expect(text(reconnect)).toBe('↻ もう一度つなぐ')
+    expect(onReconnect).not.toHaveBeenCalled()
+    ;(reconnect.props.onClick as () => void)()
+    expect(onReconnect).toHaveBeenCalledOnce()
+  })
+
   it('すべての固定表示を日本語・英語・中国語で提供する', () => {
     const tree = ts.createSourceFile('ProgramResult.tsx', componentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     function visit(node: ts.Node) {

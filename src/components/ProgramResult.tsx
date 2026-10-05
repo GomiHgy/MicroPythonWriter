@@ -8,9 +8,15 @@ interface Props {
   connected: boolean
   onShowError?: () => void
   onRecover?: () => void
+  onCopyRepair?: () => void
+  repairLine?: number
+  repairSourceKnown?: boolean
+  repairPrompt?: string
+  copyNotice?: { message: string; failed: boolean }
+  onReconnect?: () => void
 }
 
-export function ProgramResult({ feedback, source, connected, onShowError, onRecover }: Props) {
+export function ProgramResult({ feedback, source, connected, onShowError, onRecover, onCopyRepair, repairLine, repairSourceKnown = true, repairPrompt, copyNotice, onReconnect }: Props) {
   const { t } = useLocale()
   const { phase, saved, operation, failedAt } = feedback
   const pending = ['preparing', 'writing', 'verifying', 'starting'].includes(phase)
@@ -58,7 +64,9 @@ export function ProgramResult({ feedback, source, connected, onShowError, onReco
       title = failedAt === 'stop' ? '書き込み済み・停止を確認できませんでした'
         : saved ? '書き込み成功・実行でエラーが発生しました'
           : failedAt === 'prepare' ? '書き込みを開始できませんでした' : '書き込みを完了できませんでした'
-      description = saved
+      description = onCopyRepair
+        ? 'プログラムにエラーがあります。下のボタンで修正依頼をコピーし、コードを作ったAIとの会話に貼り付けてください。'
+        : saved
         ? '機器への保存はできていますが、操作は正常に完了していません。下のエラー内容を確認してください。'
         : '今回の書き込みは成功していません。エラー内容とUSB接続を確認してから、もう一度試してください。'
       break
@@ -84,6 +92,19 @@ export function ProgramResult({ feedback, source, connected, onShowError, onReco
       <div><dt>{t('プログラムの実行')}</dt><dd>{t(runState)}</dd></div>
     </dl>
     {feedback.message && (failed || disconnected) && <p className="program-result-error">{t('エラー内容')}: {t(feedback.message)}</p>}
+    {failed && onCopyRepair && <div className="program-result-repair">
+      {repairLine !== undefined && <p>{t('エラーが起きたコードの{line}行目を確認します。', { line: repairLine })}</p>}
+      <button className="repair-copy-button" onClick={onCopyRepair}>{t('AIに修正を頼む文章をコピー')}</button>
+      {copyNotice && <p className={`repair-copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.message}</p>}
+      {copyNotice?.failed && repairPrompt && <details open><summary>{t('修正依頼を手動でコピー')}</summary><textarea readOnly rows={9} value={repairPrompt} aria-label={t('AIへの修正依頼文')} /></details>}
+      <ol aria-label={t('プログラムを直して試す手順')}>
+        <li>{t('コードを作ったAIとの会話に貼って送る')}</li>
+        <li>{t('AIが返した修正版を、下のコード欄に貼る')}</li>
+        <li>{t('もう一度「実行」で試す')}</li>
+      </ol>
+      <p className="program-result-repair-note">{t(repairSourceKnown ? '修正依頼には、エラーが起きたときのコードと記録を入れます。' : '修正依頼には、実行コードが未取得であることとエラーの記録を入れます。')}</p>
+    </div>}
+    {disconnected && onReconnect && <button onClick={onReconnect}>{t('↻ もう一度つなぐ')}</button>}
     {failed && onShowError && <button className="quiet-button" onClick={onShowError}>{t('エラーの詳細・対処を見る')}</button>}
     {failed && onRecover && <div className="program-result-recovery"><button onClick={onRecover}>{t('再試行の準備')}</button><p>{t('機器を停止・再初期化します。編集中のコードは変えません。準備後に「実行」または「プログラム更新」を押してください。')}</p></div>}
     {source !== feedback.source && <p className="program-result-note">{t('この結果は変更前のコードのものです。現在の編集内容はまだ機器に反映されていません。')}</p>}
