@@ -1,0 +1,21 @@
+.pwa-panel { margin: 12px 0 18px; padding: 12px 16px; border: 1px solid #c8d6e3; border-radius: 14px; background: #fff; font-size: .88rem; }
+.pwa-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.pwa-heading button { margin-left: auto; font-size: .88rem; padding: 8px 12px; }
+.pwa-panel details { margin-top: 10px; color: #50677f; }
+.pwa-panel summary { cursor: pointer; font-weight: 650; }
+.pwa-panel p { line-height: 1.7; }
+.pwa-offline { padding: 3px 8px; border-radius: 8px; background: #fff0cf; color: #815000; }
+.pwa-update { margin-top: 12px; padding: 12px; border-left: 4px solid #1971c2; background: #edf7ff; border-radius: 8px; }
+.pwa-update p { margin: 6px 0; }
+.pwa-update button { margin: 6px 0; }
+.pwa-cache-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.pwa-cache-actions strong { flex-basis: 100%; }
+.pwa-feedback { border-left: 3px solid #1971c2; padding: 8px 12px; }
+.pwa-feedback.warning { border-color: #b7791f; }
+.pwa-updating-dialog { max-width: min(90vw, 480px); padding: 24px; border: 1px solid #7b9dc1; border-radius: 16px; color: inherit; background: #fff; }
+.pwa-updating-dialog::backdrop { background: #101821aa; }
+:root[data-theme=dark] .pwa-panel { background: #1b2838; border-color: #354b61; }
+:root[data-theme=dark] .pwa-panel details { color: #b6c6d9; }
+:root[data-theme=dark] .pwa-update { background: #203f5b; }
+:root[data-theme=dark] .pwa-offline { background: #594423; color: #ffe0a5; }
+:root[data-theme=dark] .pwa-updating-dialog { background: #1b2838; color: #eef5ff; }

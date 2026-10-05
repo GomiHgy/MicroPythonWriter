@@ -20,6 +20,8 @@ import type { ArtworkProject } from '../services/projects/types'
 import type { SavedProgram } from '../services/programs/ProgramLibrary'
 import type { AppError } from '../types'
 import { setLocale, translate } from '../i18n'
+import { PwaPanel } from '../components/PwaPanel'
+import { beginPwaUpdate, endPwaUpdate } from '../services/pwa/PwaActivity'
 
 type Element = ReactElement<Record<string, unknown>>
 
@@ -60,6 +62,12 @@ vi.mock('react', async () => ({
   },
   useEffect: (effect: () => void, dependencies?: unknown[]) => { if (!dependencies || harness.runDependentEffects) harness.effects.push(effect) },
   useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+  useCallback: (callback: unknown, deps: unknown[]) => {
+    const index = harness.cursor++
+    const old = harness.slots[index] as { callback: unknown; deps: unknown[] } | undefined
+    if (!old || deps.some((value, position) => value !== old.deps[position])) harness.slots[index] = { callback, deps }
+    return (harness.slots[index] as { callback: unknown }).callback
+  },
 }))
 vi.mock('../hooks/useProgrammer', () => ({ useProgrammer: (context: unknown, source: unknown, authoritative: unknown) => { harness.contexts.push(context); harness.initialSources.push(source); harness.sourceAuthorities.push(authoritative); return harness.programmer } }))
 vi.mock('../hooks/useWorkshopPreparation', () => ({ useWorkshopPreparation: () => harness.preparation }))
@@ -234,7 +242,50 @@ beforeEach(() => {
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
 })
 
-afterEach(() => { setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { endPwaUpdate(); setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it('PWA更新前に最新コード・下書き・表示設定を同期保存し、USBは操作しない', () => {
+  const panel = find(render(), element => element.type === PwaPanel)
+  expect(event(panel, 'onBeforeUpdate')).toBeNull()
+  expect(harness.values.get('mpw-source')).toBe(harness.programmer.source)
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft.source).toBe(harness.programmer.source)
+  expect(harness.values.get('mpw-active-tab')).toBe('preparation')
+  expect(harness.values.get('mpw-theme')).toBe('dark')
+  assertNoUsbOperations()
+})
+
+it('PWA更新時はAIの準備由来の実際に使っている機器・LED設定も保持する', () => {
+  const settings = { boardId: 'atoms3lite', firmwareVersion: '2.5.3', ledModel: 'WS2812B', ledCount: 37, ledPin: 8, maxBrightnessPercent: 15 }
+  harness.preparation.context = { profile: settings }
+  const panel = find(render(), element => element.type === PwaPanel)
+  expect(event(panel, 'onBeforeUpdate')).toBeNull()
+  expect(JSON.parse(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)!).draft.settings).toEqual(settings)
+  expect(harness.values.get('mpw-project-settings-active')).toBe('true')
+  assertNoUsbOperations()
+})
+
+it.each(['write', 'mismatch', 'preparation', 'import', 'unreadable'])('PWA更新前の%s問題では再読込を許可しない', failure => {
+  if (failure === 'write') harness.setItem.mockImplementation(() => { throw new Error('full') })
+  if (failure === 'mismatch') harness.setItem.mockImplementation(() => {})
+  if (failure === 'preparation') harness.preparation.hasPendingChanges = true
+  if (failure === 'import') harness.preparation.isImporting = true
+  if (failure === 'unreadable') harness.values.set(PROJECT_DRAFT_STORAGE_KEY, '{bad-json')
+  const panel = find(render(), element => element.type === PwaPanel)
+  expect(typeof event(panel, 'onBeforeUpdate')).toBe('string')
+  if (failure === 'unreadable') expect(harness.values.get(PROJECT_DRAFT_STORAGE_KEY)).toBe('{bad-json')
+  assertNoUsbOperations()
+})
+
+it('PWA更新待ちでは画面をinertにして、待機していた貼付けや変更も拒否する', () => {
+  const paste = find(render(), element => element.type === PasteCodeButton)
+  expect(beginPwaUpdate()).toBe(true)
+  const updating = render() as Element
+  expect(updating.props.inert).toBe(true)
+  expect(find(updating, element => element.type === PasteCodeButton).props.disabled).toBe(true)
+  event(paste, 'onReplace', 'clipboard resolves after saving')
+  event(find(updating, element => element.type === CodeEditor), 'onChange', 'later edit')
+  expect(harness.programmer.setSource).not.toHaveBeenCalled()
+})
 
 it('AI準備のお試しコードは現在の作品を退避して編集画面へ準備するだけで、機器には送らない', () => {
   const trial = controllerTrial()

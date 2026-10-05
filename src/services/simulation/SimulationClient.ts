@@ -1,5 +1,6 @@
 import { encodeCommand } from '../bluetooth/protocol'
 import type { ButtonGesture, SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
+import { getPwaActivity, PWA_UPDATE_BUSY_MESSAGE, setPwaActivity } from '../pwa/PwaActivity'
 
 export function isSimulationSupported(): boolean {
   if (typeof Worker === 'undefined' || typeof WebAssembly === 'undefined') return false
@@ -19,6 +20,7 @@ export class SimulationClient {
   private loadingStarted = 0
   private disposed = false
   private pauseRequested = false
+  private resumeRequested = false
   private gesturePending = false
   private manualButtonPressed = false
   private snapshot = initialSimulationSnapshot()
@@ -30,6 +32,8 @@ export class SimulationClient {
 
   private publish(snapshot: SimulationSnapshot): void {
     this.snapshot = snapshot
+    if (snapshot.phase !== 'paused') this.resumeRequested = false
+    this.updateActivity()
     if (!this.disposed) this.onChange(snapshot)
   }
 
@@ -44,6 +48,8 @@ export class SimulationClient {
     this.worker = undefined
     this.gesturePending = false
     this.manualButtonPressed = false
+    this.resumeRequested = false
+    if (this.disposed) setPwaActivity(this, false)
   }
 
   private fail(error: string): void {
@@ -53,6 +59,7 @@ export class SimulationClient {
 
   start(source: string, config: SimulationConfig): void {
     if (this.disposed) return
+    if (getPwaActivity().updating) { this.publish({ ...this.snapshot, error: PWA_UPDATE_BUSY_MESSAGE }); return }
     this.release()
     this.pauseRequested = false
     this.snapshot = initialSimulationSnapshot(config.ledCount)
@@ -102,8 +109,10 @@ export class SimulationClient {
     if (this.snapshot.phase === 'running') this.send({ type: 'pause' })
   }
   resume(): void {
+    if (this.disposed) return
+    if (getPwaActivity().updating) { this.publish({ ...this.snapshot, error: PWA_UPDATE_BUSY_MESSAGE }); return }
     this.pauseRequested = false
-    if (this.snapshot.phase === 'paused') this.send({ type: 'resume' })
+    if (this.snapshot.phase === 'paused') { this.resumeRequested = true; this.updateActivity(); this.send({ type: 'resume' }) }
   }
   button(pressed: boolean): void {
     if (!pressed) this.gesturePending = false
@@ -130,4 +139,7 @@ export class SimulationClient {
     this.publish(initialSimulationSnapshot(this.snapshot.pixels.length))
   }
   dispose(): void { this.disposed = true; this.release() }
+  private updateActivity(): void {
+    setPwaActivity(this, !this.disposed && (this.snapshot.phase === 'loading' || this.snapshot.phase === 'running' || this.resumeRequested))
+  }
 }

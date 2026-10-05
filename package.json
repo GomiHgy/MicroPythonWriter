@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run check:licenses",
+    "build": "tsc -b && vite build && npm run check:licenses && npm run check:pwa",
     "check:licenses": "node scripts/check-licenses.ts",
+    "check:pwa": "node scripts/check-pwa.ts",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

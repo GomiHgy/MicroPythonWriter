@@ -1,4 +1,5 @@
 import { encodeCommand, LedStatusParser, MAX_STATUS_AGE_MS, NANO_LED_RX_UUID, NANO_LED_SERVICE_UUID, NANO_LED_TX_UUID, type LedStatus } from './protocol'
+import { getPwaActivity, PWA_UPDATE_BUSY_MESSAGE, setPwaActivity } from '../pwa/PwaActivity'
 
 export interface BluetoothCharacteristic {
   value?: DataView | null
@@ -79,6 +80,8 @@ export class BluetoothController {
   private queue: QueuedCommand[] = []
   private currentCommand: QueuedCommand | undefined
   private processingGeneration: number | null = null
+  private pendingOperations = 0
+  private disposed = false
 
   constructor(options: BluetoothControllerOptions = {}) {
     this.bluetooth = options.bluetooth ?? defaultBluetooth()
@@ -101,6 +104,8 @@ export class BluetoothController {
   }
 
   async connect(): Promise<void> {
+    if (this.disposed) return
+    if (getPwaActivity().updating) { this.update({ error: PWA_UPDATE_BUSY_MESSAGE }); return }
     if (!this.supported || !this.bluetooth || this.snapshot.phase === 'connecting' || this.snapshot.phase === 'connected') return
     const generation = ++this.generation
     let stage: 'selection' | 'connection' | 'service' = 'selection'
@@ -162,8 +167,10 @@ export class BluetoothController {
   }
 
   dispose(): void {
+    this.disposed = true
     this.disconnect()
     this.listeners.clear()
+    this.updateActivity()
   }
 
   /** trueはGATTへの書き込み完了のみを示す。機器への反映や実際の発光を保証しない。 */
@@ -255,6 +262,10 @@ export class BluetoothController {
 
   private guard<T>(promise: Promise<T>, generation: number, timed = true): Promise<T> {
     if (!this.isCurrent(generation)) return Promise.reject(new SessionCancelledError())
+    // 切断でアプリ側の待機を中断しても、ブラウザの選択・接続処理が終わるまでは更新しない。
+    this.pendingOperations++; this.updateActivity()
+    const settled = () => { this.pendingOperations--; this.updateActivity() }
+    void promise.then(settled, settled)
     return new Promise<T>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const cleanup = () => {
@@ -314,6 +325,10 @@ export class BluetoothController {
 
   private update(next: Partial<BluetoothSnapshot>): void {
     this.snapshot = Object.freeze({ ...this.snapshot, ...next })
+    this.updateActivity()
     this.listeners.forEach(listener => listener())
+  }
+  private updateActivity(): void {
+    setPwaActivity(this, !this.disposed && (this.pendingOperations > 0 || this.snapshot.phase === 'connecting' || this.snapshot.phase === 'connected' || this.snapshot.sending))
   }
 }

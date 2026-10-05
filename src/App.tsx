@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CodeEditor } from './components/CodeEditor'
 import { PasteCodeButton } from './components/PasteCodeButton'
 import { SourceLanguageNotice } from './components/SourceLanguageNotice'
@@ -12,6 +12,10 @@ import { ProgramResult } from './components/ProgramResult'
 import { BootModePanel } from './components/BootModePanel'
 import { ProgramLibraryPanel } from './components/ProgramLibraryPanel'
 import { LicenseNotice } from './components/LicenseNotice'
+import { PwaPanel } from './components/PwaPanel'
+import { persistUpdateDraft } from './services/pwa/UpdateDraft'
+import { PROJECT_DRAFT_STORAGE_KEY } from './services/projects/ProjectStorage'
+import { getPwaActivity, subscribePwaActivity } from './services/pwa/PwaActivity'
 import { getBoardDefinition } from './config/boards'
 import { createProject, loadProject, saveProject, saveProjectDraft, validateProject, serializeProject, parseProject, markWorking, restoreWorking } from './services/projects/ProjectStorage'
 import type { ArtworkProject, ProjectSettings, ProjectSnapshot, RemoteButton } from './services/projects/types'
@@ -45,6 +49,7 @@ const readPreference = (key: string) => { try { return localStorage.getItem(key)
 
 export default function App() {
   const { locale, t, setLocale } = useLocale()
+  const pwaActivity = useSyncExternalStore(subscribePwaActivity, getPwaActivity, getPwaActivity)
   const [loadedProject] = useState(loadProject)
   const [projectData, setProjectData] = useState(loadedProject.project)
   const [projectSettingsActive, setProjectSettingsActive] = useState(() => readPreference('mpw-project-settings-active') === 'true')
@@ -153,6 +158,7 @@ export default function App() {
     } catch (error) { reportProjectError(error) }
   }
   const replaceProject = (next: ArtworkProject, onFailure?: (message: string) => void) => {
+    if (getPwaActivity().updating) return false
     // 上書き前の回復点を必ず確保する。保存不可なら読み込み・復元を中止する。
     try {
       const checked = validateProject(next)
@@ -313,8 +319,29 @@ export default function App() {
   }
 
   const stampLog = () => timestamps ? app.log.split(/(?<=\n)/).map(line => `[${new Date().toLocaleTimeString()}] ${line}`).join('') : app.log
+  const setProgramSource = app.setSource
+  const replaceEditorSource = useCallback((next: string) => { if (!getPwaActivity().updating) setProgramSource(next) }, [setProgramSource])
 
-  return <main className="app">
+  const saveBeforePwaUpdate = (): string | null => {
+    if (loadNeedsReview) return '保存済み作品の読み込みに問題があります。元データを確認・退避してから更新してください。'
+    if (preparation.isImporting || preparation.hasPendingChanges) return 'AIの準備に未適用の設定があります。読み込み完了を待ち、設定を適用・保存してから更新してください。'
+    try {
+      // useEffectの自動保存だけに頼らず、クリック時点の内容を保存して読戻す。
+      // AIの準備由来の有効なLED設定も、プログラム画面で使っている値で保持する。
+      const updateProject = librarySettings ? { ...project, draft: { ...project.draft, settings: librarySettings } } : project
+      const saved = persistUpdateDraft([
+        [PROJECT_DRAFT_STORAGE_KEY, serializeProject(updateProject)], ['mpw-source', app.source],
+        ['mpw-baud', String(app.baudRate)], ['mpw-active-tab', activeTab],
+        ['mpw-theme', dark ? 'dark' : 'light'], ['mpw-wrap', String(wrap)],
+        ['mpw-autoscroll', String(autoScroll)], ['mpw-language', locale],
+        ['mpw-project-settings-active', String(projectSettingsActive || librarySettings !== null)],
+      ])
+      if (saved) return null
+    } catch { /* 読み込めない保存内容を上書きせず、再読み込みを中止する。 */ }
+    return '編集中の内容を保存できないため、更新を中止しました。コードをファイルに保存してから、もう一度試してください。'
+  }
+
+  return <main className="app" inert={pwaActivity.updating} aria-busy={pwaActivity.updating}>
     <header className="hero">
       <div className="brand"><img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} width={48} height={48} alt="" aria-hidden="true" /><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("AIとフルカラーLED電飾をはじめよう")}</h1><p>{t(activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
       <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={t(dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え')}>{t(dark ? '☀ 明るくする' : '🌙 暗くする')}</button>
@@ -331,6 +358,8 @@ export default function App() {
     }}>
       {tabs.map(tab => <button key={tab.id} id={`tab-${tab.id}`} role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)}><span aria-hidden="true">{tab.icon}</span> {t(tab.label)}</button>)}
     </div>
+
+    <PwaPanel onBeforeUpdate={saveBeforePwaUpdate} />
 
     <div id="panel-maker" hidden>
       <MakerPanel project={project} onChange={changeProject} onSave={() => persistProject()} onExport={exportProject} onImport={importProject}
@@ -414,10 +443,10 @@ export default function App() {
     <section className="workspace">
       <div className="panel program-panel">
         <div className="panel-head"><div><p className="eyebrow">{t("プログラム")}</p><h2>{t("LEDやボタンの動きを書く場所")}</h2><p>{t("ここを書き換えて、上の「実行」で試します。")}</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} />{t("長い行を折り返す")}</label></div>
-        <LedCodeSettingsPanel source={app.source} onReplace={app.setSource} disabled={busy} />
+        <LedCodeSettingsPanel source={app.source} onReplace={replaceEditorSource} disabled={busy || pwaActivity.updating} />
         <SourceLanguageNotice source={app.source} workshop={matchingPreparation ? preparation.context : null} disabled={busy || activeTab !== 'program'} />
-        <PasteCodeButton source={app.source} onReplace={app.setSource} disabled={busy} active={activeTab === "program"} workshop={matchingPreparation ? preparation.context : null} />
-        <CodeEditor label={t("Pythonコードエディタ")} value={app.source} onChange={app.setSource} dark={dark} wrap={wrap} errorLine={app.error?.sourceKnown !== false && (app.error?.sourceSnapshot === undefined || app.error.sourceSnapshot === app.source) ? app.error?.line : undefined} onSave={app.write} onRun={runProject} />
+        <PasteCodeButton source={app.source} onReplace={replaceEditorSource} disabled={busy || pwaActivity.updating} active={activeTab === "program"} workshop={matchingPreparation ? preparation.context : null} />
+        <CodeEditor label={t("Pythonコードエディタ")} value={app.source} onChange={replaceEditorSource} dark={dark} wrap={wrap} errorLine={app.error?.sourceKnown !== false && (app.error?.sourceSnapshot === undefined || app.error.sourceSnapshot === app.source) ? app.error?.line : undefined} onSave={app.write} onRun={runProject} />
         <p className="shortcut-note">{t("ショートカット: Ctrl+Sでプログラム更新、Ctrl+Enterで実行")}</p>
       </div>
       <SimulationPanel source={app.source} settings={librarySettings} active={activeTab === "program"} />

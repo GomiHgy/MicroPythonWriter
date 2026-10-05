@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "MicroPython Writer — AIとフルカラーLED電飾をはじめよう",
+  "short_name": "LED Writer",
+  "description": "M5NanoC6 / AtomS3Lite の光る作品を作り、Bluetoothで操作できるツールです。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1721",
+  "theme_color": "#0f1721",
+  "icons": [
+    { "src": "./icons/led-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/led-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/led-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
