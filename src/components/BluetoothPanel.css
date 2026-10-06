@@ -3,7 +3,7 @@
 .app-tabs button { padding: 11px 24px; color: #46627e; background: transparent; border-color: transparent; font-weight: 750; }
 .app-tabs button[aria-selected=true] { color: #0758a4; background: #fff; box-shadow: 0 2px 8px #203c621a; }
 .app-tabs button span { margin-right: 6px; }
-.bluetooth-panel { max-width: 1120px; margin: 0 auto; }
+.bluetooth-panel { width: 100%; min-width: 0; }
 .remote-view-toggle { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 16px 0; }
 .using-view .remote-appearance, .using-view .bluetooth-help, .using-view .bluetooth-guide { display: none; }
 .using-view .mode-button { min-height: 135px; }
@@ -19,7 +19,7 @@
 .bluetooth-support-help p { margin: 8px 0 0; line-height: 1.8; }
 .bluetooth-guide { color: #526b84; line-height: 1.8; font-size: .9rem; margin: 16px 2px; }
 .text-button { color: #075fac; background: transparent; border: 0; padding: 1px 3px; text-decoration: underline; text-underline-offset: 3px; }
-.controller-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 16px; }
+.controller-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
 .controller-grid .panel { padding: 24px; min-width: 0; }
 .small-badge { border-radius: 999px; background: #edf2f7; color: #587089; padding: 6px 10px; font-size: .76rem; white-space: nowrap; }
 .bluetooth-panel .small-badge { max-width: 155px; text-align: center; white-space: normal; }
