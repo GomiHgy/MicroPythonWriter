@@ -1,6 +1,6 @@
 # MicroPython Web Programmer
 
-MicroPythonデバイスをUSB CDCシリアルで操作する静的Webアプリ。PC版 Chrome / Edgeでは **Web Serial API** を優先し、Web Serialがない対応ブラウザでは **WebUSB CDC fallback** を使う。Android版ChromeからM5NanoC6を操作する経路も実装しているが、スマホ・OS・UIFlow2版の組み合わせでの実機確認は未実施。「プログラム」タブでコードを書込み、「コントローラ」タブでは **Web Bluetooth API** でLEDを操作・状態表示する。コードとシリアルログを外部サーバーへ送信しない。
+MicroPythonデバイスをUSB CDCシリアルで操作する静的Webアプリ。PC版 Chrome / Edgeでは **Web Serial API** を優先し、Androidでは **WebUSB CDC** が利用できればWeb Serial APIの有無によらず優先する。それ以外はWeb Serial、Web SerialがなければWebUSB CDC fallbackを使う。Android版ChromeからM5NanoC6を操作する経路も実装しているが、スマホ・OS・UIFlow2版の組み合わせでの接続・読み書きの実機受入は未完了。「プログラム」タブでコードを書込み、「コントローラ」タブでは **Web Bluetooth API** でLEDを操作・状態表示する。コードとシリアルログを外部サーバーへ送信しない。
 想定機器は **M5NanoC6／AtomS3Lite**。機種ごとの内蔵LED・ボタンの違いを教材設定に反映する。対応表記は実機検証済みの保証ではなく、対象UIFlow2版と配線で別途確認する。
 
 ## 対応範囲
@@ -11,10 +11,10 @@ MicroPythonデバイスをUSB CDCシリアルで操作する静的Webアプリ�
 
 ページ最下部に、アプリのバージョン（Gitコミットの先頭7桁）と生成日時（UTC）を表示する。機器のUIFlow2版とは別の情報。公開ビルドごとに自動で埋め込むため、利用時の外部通信は不要。未コミットの変更を含む場合はその旨を表示し、GitがないZIP環境などでは「取得できませんでした」とする。開発サーバーでは起動時点の情報になり、更新するにはサーバーを再起動する。
 
-- USB書込み: PC版 Google Chrome / Microsoft Edge（Web Serial優先）、またはUSBホスト（OTG）対応AndroidスマホのChrome（WebUSB CDC fallback、実機未確認）。WebUSB側はEspressif VID `0x303a` のnative USB CDC-ACM構成が対象で、USB-UART変換器（CP210x / CH340等）は対応しない。両方のAPIが使えないブラウザではUSB操作を無効にする。[AndroidからのUSB操作・確認項目](docs/android-usb.md)
+- USB書込み: PC版 Google Chrome / Microsoft Edge（Web Serial優先）、またはUSBホスト（OTG）対応AndroidスマホのChrome（WebUSB CDC優先、接続成功は実機未確認）。AndroidでWebUSBがなくWeb Serialだけが使える場合はWeb Serialを選ぶが、USB機器の列挙は端末対応次第。WebUSB側はEspressif VID `0x303a` のnative USB CDC-ACM構成が対象で、USB-UART変換器（CP210x / CH340等）は対応しない。両方のAPIが使えないブラウザではUSB操作を無効にする。[AndroidからのUSB操作・確認項目](docs/android-usb.md)
 - Bluetooth: NanoLED v1/v2対応プログラムが必要。再生・停止・作品専用ボタンはv2対応時のみ。準備は下の「Bluetoothコントローラ」を参照。
 - HTTPSまたは `localhost` が必要。GitHub PagesはHTTPSなので公開後そのまま使える。
-- Web SerialのUSB VID/PIDは固定していない。WebUSB CDC fallbackはEspressif VID `0x303a` を絞り込んで選択し、CDC構成を検査する。どちらも「USBをつなぐ」を押してからブラウザ標準の選択画面を表示し、利用者の選択と許可が必要。Web Serialの許可キャンセルや接続失敗を理由にWebUSBの選択画面へ自動移行しない。
+- Web SerialのUSB VID/PIDは固定していない。WebUSB CDCはEspressif VID `0x303a` を絞り込んで選択し、CDC構成を検査する。どちらも「USBをつなぐ」を押してからブラウザ標準の選択画面を表示し、利用者の選択と許可が必要。許可キャンセルや接続失敗を理由に、別方式の選択画面へ自動移行しない。
 
 ### 機種別のピン
 

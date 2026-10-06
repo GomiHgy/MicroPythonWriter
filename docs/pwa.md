@@ -10,7 +10,7 @@
 
 追加後も機器への接続は毎回利用者が選ぶ。USB / Bluetoothを勝手につないだり、保存コードを勝手に実行したりしない。
 
-PWA化そのものでは機器通信の対応範囲は増えない。USBはパソコン版Chrome / EdgeのWeb Serialを優先し、Web Serialのない対応ブラウザではWebUSB CDC fallbackを使用する。USBホスト（OTG）対応AndroidスマホのChromeからM5NanoC6を操作する経路は実装済みだが、通常タブ・インストール版とも実機未確認。[Androidの接続条件と手順](android-usb.md)を確認する。Web Bluetoothは対応するパソコン・AndroidのChromeなどを使用する。iPhone / iPadのSafariに追加しても、このアプリのUSB / Web Bluetooth機能は利用できない。シミュレーターには従来通りWebAssembly JSPI対応も必要。[ChromeのWeb SerialとAndroidのWebUSB利用](https://developer.chrome.com/docs/capabilities/serial#polyfill)、[Web Bluetooth](https://developer.chrome.com/docs/capabilities/bluetooth)
+PWA化そのものでは機器通信の対応範囲は増えない。USBはパソコン版Chrome / EdgeのWeb Serialを優先する。AndroidではWebUSBが使えればWeb Serial APIの有無によらずWebUSB CDCを優先し、WebUSBがない場合はWeb Serialを使うがUSB機器の列挙は端末対応次第。それ以外はWeb Serial、Web SerialがなければWebUSB CDC fallbackを使用する。USBホスト（OTG）対応AndroidスマホのChromeからM5NanoC6を操作する経路は実装済みだが、通常タブ・インストール版とも接続成功は実機未確認。[Androidの接続条件と手順](android-usb.md)を確認する。Web Bluetoothは対応するパソコン・AndroidのChromeなどを使用する。iPhone / iPadのSafariに追加しても、このアプリのUSB / Web Bluetooth機能は利用できない。シミュレーターには従来通りWebAssembly JSPI対応も必要。[ChromeのWeb SerialとAndroidのWebUSB利用](https://developer.chrome.com/docs/capabilities/serial#polyfill)、[Web Bluetooth](https://developer.chrome.com/docs/capabilities/bluetooth)
 
 ## ネットなしで使う
 
@@ -33,6 +33,8 @@ PWA化そのものでは機器通信の対応範囲は増えない。USBはパ�
 更新準備中は画面の編集を無効化し、新しいUSB / Bluetooth接続とシミュレーション開始・再開も拒否する。更新の待機ワーカーから成功応答を受け、活性化が完了した場合だけ、操作した画面を再読み込みする。別のタブでの更新通知だけでは再読み込みしない。
 
 更新でシミュレーターの必要な版が変わった場合は、その版を改めてオフライン保存する。変更のない同じVM版は再利用する。
+
+AndroidでUSB接続方式を修正した版を使う場合も、この手順で更新してから接続をやり直す。ページ下部のアプリ版を確認し、ネイティブのUSBシリアルアプリは接続を切って終了する。[USB機器選択画面の再確認手順](android-usb.md#修正版で選択画面を再確認する)を参照する。
 
 ## 保存とプライバシー
 

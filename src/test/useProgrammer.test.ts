@@ -421,7 +421,8 @@ afterEach(() => { setLocale('ja'); vi.restoreAllMocks(); vi.unstubAllGlobals() }
 
 describe('Android向けWebUSBでも既存のプログラム操作を共有する', () => {
   beforeEach(() => {
-    vi.stubGlobal('navigator', { usb: { addEventListener: vi.fn(), removeEventListener: vi.fn() } })
+    // 実機報告の条件: Androidにserialが存在していても、USBはWebUSBで操作する。
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 16)', serial: { addEventListener: vi.fn(), removeEventListener: vi.fn() }, usb: { addEventListener: vi.fn(), removeEventListener: vi.fn() } })
     vi.spyOn(WebUsbCdcTransport.prototype, 'connect').mockResolvedValue()
     vi.spyOn(WebUsbCdcTransport.prototype, 'reconnect').mockResolvedValue()
     vi.spyOn(WebUsbCdcTransport.prototype, 'disconnect').mockResolvedValue()
