@@ -2,7 +2,7 @@ import type { MessageCatalog } from './types'
 
 export const bootMessages: MessageCatalog = {
   "通常はダウンロードモードにする必要はありません。UIFlow2が動いている状態で操作します。": { en: "Download mode is not normally needed. Use this setting while UIFlow2 is running.", zh: "通常无需进入下载模式。请在 UIFlow2 正常运行时操作此设置。" },
-  "本体のボタンを押さずにUSBでパソコンにつなぎ、「USBをつなぐ」を押す。実行中の作品はアプリが停止を試みます。": { en: "Connect the device to your computer by USB without holding any device buttons, then click “Connect USB”. The app will try to stop the running artwork.", zh: "不要按住设备按钮，用 USB 连接电脑，然后点击“连接 USB”。应用将尝试停止正在运行的作品。" },
+  "本体のボタンを押さずにUSBでパソコンまたは対応Androidスマホにつなぎ、「USBをつなぐ」を押す。実行中の作品はアプリが停止を試みます。": { en: "Connect the device to your computer or a compatible Android phone by USB without holding any device buttons, then tap “Connect USB”. The app will try to stop the running artwork.", zh: "不要按住设备按钮，用 USB 连接电脑或兼容的 Android 手机，然后点击“连接 USB”。应用将尝试停止正在运行的作品。" },
   "困ったとき：停止できない・フリーズ・再起動を繰り返す": { en: "Troubleshooting: cannot stop, frozen, or repeatedly restarting", zh: "故障排查：无法停止、死机或反复重启" },
   "1. まず接続と電源を確認": { en: "1. Check the connection and power first", zh: "1. 先检查连接与供电" },
   "M5Burner・UIFlowの画面・ほかのシリアル通信アプリを閉じ、データ通信対応のUSBケーブルと別のUSBポートで試してください。": { en: "Close M5Burner, UIFlow pages, and other serial apps. Try a data-capable USB cable and another USB port.", zh: "关闭 M5Burner、UIFlow 页面及其他串口应用。尝试支持数据传输的 USB 线和其他 USB 端口。" },
@@ -41,7 +41,7 @@ export const bootMessages: MessageCatalog = {
   '作品のプログラムは消しません。電源を入れた時の設定だけを変えます。': { en: 'Your artwork program is kept. Only the power-on setting changes.', zh: '不会删除作品程序，只会更改通电时的设置。' },
   '自動実行しない設定に戻す': { en: 'Turn off automatic startup', zh: '关闭自动运行' },
   'USBで接続して設定を確認': { en: 'Connect USB to check the setting', zh: '连接 USB 并检查设置' },
-  'パソコン版ChromeまたはEdgeで開き、機器をUSBで接続してください。': { en: 'Open this app in Chrome or Edge on a computer and connect the device by USB.', zh: '请用电脑版 Chrome 或 Edge 打开，并通过 USB 连接设备。' },
+  'パソコン版Chrome・Edge、またはAndroid版Chromeで開き、機器をUSBで接続してください。': { en: 'Open this app in Chrome or Edge on a computer, or Chrome on Android, and connect the device by USB.', zh: '请用电脑版 Chrome、Edge 或 Android 版 Chrome 打开，并通过 USB 连接设备。' },
   'まずUSBをつなぐと、今の設定を確認できます。接続しただけでは自動起動の設定は変わりません。': { en: 'Connect USB to check the current setting. Connecting alone does not change automatic startup.', zh: '先连接 USB 即可查看当前设置。仅连接不会更改自动启动设置。' },
   'USB操作をやり直してから、もう一度設定してください。': { en: 'Restore USB control, then try changing the setting again.', zh: '请恢复 USB 操作后，再次尝试更改设置。' },
   '機器の処理が終わるまで、ケーブルを抜かずに待ってください。': { en: 'Keep the cable connected and wait for the device to finish.', zh: '请勿拔下线缆，等待设备处理完成。' },

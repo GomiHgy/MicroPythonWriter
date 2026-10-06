@@ -1,10 +1,10 @@
 import { DeviceTimeoutError, RawPasteProtocolError } from '../../types'
-import type { WebSerialTransport } from '../serial/WebSerialTransport'
+import type { SerialTransport } from '../serial/SerialTransport'
 
 const CTRL_D = new Uint8Array([4])
 export class RawPasteProtocol {
-  private readonly transport: WebSerialTransport
-  constructor(transport: WebSerialTransport) { this.transport = transport }
+  private readonly transport: SerialTransport
+  constructor(transport: SerialTransport) { this.transport = transport }
   /** Returns false when firmware explicitly lacks raw-paste, never silently guesses. */
   async negotiate(timeoutMs: number): Promise<number | false> {
     await this.transport.write(new Uint8Array([5, 0x41, 1]))

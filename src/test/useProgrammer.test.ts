@@ -6,6 +6,7 @@ import { FileTransferService } from '../services/micropython/FileTransferService
 import { DeviceProbe } from '../services/micropython/DeviceProbe'
 import { BootModeService } from '../services/micropython/BootModeService'
 import { WebSerialTransport } from '../services/serial/WebSerialTransport'
+import { WebUsbCdcTransport } from '../services/serial/WebUsbCdcTransport'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { DeviceTimeoutError, SerialDisconnectedError } from '../types'
 import { workshopPresets } from '../config/workshops'
@@ -417,6 +418,72 @@ describe('修正依頼のコードと教材のスナップショット', () => {
 })
 
 afterEach(() => { setLocale('ja'); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+describe('Android向けWebUSBでも既存のプログラム操作を共有する', () => {
+  beforeEach(() => {
+    vi.stubGlobal('navigator', { usb: { addEventListener: vi.fn(), removeEventListener: vi.fn() } })
+    vi.spyOn(WebUsbCdcTransport.prototype, 'connect').mockResolvedValue()
+    vi.spyOn(WebUsbCdcTransport.prototype, 'reconnect').mockResolvedValue()
+    vi.spyOn(WebUsbCdcTransport.prototype, 'disconnect').mockResolvedValue()
+    vi.spyOn(WebUsbCdcTransport.prototype, 'onDisconnectDetected').mockImplementation(callback => { disconnectDetected = callback; return () => {} })
+    vi.spyOn(BootModeService.prototype, 'set').mockResolvedValue()
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+  })
+
+  it('接続・プローブ・main.pyの保存と実行を共有し、Web Serialを開かない', async () => {
+    expect(render()).toMatchObject({ supported: true, connectionMethod: 'webusb-cdc', state: 'disconnected' })
+    await render().connect()
+    expect(render().state).toBe('raw-repl-ready')
+    expect(WebUsbCdcTransport.prototype.connect).toHaveBeenCalledExactlyOnceWith(115200)
+    expect(DeviceProbe.prototype.probe).toHaveBeenCalledOnce()
+    const source = 'print("Androidから実行")\n'
+    render().setSource(source)
+    await render().run()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+    expect(MicroPythonDevice.prototype.validateMain).toHaveBeenCalledOnce()
+    expect(RawReplClient.prototype.startLongRunning).toHaveBeenCalledOnce()
+    expect(render()).toMatchObject({ state: 'running-no-marker', writtenSource: source, runningSource: source })
+    expect(WebSerialTransport.prototype.connect).not.toHaveBeenCalled()
+    expect(BootModeService.prototype.set).not.toHaveBeenCalled()
+  })
+
+  it('機器からの読み込みは同じサービスを通し、書き込みを行わない', async () => {
+    vi.spyOn(FileTransferService.prototype, 'readMain').mockResolvedValue('print("device main")\n')
+    await render().connect(); await render().load()
+    expect(render().source).toBe('print("device main")\n')
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+  })
+
+  it.each([0, 1] as const)('自動実行モード%sを保存・再起動し、WebUSB接続を閉じる', async mode => {
+    await render().connect(); await render().run()
+    await render().setBoot(mode)
+    expect(RawReplClient.prototype.stopLongRunning).toHaveBeenCalledOnce()
+    expect(BootModeService.prototype.set).toHaveBeenCalledExactlyOnceWith(mode, expect.objectContaining({ bootOptionSupported: true }))
+    expect(BootModeService.prototype.reset).toHaveBeenCalledOnce()
+    expect(WebUsbCdcTransport.prototype.disconnect).toHaveBeenCalledOnce()
+    expect(render()).toMatchObject({ state: 'disconnected', bootFeedback: { mode, phase: 'saved', saved: true } })
+    expect(WebSerialTransport.prototype.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('抜線時に未接続へ戻し、同じWebUSB経路で再接続できる', async () => {
+    await render().connect(); await render().run()
+    disconnectDetected()
+    expect(render()).toMatchObject({ state: 'connection-lost', runningSource: null, writtenSource: null })
+    await render().reconnect()
+    expect(WebUsbCdcTransport.prototype.reconnect).toHaveBeenCalledExactlyOnceWith(115200)
+    expect(render().state).toBe('raw-repl-ready')
+  })
+
+  it('USB選択のキャンセルは未接続へ戻し、選び直せる', async () => {
+    vi.mocked(WebUsbCdcTransport.prototype.connect).mockRejectedValueOnce(new Error('USB selection cancelled'))
+    await render().connect()
+    expect(render().state).toBe('disconnected')
+    expect(render().error?.message).toBe('USB selection cancelled')
+    await render().connect()
+    expect(render().state).toBe('raw-repl-ready')
+    expect(WebSerialTransport.prototype.connect).not.toHaveBeenCalled()
+  })
+})
 
 async function startProgram() {
   await render().connect()

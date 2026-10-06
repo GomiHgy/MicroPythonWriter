@@ -115,7 +115,7 @@ describe('自動起動解除の安全な案内', () => {
     props.bootOption = 0
     props.bootSupported = true
     props[unsupported] = false
-    expect(text(render())).toContain(unsupported === 'supported' ? 'パソコン版ChromeまたはEdge' : 'このファームウェアでは起動設定の変更方法を確認できません')
+    expect(text(render())).toContain(unsupported === 'supported' ? 'パソコン版Chrome・Edge' : 'このファームウェアでは起動設定の変更方法を確認できません')
     const action = button('自動実行しない設定に戻す')
     expect(action.props.disabled).toBe(true)
     click(action)

@@ -6,7 +6,7 @@ import { TracebackParser } from '../services/micropython/TracebackParser'
 import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'
 import type { WorkshopContext } from '../services/prompt/WorkshopRules'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
-import { WebSerialTransport } from '../services/serial/WebSerialTransport'
+import { createSerialTransport } from '../services/serial/createSerialTransport'
 import { SerialDisconnectedError, type AppError, type DeviceInfo, type DeviceState, type ParsedTraceback } from '../types'
 import type { ProgramFeedback } from '../types/programFeedback'
 import type { BootFeedback } from '../types/bootFeedback'
@@ -18,7 +18,7 @@ interface OperationSnapshot { source: string; sourceKnown: boolean; device: Devi
 const readPreference = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
 const savePreference = (key: string, value: string) => { try { localStorage.setItem(key, value) } catch { /* 保存できない環境でも編集・通信は継続する */ } }
 export function useProgrammer(workshop: WorkshopContext | null = null, fallbackSource?: string, preferProjectSource = false) {
-  const transport = useMemo(() => new WebSerialTransport(), [])
+  const transport = useMemo(() => createSerialTransport(), [])
   const initialState: DeviceState = transport.supported ? 'disconnected' : 'unsupported'
   const machine = useRef(new SerialStateMachine(transport.supported))
   const device = useRef<MicroPythonDevice | undefined>(undefined)
@@ -319,5 +319,5 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     const { snapshot, terminalLog } = saved
     return { ...error, repairPrompt: prompt.build(error, snapshot.source, snapshot.device, terminalLog, error.stage, snapshot.workshop, { sourceKnown: snapshot.sourceKnown, locale }) }
   }, [error, errorContext, locale, prompt])
-  return { supported: transport.supported, state, info, log, setLog, error: localizedError, source, setSource, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
+  return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
 }

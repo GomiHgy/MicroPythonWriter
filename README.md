@@ -1,6 +1,6 @@
 # MicroPython Web Programmer
 
-MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリアルで操作するサンプル静的Webアプリ。「プログラム」タブでコードを書込み、「コントローラ」タブでは **Web Bluetooth API** でLEDを操作・状態表示する。USB側はWebUSBではなく **Web Serial API** を使用し、コードとシリアルログを外部サーバーへ送信しない。
+MicroPythonデバイスをUSB CDCシリアルで操作する静的Webアプリ。PC版 Chrome / Edgeでは **Web Serial API** を優先し、Web Serialがない対応ブラウザでは **WebUSB CDC fallback** を使う。Android版ChromeからM5NanoC6を操作する経路も実装しているが、スマホ・OS・UIFlow2版の組み合わせでの実機確認は未実施。「プログラム」タブでコードを書込み、「コントローラ」タブでは **Web Bluetooth API** でLEDを操作・状態表示する。コードとシリアルログを外部サーバーへ送信しない。
 想定機器は **M5NanoC6／AtomS3Lite**。機種ごとの内蔵LED・ボタンの違いを教材設定に反映する。対応表記は実機検証済みの保証ではなく、対象UIFlow2版と配線で別途確認する。
 
 ## 対応範囲
@@ -11,10 +11,10 @@ MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリア�
 
 ページ最下部に、アプリのバージョン（Gitコミットの先頭7桁）と生成日時（UTC）を表示する。機器のUIFlow2版とは別の情報。公開ビルドごとに自動で埋め込むため、利用時の外部通信は不要。未コミットの変更を含む場合はその旨を表示し、GitがないZIP環境などでは「取得できませんでした」とする。開発サーバーでは起動時点の情報になり、更新するにはサーバーを再起動する。
 
-- USB書込み: PC版 Google Chrome / Microsoft Edge。Web Serial APIが未対応ならUSB接続操作は無効になる。
+- USB書込み: PC版 Google Chrome / Microsoft Edge（Web Serial優先）、またはUSBホスト（OTG）対応AndroidスマホのChrome（WebUSB CDC fallback、実機未確認）。WebUSB側はEspressif VID `0x303a` のnative USB CDC-ACM構成が対象で、USB-UART変換器（CP210x / CH340等）は対応しない。両方のAPIが使えないブラウザではUSB操作を無効にする。[AndroidからのUSB操作・確認項目](docs/android-usb.md)
 - Bluetooth: NanoLED v1/v2対応プログラムが必要。再生・停止・作品専用ボタンはv2対応時のみ。準備は下の「Bluetoothコントローラ」を参照。
 - HTTPSまたは `localhost` が必要。GitHub PagesはHTTPSなので公開後そのまま使える。
-- USB VID/PIDは固定していない。USB接続ボタンのクリックから、ブラウザ標準のポート選択を表示する。
+- Web SerialのUSB VID/PIDは固定していない。WebUSB CDC fallbackはEspressif VID `0x303a` を絞り込んで選択し、CDC構成を検査する。どちらも「USBをつなぐ」を押してからブラウザ標準の選択画面を表示し、利用者の選択と許可が必要。Web Serialの許可キャンセルや接続失敗を理由にWebUSBの選択画面へ自動移行しない。
 
 ### 機種別のピン
 
@@ -41,7 +41,7 @@ MicroPythonデバイスを、PC版 Chrome または Edge からUSB CDCシリア�
 
 ## 安全設計
 
-UIはシリアルポートへ直接触らず、`WebSerialTransport → RawReplClient → MicroPythonDevice / FileTransferService / BootModeService → hook → UI` の順で責務を分離している。Raw REPLの制御バイトはプロトコル解析が終わるまで `Uint8Array` として保持する。
+UIはシリアルポートへ直接触らず、`WebSerialTransport / WebUsbCdcTransport → RawReplClient → MicroPythonDevice / FileTransferService / BootModeService → hook → UI` の順で責務を分離している。方式の選択は `createSerialTransport` で行い、Raw REPL・ファイル転送・起動設定の処理は共用する。Raw REPLの制御バイトはプロトコル解析が終わるまで `Uint8Array` として保持する。
 
 `プログラム更新`は、編集内容を`main.py.tmp`へBase64チャンク（既定384 bytes）で送信し、サイズ・SHA-256確認と `compile()` を通してから、既存ファイルを `main.py.bak` に退避してrenameする。転送中のUSB抜去・構文エラーでは既存 `main.py` の変更前に止まる。`/flash` は固定していない。更新だけでは実行せず、実行用コードも保持しない。`hashlib.sha256`が使えない環境では検査を省略せず停止する。
 
@@ -169,8 +169,8 @@ Ctrl-Cを無視するコード（割込み無効化・KeyboardInterruptの握り
 
 ### コードを直接使う場合
 
-1. デバイスをUSB接続し、このアプリをPC版Chrome/Edgeで開く。
-2. 「プログラム」タブの `USBをつなぐ` を押し、ポート選択ダイアログで対象を選ぶ（初期115200 bps）。
+1. UIFlow2 / MicroPythonが動いている通常モードの機器をUSB接続し、このアプリをPC版Chrome / Edge、またはUSBホスト（OTG）対応AndroidスマホのChromeで開く。Androidの操作は[専用ガイド](docs/android-usb.md)を先に確認する（実機未確認）。
+2. 「プログラム」タブの `USBをつなぐ` を押し、ブラウザのポート／機器選択ダイアログで対象を選ぶ（初期115200 bps）。
 3. 接続時に自動で準備される通常動作で、検出された機器情報・カレントディレクトリ・ファイル一覧・boot_optionを確認する。
 4. コードを編集し、保存だけなら`プログラム更新`、保存して起動するなら`実行`を使う。Ctrl+Sはプログラム更新、Ctrl+Enterは実行。
 5. ターミナルの出力とTracebackを確認する。エラーでは該当行とAI修正依頼プロンプトを表示する。
@@ -194,7 +194,7 @@ UIFlow2ファームウェアをまだ書き込んでいない場合は、機器�
 
 ファームウェアの書込みで機器内のプログラムや設定が消える可能性があるため、必要なコードを先に保存する。WriterやほかのアプリがUSB接続中なら切断してからM5Burnerで接続する。リンクを開くだけではファームウェアを書き込まず、このアプリが版を自動取得・設定したり、コードをM5Burnerへ送信したりすることもない。
 
-USB未接続・Web Serial非対応でも準備文は作れる。コピー、機器変更、タブ切替はUSB/BLEの接続・実行・編集中コードを変更しない。ChatGPT・Claude・Gemini・[DeepSeek](https://chat.deepseek.com/)・[Grok](https://grok.com/) のリンクは通常の外部リンクであり、文面を自動送信しない。ほかのAIへ同じ文面を貼って使うこともできる。AIごとのアカウントや利用条件は各サービスで確認する。
+USB未接続・USB API非対応でも準備文は作れる。コピー、機器変更、タブ切替はUSB/BLEの接続・実行・編集中コードを変更しない。ChatGPT・Claude・Gemini・[DeepSeek](https://chat.deepseek.com/)・[Grok](https://grok.com/) のリンクは通常の外部リンクであり、文面を自動送信しない。ほかのAIへ同じ文面を貼って使うこともできる。AIごとのアカウントや利用条件は各サービスで確認する。
 
 ### 利用者の機器・LED設定
 
@@ -354,7 +354,7 @@ USBシリアルへ接続できない場合、NanoC6の **GPIO9ボタンを押し
 上記はNanoC6専用の復旧操作であり、AtomS3LiteのGPIO41ボタンへ読み替えない。AtomS3Liteの復旧は [機種別の公式手順](https://docs.m5stack.com/en/core/AtomS3%20Lite) を確認する。
 
 - Python例外が出ない論理的な不具合は自動判定できない。
-- Web Serial API非対応ブラウザではUSB書込みを利用できない。BluetoothはWeb Bluetooth APIの対応が別途必要。
+- Web Serial / WebUSBの両方が非対応のブラウザではUSB書込みを利用できない。WebUSB経路は対象CDC構成に限り、OSドライバや他アプリの占有によって接続できない場合もある。BluetoothはWeb Bluetooth APIの対応が別途必要。
 - firmwareによって `boot_option` モジュールが存在しない可能性がある。
 - ユーザーコードがUSB CDCまたはREPLを無効化すると接続できなくなる。
 - ハードウェア依存処理、USB再列挙、UIFlow固有APIは実機確認が必要。

@@ -35,6 +35,7 @@ const harness = vi.hoisted(() => ({
   anchor: { href: '', download: '', click: vi.fn() },
   programmer: {
     state: 'running', source: 'print("keep this draft")', log: 'existing log', supported: true,
+    connectionMethod: 'web-serial' as 'web-serial' | 'webusb-cdc',
     runningSource: 'print("keep this draft")' as string | null, writtenSource: 'print("keep this draft")' as string | null,
     bootConfigured: null as { mode: 0 | 1; source: string | null } | null,
     programFeedback: null as ProgramFeedback | null,
@@ -223,6 +224,7 @@ beforeEach(() => {
   harness.slots = []; harness.cursor = 0; harness.effects = []; harness.runDependentEffects = false
   harness.preparation.context = null; harness.preparation.hasPendingChanges = false; harness.preparation.isImporting = false; harness.contexts = []; harness.initialSources = []; harness.sourceAuthorities = []; harness.programmer.error = undefined
   harness.programmer.state = 'running'; harness.programmer.supported = true; harness.programmer.source = 'print("keep this draft")'
+  harness.programmer.connectionMethod = 'web-serial'
   harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
   harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
   harness.programmer.programFeedback = null
@@ -544,6 +546,36 @@ it('USB非対応環境でもBluetoothコントローラタブへ移動できる'
   const view = render()
   expect(byId(view, 'panel-controller').props.hidden).toBe(false)
   expect(all(view, element => element.type === BluetoothPanel)).toHaveLength(1)
+})
+
+it.each(['ja', 'en', 'zh'] as const)('WebUSB利用時は%sでAndroidの準備と未確認状態を表示し、機器を自動操作しない', locale => {
+  setLocale(locale)
+  harness.programmer.connectionMethod = 'webusb-cdc'
+  harness.programmer.state = 'disconnected'
+  const view = render()
+  const notice = find(view, element => element.props['aria-label'] === translate(locale, 'Android向けUSB接続（実機未確認）'))
+  expect(all(notice, element => element.type === 'p')).toHaveLength(2)
+  expect(all(notice, element => element.type === 'p')[0].props.children).toBe(translate(locale, 'USBホスト（OTG）対応のスマホとデータ通信ケーブルでM5NanoC6をつなぎ、「USBをつなぐ」を押してください。UIFlow2／MicroPythonが動いている通常モードで使います。'))
+  const connect = find(view, element => element.type === 'button' && element.props.className === 'connect-button')
+  expect(connect.props.disabled).toBe(false)
+  assertNoUsbOperations()
+  event(connect, 'onClick')
+  expect(harness.programmer.connect).toHaveBeenCalledOnce()
+})
+
+it('PCのWeb Serial利用時にはAndroid向けの案内を表示しない', () => {
+  expect(all(render(), element => element.props['aria-label'] === 'Android向けUSB接続（実機未確認）')).toHaveLength(0)
+})
+
+it('USB APIがないブラウザではAndroid向け案内も接続ボタンも有効にしない', () => {
+  harness.programmer.connectionMethod = 'webusb-cdc'
+  harness.programmer.supported = false
+  harness.programmer.state = 'unsupported'
+  const view = render()
+  expect(all(view, element => element.props['aria-label'] === 'Android向けUSB接続（実機未確認）')).toHaveLength(0)
+  expect(find(view, element => element.props.className === 'connect-button').props.disabled).toBe(true)
+  expect(find(view, element => element.props.className === 'notice danger' && element.props.role === 'alert').props.children).toContain('Android版Chrome')
+  assertNoUsbOperations()
 })
 
 it('Bluetooth画面の準備リンクからプログラムへ戻り、見出しにフォーカスする', () => {

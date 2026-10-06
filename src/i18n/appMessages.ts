@@ -55,9 +55,9 @@ export const appMessages: MessageCatalog = {
     "en": "USB is unavailable in this browser",
     "zh": "此浏览器无法使用 USB"
   },
-  "パソコン版ChromeまたはEdgeで開いてください。": {
-    "en": "Open this page in Chrome or Edge on a computer.",
-    "zh": "请使用电脑上的 Chrome 或 Edge 打开。"
+  "パソコン版Chrome・Edge、またはAndroid版Chromeで開いてください。": {
+    "en": "Open this page in Chrome or Edge on a computer, or Chrome on Android.",
+    "zh": "请使用电脑版 Chrome、Edge 或 Android 版 Chrome 打开。"
   },
   "はじめに": {
     "en": "Get started",
@@ -203,9 +203,21 @@ export const appMessages: MessageCatalog = {
     "en": "Choose a feature",
     "zh": "选择功能"
   },
-  "このブラウザではUSB接続機能を使えません。パソコン版ChromeまたはEdgeで開いてください。": {
-    "en": "USB connection is unavailable in this browser. Use Chrome or Edge on a computer.",
-    "zh": "此浏览器无法使用 USB 连接。请使用电脑上的 Chrome 或 Edge。"
+  "このブラウザではUSB接続機能を使えません。パソコン版Chrome・Edge、またはAndroid版ChromeでHTTPSのページを開いてください。": {
+    "en": "USB connection is unavailable in this browser. Open the HTTPS page in Chrome or Edge on a computer, or Chrome on Android.",
+    "zh": "此浏览器无法使用 USB 连接。请使用电脑版 Chrome、Edge 或 Android 版 Chrome 打开 HTTPS 页面。"
+  },
+  'Android向けUSB接続（実機未確認）': {
+    en: 'USB connection for Android (not yet tested on hardware)',
+    zh: 'Android USB 连接（尚未进行实机验证）'
+  },
+  'USBホスト（OTG）対応のスマホとデータ通信ケーブルでM5NanoC6をつなぎ、「USBをつなぐ」を押してください。UIFlow2／MicroPythonが動いている通常モードで使います。': {
+    en: 'Connect your M5NanoC6 using a USB-host (OTG) capable phone and a data-capable USB cable, then tap “Connect USB”. Use normal mode with UIFlow2 / MicroPython running.',
+    zh: '使用支持 USB 主机（OTG）的手机和支持数据传输的 USB 线连接 M5NanoC6，然后点击“连接 USB”。请在 UIFlow2 / MicroPython 正常运行的普通模式下使用。'
+  },
+  'この接続ではmain.pyの読み込み・書き込み・実行と、自動実行ON／OFFの変更を行えます。UIFlow2自体の書き込み・復旧用フラッシュは行いません。起動設定の変更は対応ファームウェアでのみ利用できます。': {
+    en: 'This connection is designed to read, write and run main.py, and change automatic startup ON / OFF. It does not install UIFlow2 or flash firmware for recovery. Startup-setting changes are available only with supported firmware.',
+    zh: '此连接用于读取、写入和运行 main.py，以及开启或关闭自动运行。不安装 UIFlow2 本身，也不进行恢复用固件烧录。仅支持的固件可更改启动设置。'
   },
   "🔌 USBをつなぐ": {
     "en": "🔌 Connect USB",

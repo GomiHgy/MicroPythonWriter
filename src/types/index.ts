@@ -4,7 +4,7 @@ export interface DeviceInfo { deviceName: string; boardId?: import('../config/bo
 export interface ExecutionResult { stdout: string; stderr: string; durationMs: number; interrupted: boolean; completed: boolean }
 export interface ParsedTraceback { exceptionType: string; message: string; traceback: string; line?: number; codeLine?: string; intentionalInterrupt: boolean }
 export interface AppError extends ParsedTraceback { stage: string; repairPrompt: string; sourceSnapshot?: string; sourceKnown?: boolean; deviceSnapshot?: DeviceInfo }
-export class SerialNotSupportedError extends Error { constructor() { super('このブラウザはWeb Serial APIに対応していません。PC版ChromeまたはEdgeを使用してください。') } }
+export class SerialNotSupportedError extends Error { constructor() { super('このブラウザはUSB接続に対応していません。パソコン版Chrome・Edge、またはAndroid版ChromeでHTTPSのページを開いてください。') } }
 export class SerialPermissionError extends Error { constructor(message = 'USBシリアルポートの選択がキャンセルされたか、許可されませんでした。') { super(message) } }
 export class SerialDisconnectedError extends Error { constructor(message = 'USBシリアル接続が切断されました。') { super(message) } }
 export class ReplNotAvailableError extends Error { constructor(message = 'MicroPython REPLを取得できませんでした。') { super(message) } }

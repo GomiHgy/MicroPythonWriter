@@ -15,6 +15,53 @@ interface Result {
 const jspi = spawnSync(process.execPath, ['--experimental-wasm-jspi', '-e', 'if (typeof WebAssembly.Suspending !== "function") process.exit(1)'], { timeout: 5000 }).status === 0
 
 describe.skipIf(!jspi)('real Pyodide WebAssembly integration with JSPI (no physical hardware)', () => {
+  it('blocks USB access through Python introspection and the WorkerNavigator prototype getter', () => {
+    const prefix = 'from machine import Pin\n_host_builtins = Pin.__init__.__globals__["_builtins"]\n_js = _host_builtins.__import__("js")\n'
+    const sources = [
+      `${prefix}_js.navigator.usb.getDevices()\n`,
+      `${prefix}_prototype = _js.Object.getPrototypeOf(_js.navigator)\n_getter = _js.Object.getOwnPropertyDescriptor(_prototype, "usb").get\n_getter.call(_js.navigator).getDevices()\n`,
+    ]
+    const script = `
+import { loadPyodide } from 'pyodide';
+import fs from 'node:fs';
+import { restrictSimulationHost } from './src/services/simulation/restrictSimulationHost.ts';
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+let usbCalls = 0;
+const fakeUsb = { getDevices() { usbCalls++; return Promise.resolve([]); } };
+// Nodeのnavigator/userAgentは残す。実機USBは使わず、この子プロセス内のgetterだけを再現する。
+const navigatorPrototype = Object.getPrototypeOf(globalThis.navigator);
+Object.defineProperty(navigatorPrototype, 'usb', { configurable: true, get() { return fakeUsb; } });
+const python = await loadPyodide({ stdout() {}, stderr() {} });
+python.globals.set('_sim_bridge', { now() { return 0; }, wait: async () => undefined, button: () => false, drainCommands: () => '[]' });
+python.globals.set('_sim_config', JSON.stringify({ ledPin: 2, buttonPin: 9, ledCount: 3 }));
+await python.runPythonAsync(payload.hardware);
+async function execute(source) {
+  python.globals.set('_sim_source', source);
+  try { await python.runPythonAsync('_sim_execute(_sim_source)'); return null; }
+  catch (error) { return String(error); }
+}
+const before = [];
+for (const source of payload.sources) before.push(await execute(source));
+const callsBeforeRestrictions = usbCalls;
+const failures = restrictSimulationHost(globalThis);
+const after = [];
+for (const source of payload.sources) after.push(await execute(source));
+process.stdout.write(JSON.stringify({ before, after, failures, callsBeforeRestrictions, usbCalls }));
+`
+    const processResult = spawnSync(process.execPath, ['--experimental-wasm-jspi', '--input-type=module', '-e', script], {
+      input: JSON.stringify({ hardware, sources }), encoding: 'utf8', timeout: 25000, maxBuffer: 1024 * 1024,
+    })
+    expect(processResult.status, processResult.stderr || String(processResult.error ?? '')).toBe(0)
+    const result = JSON.parse(processResult.stdout) as { before: (string | null)[]; after: string[]; failures: string[]; callsBeforeRestrictions: number; usbCalls: number }
+    // import制限だけでは防げない経路であることも、実際のPython実行で確認する。
+    expect(result.before).toEqual([null, null])
+    expect(result.callsBeforeRestrictions).toBe(2)
+    expect(result.failures).toEqual([])
+    expect(result.after).toHaveLength(2)
+    for (const error of result.after) expect(error).toContain('Simulation does not support host access: navigator.usb')
+    expect(result.usbCalls).toBe(result.callsBeforeRestrictions)
+  }, 30000)
+
   it('runs button/NeoPixel code, unchanged starter BLE, and a cooperatively interrupted busy loop', () => {
     const starter = buildStarterProgram(
       { boardId: 'm5nanoc6', firmwareVersion: 'simulation-only', ledModel: 'WS2812B', ledCount: 3, ledPin: 2, maxBrightnessPercent: 20 },

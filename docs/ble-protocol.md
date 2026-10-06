@@ -122,7 +122,7 @@ UUIDが同じだけではNanoLED v1対応とは判定できず、以下のコマ
 
 ブラウザは利用者の接続ボタンから機器を選択し、TXの通知を有効にしてから `STATUS\n` を送る。初回の正しい状態を受信するまで、点灯モードのボタンとスライダーは有効にしない。ただし安全のため、「消灯」（`OFF`）は接続できていれば状態未受信でも送れる。消灯コマンドの送信成功だけで、実際の消灯や状態受信の成功とは判断しない。切断時にはGATTオブジェクトと受信途中のデータを破棄し、次の接続でサービスとCharacteristicを取り直す。
 
-対応環境の目安はWindows/macOSのChromeまたは対応するデスクトップEdge、AndroidのChrome。iPhone/iPadの標準ブラウザ、Safari、Firefoxの標準機能は対象外。HTTPSまたは `localhost`、OSのBluetooth有効化、ブラウザへの許可が必要。対応状況は [Chromeの公式ガイド](https://developer.chrome.com/docs/capabilities/bluetooth) と [Web Bluetoothの実装状況](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md) を参照する。USB書込みはPC版Chrome/Edgeを使用する。
+対応環境の目安はWindows/macOSのChromeまたは対応するデスクトップEdge、AndroidのChrome。iPhone/iPadの標準ブラウザ、Safari、Firefoxの標準機能は対象外。HTTPSまたは `localhost`、OSのBluetooth有効化、ブラウザへの許可が必要。対応状況は [Chromeの公式ガイド](https://developer.chrome.com/docs/capabilities/bluetooth) と [Web Bluetoothの実装状況](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md) を参照する。USB書込みはPC版Chrome / EdgeのWeb Serial、または対応AndroidスマホのChromeのWebUSB CDC fallbackを使用する（Android経路は実機未確認）。[AndroidのUSB条件・手順](android-usb.md)を確認する。BLEでの操作とUSBでのコード書込みは別機能であり、BLE接続だけでは書込みや起動設定の変更は行わない。
 
 ## 2. コマンド
 

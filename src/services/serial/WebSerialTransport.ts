@@ -3,6 +3,7 @@ import { DeviceTimeoutError, SerialDisconnectedError, SerialNotSupportedError, S
 import { getPwaActivity, PWA_UPDATE_BUSY_MESSAGE, setPwaActivity } from '../pwa/PwaActivity'
 
 export class WebSerialTransport {
+  readonly kind = 'web-serial' as const
   queue = new ByteQueue()
   private port?: SerialPort
   private reader?: ReadableStreamDefaultReader<Uint8Array>
@@ -14,7 +15,7 @@ export class WebSerialTransport {
   private disposed = false
   private readonly serial: NavigatorSerial | undefined
   private readonly onDisconnect = (event: Event & { port?: SerialPort }) => { if (!event.port || event.port === this.port) this.markDisconnected() }
-  constructor(serial: NavigatorSerial | undefined = typeof navigator === 'undefined' ? undefined : navigator.serial) { this.serial = serial; this.serial?.addEventListener('disconnect', this.onDisconnect) }
+  constructor(serial: NavigatorSerial | null | undefined = typeof navigator === 'undefined' ? undefined : navigator.serial) { this.serial = serial ?? undefined; this.serial?.addEventListener('disconnect', this.onDisconnect) }
   get supported() { return Boolean(this.serial) }
   get connected() { return Boolean(this.port) && !this.disconnected }
   onData(callback: (data: Uint8Array) => void) { this.subscribers.add(callback); return () => { this.subscribers.delete(callback) } }

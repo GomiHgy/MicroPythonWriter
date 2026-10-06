@@ -1,5 +1,5 @@
 import { DeviceTimeoutError, RawReplProtocolError, ReplNotAvailableError, type ExecutionResult } from '../../types'
-import type { WebSerialTransport } from '../serial/WebSerialTransport'
+import type { SerialTransport } from '../serial/SerialTransport'
 import { RawPasteProtocol } from './RawPasteProtocol'
 
 const encoder = new TextEncoder()
@@ -35,12 +35,12 @@ class ManagedLongRunningSession implements LongRunningSession {
   private readonly started: Promise<LongRunningStartResult>
   private readonly completed: Promise<LongRunningCompletion>
 
-  private readonly transport: WebSerialTransport
+  private readonly transport: SerialTransport
   private readonly startupGraceMs: number
   private readonly stopTimeoutMs: number
   private readonly callbacks: LongRunningCallbacks
   private readonly onFinished: () => void
-  constructor(transport: WebSerialTransport, startupGraceMs: number, stopTimeoutMs: number, callbacks: LongRunningCallbacks, onFinished: () => void) {
+  constructor(transport: SerialTransport, startupGraceMs: number, stopTimeoutMs: number, callbacks: LongRunningCallbacks, onFinished: () => void) {
     this.transport = transport
     this.startupGraceMs = startupGraceMs
     this.stopTimeoutMs = stopTimeoutMs
@@ -143,10 +143,10 @@ class ManagedLongRunningSession implements LongRunningSession {
 }
 
 export class RawReplClient {
-  private readonly transport: WebSerialTransport
+  private readonly transport: SerialTransport
   private readonly timings: { interrupt: number; rawRepl: number; command: number; startupGrace: number; stop: number }
   private activeSession?: ManagedLongRunningSession
-  constructor(transport: WebSerialTransport, timings: Partial<{ interrupt: number; rawRepl: number; command: number; startupGrace: number; stop: number }> = {}) {
+  constructor(transport: SerialTransport, timings: Partial<{ interrupt: number; rawRepl: number; command: number; startupGrace: number; stop: number }> = {}) {
     this.transport = transport
     this.timings = { interrupt: timings.interrupt ?? 3000, rawRepl: timings.rawRepl ?? 3000, command: timings.command ?? 10000, startupGrace: timings.startupGrace ?? 2500, stop: timings.stop ?? 3000 }
   }

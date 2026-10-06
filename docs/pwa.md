@@ -10,7 +10,7 @@
 
 追加後も機器への接続は毎回利用者が選ぶ。USB / Bluetoothを勝手につないだり、保存コードを勝手に実行したりしない。
 
-PWA化で機器通信の対応範囲は増えない。USBはこのアプリではパソコン版Chrome / Edgeを使用する。Web Bluetoothは対応するパソコン・AndroidのChromeなどを使用する。iPhone / iPadのSafariに追加しても、このアプリのUSB / Web Bluetooth機能は利用できない。シミュレーターには従来通りWebAssembly JSPI対応も必要。[ChromeのWeb Serial](https://developer.chrome.com/docs/capabilities/serial)、[Web Bluetooth](https://developer.chrome.com/docs/capabilities/bluetooth)
+PWA化そのものでは機器通信の対応範囲は増えない。USBはパソコン版Chrome / EdgeのWeb Serialを優先し、Web Serialのない対応ブラウザではWebUSB CDC fallbackを使用する。USBホスト（OTG）対応AndroidスマホのChromeからM5NanoC6を操作する経路は実装済みだが、通常タブ・インストール版とも実機未確認。[Androidの接続条件と手順](android-usb.md)を確認する。Web Bluetoothは対応するパソコン・AndroidのChromeなどを使用する。iPhone / iPadのSafariに追加しても、このアプリのUSB / Web Bluetooth機能は利用できない。シミュレーターには従来通りWebAssembly JSPI対応も必要。[ChromeのWeb SerialとAndroidのWebUSB利用](https://developer.chrome.com/docs/capabilities/serial#polyfill)、[Web Bluetooth](https://developer.chrome.com/docs/capabilities/bluetooth)
 
 ## ネットなしで使う
 
@@ -67,6 +67,7 @@ Service Workerはビルドの実内容ハッシュで版管理する。`npm run 
 - 任意保存後のオフラインシミュレーション。未保存時・容量不足時の失敗表示。
 - GitHub Pagesのサブパスでmanifest / アイコン / SW / VMが同じアプリの配下になること。
 - 旧版を開いたまま新版を配信し、勝手に再読み込みしないこと。USB / BLE接続中、転送中、シミュレーション中、複数窓で更新が拒否されること。
+- Androidの通常タブとインストール版で、USB接続・選択中・転送中に更新が拒否されること。抜線／再起動の後に接続先を選び直せること。機種・Android / Chrome / UIFlow2版付きで[USB受入記録](android-usb.md#実機受入の記録)を残し、PWA化をUSB動作保証の代わりにしない。
 - 確認して更新した後、コード・保存済みプログラム・設定が残ること。保存失敗時に再読み込みしないこと。
 
 自動テスト・ビルドの成功は、実機接続・OSへのインストールや公開先での動作確認とは区別する。

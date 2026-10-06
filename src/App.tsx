@@ -32,7 +32,7 @@ import './App.css'
 
 const statusCopy: Record<string, { icon: string; eyebrow: string; title: string; description: string; tone: 'ready' | 'running' | 'waiting' | 'warning' | 'error' }> = {
   stopping: { icon: '…', eyebrow: '停止を確認中', title: '今のプログラムを止めています', description: '実行・更新を押した場合は、停止後に自動で続けます。ケーブルを抜かずに待ってください。', tone: 'waiting' },
-  unsupported: { icon: '!', eyebrow: '使えない状態', title: 'このブラウザでは使えません', description: 'パソコン版ChromeまたはEdgeで開いてください。', tone: 'error' },
+  unsupported: { icon: '!', eyebrow: '使えない状態', title: 'このブラウザでは使えません', description: 'パソコン版Chrome・Edge、またはAndroid版Chromeで開いてください。', tone: 'error' },
   disconnected: { icon: '1', eyebrow: 'はじめに', title: '機器をUSBでつなごう', description: '下の「USBをつなぐ」を押して、M5NanoC6またはAtomS3Liteを選んでください。', tone: 'waiting' },
   'connection-lost': { icon: '!', eyebrow: '接続が切れました', title: '機器との通信が止まりました', description: 'ケーブルと電源を確認して、もう一度つなぎましょう。', tone: 'warning' },
   'raw-repl-ready': { icon: '✓', eyebrow: '準備OK', title: 'プログラムを試せます', description: '編集したら「実行」を押すだけです。', tone: 'ready' },
@@ -378,7 +378,12 @@ export default function App() {
     </div>
 
     <div id="panel-program" role="tabpanel" aria-labelledby="tab-program" hidden={activeTab !== 'program'}>
-    {!app.supported && <div className="notice danger" role="alert">{t("このブラウザではUSB接続機能を使えません。パソコン版ChromeまたはEdgeで開いてください。")}</div>}
+    {!app.supported && <div className="notice danger" role="alert">{t("このブラウザではUSB接続機能を使えません。パソコン版Chrome・Edge、またはAndroid版ChromeでHTTPSのページを開いてください。")}</div>}
+    {app.supported && app.connectionMethod === 'webusb-cdc' && <section className="notice" aria-label={t('Android向けUSB接続（実機未確認）')}>
+      <strong>{t('Android向けUSB接続（実機未確認）')}</strong>
+      <p>{t('USBホスト（OTG）対応のスマホとデータ通信ケーブルでM5NanoC6をつなぎ、「USBをつなぐ」を押してください。UIFlow2／MicroPythonが動いている通常モードで使います。')}</p>
+      <p>{t('この接続ではmain.pyの読み込み・書き込み・実行と、自動実行ON／OFFの変更を行えます。UIFlow2自体の書き込み・復旧用フラッシュは行いません。起動設定の変更は対応ファームウェアでのみ利用できます。')}</p>
+    </section>}
 
     <section className={`device-card ${status.tone}`} aria-live="polite">
       <div className="status-badge" aria-hidden="true">{status.icon}</div>

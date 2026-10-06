@@ -64,6 +64,17 @@ describe('表示言語', () => {
     expect(translate('en', `main.py.tmp の構文確認に失敗しました。\n${details}`)).toBe(`Syntax validation of main.py.tmp failed.\n${details}`)
     expect(translate('zh', `main.py.tmp の構文確認に失敗しました。\n${details}`)).toBe(`main.py.tmp 语法检查失败。\n${details}`)
   })
+  it.each([
+    'USB機器の選択がキャンセルされたか、許可されませんでした。',
+    'USBへの送信中に接続が切れました。',
+    'USBからの受信中に接続が切れました。',
+  ])('WebUSBの%sを翻訳し、元のエラー詳細は保持する', prefix => {
+    const details = 'NotFoundError: 許可がない\nNative USB 303a:1001'
+    for (const locale of ['en', 'zh'] as const) {
+      const template = messages[`${prefix}{details}`][locale]
+      expect(translate(locale, prefix + details)).toBe(template.replace('{details}', details))
+    }
+  })
   it('Appの日本語テキストと画面の固定翻訳キーを網羅する', () => {
     const sources = [['src/App.tsx', appSource], ['src/components/AiPreparationPanel.tsx', preparationSource], ['src/components/BluetoothPanel.tsx', bluetoothSource], ['src/components/BootModePanel.tsx', bootSource], ['src/components/ProgramLibraryPanel.tsx', programLibrarySource], ['src/components/SimulationPanel.tsx', simulationSource], ['src/components/PasteCodeButton.tsx', pasteSource], ['src/components/LedCodeSettingsPanel.tsx', ledCodeSource], ['src/components/PwaPanel.tsx', pwaSource]]
     for (const [file, text] of sources) {

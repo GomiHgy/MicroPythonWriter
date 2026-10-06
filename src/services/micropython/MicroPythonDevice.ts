@@ -3,7 +3,7 @@ import { BootModeService } from './BootModeService'
 import { DeviceProbe } from './DeviceProbe'
 import { FileTransferService } from './FileTransferService'
 import { RawReplClient, type LongRunningCallbacks, type LongRunningCompletion, type LongRunningStartResult } from './RawReplClient'
-import type { WebSerialTransport } from '../serial/WebSerialTransport'
+import type { SerialTransport } from '../serial/SerialTransport'
 import { clearPreparedProgramCommand, startPreparedProgramCommand, verifyPreparedProgramCommand } from './ProgramCommands'
 
 function expectedKeyboardInterrupt(result: LongRunningCompletion): boolean {
@@ -18,7 +18,7 @@ export class MicroPythonDevice {
   readonly files: FileTransferService
   readonly probe: DeviceProbe
   readonly boot: BootModeService
-  constructor(transport: WebSerialTransport) { this.repl = new RawReplClient(transport); this.files = new FileTransferService(this.repl); this.probe = new DeviceProbe(this.repl); this.boot = new BootModeService(this.repl) }
+  constructor(transport: SerialTransport) { this.repl = new RawReplClient(transport); this.files = new FileTransferService(this.repl); this.probe = new DeviceProbe(this.repl); this.boot = new BootModeService(this.repl) }
 
   async enterNormalMode() {
     this.files.invalidatePreparedProgram()

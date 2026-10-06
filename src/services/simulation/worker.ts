@@ -7,7 +7,8 @@ import { observeLedCurrent } from './LedCurrent'
 import { restrictSimulationHost } from './restrictSimulationHost'
 import type { SimulationConfig, SimulationInput, SimulationOutput, SimulationSnapshot } from './types'
 
-// このWorkerにはWeb Serial/Web Bluetoothの接続先を一切渡さない。
+// このWorkerには機器の接続先を渡さず、実行前にWorkerNavigatorのWebUSB等も制限する。
+// main realmのUSB/BLE接続は変更しない。完全なsandboxを保証するものではない。
 const scope = globalThis as typeof globalThis & { postMessage: (message: SimulationOutput) => void; onmessage: ((event: MessageEvent<SimulationInput>) => void) | null }
 let snapshot: SimulationSnapshot
 let config: SimulationConfig

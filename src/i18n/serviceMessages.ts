@@ -79,13 +79,61 @@ export const serviceMessages: MessageCatalog = {
     "en": "Device restart",
     "zh": "设备重启"
   },
-  "このブラウザはWeb Serial APIに対応していません。PC版ChromeまたはEdgeを使用してください。": {
-    "en": "This browser does not support Web Serial. Use Chrome or Edge on a computer.",
-    "zh": "此浏览器不支持 Web Serial，请使用电脑版 Chrome 或 Edge。"
+  "このブラウザはUSB接続に対応していません。パソコン版Chrome・Edge、またはAndroid版ChromeでHTTPSのページを開いてください。": {
+    "en": "This browser does not support USB connection. Open the HTTPS page in Chrome or Edge on a computer, or Chrome on Android.",
+    "zh": "此浏览器不支持 USB 连接。请使用电脑版 Chrome、Edge 或 Android 版 Chrome 打开 HTTPS 页面。"
   },
   "USBシリアルポートの選択がキャンセルされたか、許可されませんでした。": {
     "en": "USB port selection was cancelled or denied.",
     "zh": "USB 串口选择已取消或未获许可。"
+  },
+  'このUSB機器の接続方式には対応していません。UIFlow2が通常起動しているM5NanoC6／AtomS3Liteを選んでください。': {
+    en: 'This USB connection type is not supported. Select an M5NanoC6 / AtomS3Lite running UIFlow2 in normal mode.',
+    zh: '不支持此 USB 设备的连接方式。请选择在普通模式下运行 UIFlow2 的 M5NanoC6 / AtomS3Lite。'
+  },
+  'USB通信の候補が複数あるため、安全に接続先を選べません。パソコン版Chrome／EdgeのUSB接続を使用してください。': {
+    en: 'There are multiple USB communication interfaces, so the app cannot safely select one. Use USB connection in Chrome / Edge on a computer.',
+    zh: '存在多个 USB 通信接口，无法安全地选择连接目标。请使用电脑版 Chrome / Edge 的 USB 连接。'
+  },
+  'USB機器の選択がキャンセルされたか、許可されませんでした。{details}': {
+    en: 'USB device selection was cancelled or denied. {details}',
+    zh: 'USB 设备选择已取消或未获许可。{details}'
+  },
+  '前回のUSB機器を安全に特定できません。「USBを選び直す」を押して機器を選んでください。': {
+    en: 'The previous USB device cannot be identified safely. Tap “Choose USB again” and select your device.',
+    zh: '无法安全地识别上次的 USB 设备。请点击“重新选择 USB”并选择设备。'
+  },
+  'USBの通信速度が正しくありません。': {
+    en: 'The USB baud rate is invalid.',
+    zh: 'USB 波特率无效。'
+  },
+  'USBの通信速度を設定できませんでした。': {
+    en: 'Could not set the USB baud rate.',
+    zh: '无法设置 USB 波特率。'
+  },
+  'USBの通常通信を開始できませんでした。': {
+    en: 'Could not start normal USB communication.',
+    zh: '无法开始正常的 USB 通信。'
+  },
+  'USBへの送信を完了できませんでした。ケーブルを確認して、つなぎ直してください。': {
+    en: 'Could not finish sending data over USB. Check the cable and reconnect.',
+    zh: '无法完成 USB 数据发送。请检查连接线并重新连接。'
+  },
+  'USBへの送信中に接続が切れました。{details}': {
+    en: 'USB connection was lost while sending data. {details}',
+    zh: '发送数据时 USB 连接已断开。{details}'
+  },
+  'USBからの受信を継続できませんでした。ケーブルを確認して、つなぎ直してください。': {
+    en: 'Could not continue receiving data over USB. Check the cable and reconnect.',
+    zh: '无法继续通过 USB 接收数据。请检查连接线并重新连接。'
+  },
+  'USBからの受信中に接続が切れました。{details}': {
+    en: 'USB connection was lost while receiving data. {details}',
+    zh: '接收数据时 USB 连接已断开。{details}'
+  },
+  'USBの接続処理中です。少し待ってから、もう一度操作してください。': {
+    en: 'A USB connection is being established or closed. Wait a moment and try again.',
+    zh: '正在建立或关闭 USB 连接。请稍等后再操作。'
   },
   "USBシリアル接続が切断されました。": {
     "en": "The USB serial connection was lost.",

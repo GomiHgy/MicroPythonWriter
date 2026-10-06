@@ -26,7 +26,7 @@ export function BootModePanel(props: BootModePanelProps) {
   const confirmed = ready || running
   const feedback = props.feedback
   const changing = feedback?.phase === 'saving' || feedback?.phase === 'resetting'
-  const reason = !props.supported ? 'パソコン版ChromeまたはEdgeで開き、機器をUSBで接続してください。'
+  const reason = !props.supported ? 'パソコン版Chrome・Edge、またはAndroid版Chromeで開き、機器をUSBで接続してください。'
     : disconnected ? 'まずUSBをつなぐと、今の設定を確認できます。接続しただけでは自動起動の設定は変わりません。'
       : props.state === 'error' ? 'USB操作をやり直してから、もう一度設定してください。'
         : !confirmed ? '機器の処理が終わるまで、ケーブルを抜かずに待ってください。'
@@ -39,7 +39,7 @@ export function BootModePanel(props: BootModePanelProps) {
     <p>{t('「停止」やUSB接続は、今の動作を止めるだけです。次の電源投入時も止めておきたいときは、下の設定を使います。')}</p>
     <p className="boot-preserve">{t('通常はダウンロードモードにする必要はありません。UIFlow2が動いている状態で操作します。')}</p>
     <ol className="boot-guide">
-      <li>{t('本体のボタンを押さずにUSBでパソコンにつなぎ、「USBをつなぐ」を押す。実行中の作品はアプリが停止を試みます。')}</li>
+      <li>{t('本体のボタンを押さずにUSBでパソコンまたは対応Androidスマホにつなぎ、「USBをつなぐ」を押す。実行中の作品はアプリが停止を試みます。')}</li>
       <li>{t('「自動実行しない設定に戻す」を押して、確認画面で続ける。')}</li>
       <li>{t('設定の保存後に機器を再起動します。USBをつなぎ直し、「自動実行 OFF」を確認する。')}</li>
     </ol>
