@@ -24,10 +24,10 @@ import { canOfferProgramRepair } from './services/programs/programErrorHelp'
 import { isLedModel } from './services/workshop/WorkshopProfile'
 import { buildStarterProgram, starterAvailability } from './services/projects/StarterProgram'
 import { hasSensitiveAssignments } from './services/prompt/RepairPromptBuilder'
-import { copyPreparationPrompt } from './services/prompt/PromptExport'
+import { copyPreparationPrompt, downloadRepairPrompt } from './services/prompt/PromptExport'
 import { useProgrammer } from './hooks/useProgrammer'
 import { useWorkshopPreparation } from './hooks/useWorkshopPreparation'
-import { isLocale, useLocale } from './i18n'
+import { isLocale, localeDefinition, supportedLocales, useLocale } from './i18n'
 import './App.css'
 
 const statusCopy: Record<string, { icon: string; eyebrow: string; title: string; description: string; tone: 'ready' | 'running' | 'waiting' | 'warning' | 'error' }> = {
@@ -299,7 +299,7 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [copyNotice])
 
-  useEffect(() => { document.documentElement.lang = locale === 'zh' ? 'zh-CN' : locale; document.title = 'M5NanoC6 / AtomS3Lite — MicroPython Writer' }, [locale])
+  useEffect(() => { document.documentElement.lang = localeDefinition(locale).htmlLang; document.title = 'M5NanoC6 / AtomS3Lite — MicroPython Writer' }, [locale])
 
   const copyPrompt = async () => {
     const prompt = app.error?.repairPrompt
@@ -316,6 +316,13 @@ export default function App() {
       const message = error instanceof Error && error.message ? error.message : 'クリップボードへの書込みが許可されませんでした。'
       setCopyNotice({ text: 'コピーに失敗しました: {message}', detail: message, failed: true, prompt })
     } finally { copyingRepair.current = false }
+  }
+
+  const saveRepairPrompt = () => {
+    const prompt = app.error?.repairPrompt
+    if (!prompt) return
+    const result = downloadRepairPrompt(prompt)
+    setCopyNotice({ text: result.message, failed: !result.ok, prompt })
   }
 
   const stampLog = () => timestamps ? app.log.split(/(?<=\n)/).map(line => `[${new Date().toLocaleTimeString()}] ${line}`).join('') : app.log
@@ -345,7 +352,7 @@ export default function App() {
     <header className="hero">
       <div className="brand"><img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} width={48} height={48} alt="" aria-hidden="true" /><div><p className="eyebrow">M5NanoC6 / AtomS3Lite</p><h1>{t("AIとフルカラーLED電飾をはじめよう")}</h1><p>{t(activeTab === 'program' ? 'USBでつないで、書いたプログラムをすぐ試せます。' : activeTab === 'preparation' ? '好きなAIと、光り方のアイデアを相談しよう。' : 'Bluetoothでつないで、光り方を手元で変えられます。')}</p></div></div>
       <button className="theme-button" onClick={() => setDark(value => !value)} aria-label={t(dark ? 'ライト表示に切り替え' : 'ダーク表示に切り替え')}>{t(dark ? '☀ 明るくする' : '🌙 暗くする')}</button>
-      <label className="language-picker"><span>{t("表示言語")}</span><select aria-label={t("表示言語")} value={locale} onChange={event => { if (isLocale(event.target.value)) setLocale(event.target.value) }}><option value="ja">日本語</option><option value="en">English</option><option value="zh">简体中文</option></select></label>
+      <label className="language-picker"><span>{t("表示言語")}</span><select aria-label={t("表示言語")} value={locale} onChange={event => { if (isLocale(event.target.value)) setLocale(event.target.value) }}>{supportedLocales.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
     </header>
 
     <div className="app-tabs" role="tablist" aria-label={t("使いたい機能")} onKeyDown={event => {
@@ -421,7 +428,8 @@ export default function App() {
     {app.error && canRepairCode && app.programFeedback?.phase !== 'failed' && <section className="notice danger program-repair-fallback" role="alert">
       <h2>{t('プログラムにエラーがあります')}</h2>
       <p>{t(app.error.message)}</p>
-      <button onClick={copyPrompt}>{t('AIに修正を頼む文章をコピー')}</button>
+      <div className="prompt-export-actions"><button onClick={copyPrompt}>{t('AIに修正を頼む文章をコピー')}</button><button className="quiet-button" onClick={saveRepairPrompt}>{t('修正依頼をファイルで保存')}</button></div>
+      <p>{t('Androidなどで全文を貼り付けられないときは、ファイルで保存して、AIの会話にその.txtファイルを添付して送信してください。添付できない場合は、ファイルを開いて全文をコピーしてください。')}</p>
       {currentCopyNotice && <p className={`copy-notice${currentCopyNotice.failed ? ' failed' : ''}`} role="status">{t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') })}</p>}
       <ol aria-label={t('プログラムを直して試す手順')}><li>{t('コードを作ったAIとの会話に貼って送る')}</li><li>{t('AIが返した修正版を、下のコード欄に貼る')}</li><li>{t('もう一度「実行」で試す')}</li></ol>
     </section>}
@@ -434,7 +442,7 @@ export default function App() {
         details?.scrollIntoView({ block: 'start' })
         details?.focus({ preventScroll: true })
       } : undefined} onRecover={app.state === 'error' ? app.normalMode : undefined}
-        onCopyRepair={canRepairCode ? copyPrompt : undefined} repairLine={app.error?.sourceKnown === false ? undefined : app.error?.line}
+        onCopyRepair={canRepairCode ? copyPrompt : undefined} onDownloadRepair={canRepairCode ? saveRepairPrompt : undefined} repairLine={app.error?.sourceKnown === false ? undefined : app.error?.line}
         repairSourceKnown={app.error?.sourceKnown !== false}
         repairPrompt={app.error?.repairPrompt}
         copyNotice={currentCopyNotice ? { message: t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') }), failed: currentCopyNotice.failed } : undefined}
@@ -465,7 +473,8 @@ export default function App() {
         <pre>{app.error.traceback}</pre>
         {app.error.sourceKnown === false && <p>{t("機器上の実行コードは未取得です。編集中のコードと同じとは確認できていません。")}</p>}
         {app.error.sourceKnown !== false && app.error.sourceSnapshot !== undefined && app.error.sourceSnapshot !== app.source && <p>{t("編集内容はエラー発生時から変わっています。AIへの修正依頼には、エラーが起きた時のコードを入れます。")}</p>}
-        <button onClick={copyPrompt}>{t("AIに相談する文章をコピー")}</button>
+        <div className="prompt-export-actions"><button onClick={copyPrompt}>{t("AIに相談する文章をコピー")}</button><button className="quiet-button" onClick={saveRepairPrompt}>{t('修正依頼をファイルで保存')}</button></div>
+        <p>{t('Androidなどで全文を貼り付けられないときは、ファイルで保存して、AIの会話にその.txtファイルを添付して送信してください。添付できない場合は、ファイルを開いて全文をコピーしてください。')}</p>
         <details open={currentCopyNotice?.failed}><summary>{t('修正依頼を手動でコピー')}</summary><textarea readOnly rows={9} value={app.error.repairPrompt} aria-label={t('AIへの修正依頼文')} /></details>
         {currentCopyNotice && <p className={`copy-notice${currentCopyNotice.failed ? ' failed' : ''}`} role="status">{t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') })}</p>}
       </details>}

@@ -37,18 +37,27 @@ export function preparationFileName(boardId: string, revision: string) {
 }
 
 export function downloadPreparationPrompt(text: string, boardId: string, revision: string, confirmSensitive?: SensitiveConfirmation): ExportResult {
+  return downloadPromptFile(text, preparationFileName(boardId, revision), () => allowPromptExport(text, confirmSensitive), '準備文のファイル保存を開始しました。ブラウザのダウンロードを確認してください。', 'ファイルを保存できませんでした。準備文のテキスト欄から手動でコピーしてください。', 'ファイル保存をキャンセルしました。準備文の内容を確認してください。')
+}
+
+export function downloadRepairPrompt(text: string, confirmSensitive: SensitiveConfirmation = message => confirm(message)): ExportResult {
+  const allowed = () => !!text && (!hasSensitiveAssignments(text) || confirmSensitive(translate(getLocale(), '修正依頼のコード・設定・ログにpassword、token、SSIDなどの情報らしき文字があります。内容を確認してファイルへ保存しますか？検出は補助で、すべての秘密情報を見つけられるわけではありません。')))
+  return downloadPromptFile(text, 'MicroPython-AI-repair.txt', allowed, '修正依頼のファイル保存を開始しました。ブラウザのダウンロードを確認してください。', 'ファイルを保存できませんでした。修正依頼のテキスト欄から手動でコピーしてください。', 'ファイル保存をキャンセルしました。修正依頼の内容を確認してください。')
+}
+
+function downloadPromptFile(text: string, filename: string, allowed: () => boolean, success: string, failure: string, cancelled: string): ExportResult {
   let url: string | undefined
   let anchor: HTMLAnchorElement | undefined
   try {
-    if (!allowPromptExport(text, confirmSensitive)) return { ok: false, cancelled: true, message: 'ファイル保存をキャンセルしました。準備文の内容を確認してください。' }
+    if (!allowed()) return { ok: false, cancelled: true, message: cancelled }
     url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = preparationFileName(boardId, revision)
+    anchor.download = filename
     document.body.appendChild(anchor)
     anchor.click()
-    return { ok: true, cancelled: false, message: '準備文のファイル保存を開始しました。ブラウザのダウンロードを確認してください。' }
-  } catch { return { ok: false, cancelled: false, message: 'ファイルを保存できませんでした。準備文のテキスト欄から手動でコピーしてください。' } }
+    return { ok: true, cancelled: false, message: success }
+  } catch { return { ok: false, cancelled: false, message: failure } }
   finally {
     anchor?.remove()
     const createdUrl = url

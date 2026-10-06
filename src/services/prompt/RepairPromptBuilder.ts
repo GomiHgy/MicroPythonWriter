@@ -1,8 +1,9 @@
 import type { DeviceInfo, ParsedTraceback } from '../../types'
 import { boardDefinitions, identifyBoard, identifySoc, isBoardId } from '../../config/boards'
 import type { Locale } from '../../i18n/types'
-import { appMessages } from '../../i18n/appMessages'
-import { serviceMessages } from '../../i18n/serviceMessages'
+import { translate } from '../../i18n'
+import { basePromptLocale } from '../../i18n/locales'
+import { promptLanguageName } from './PromptLanguage'
 import { createWorkshopContext, type WorkshopContext } from './WorkshopRules'
 import { buildMemoryPressureRules } from './MemoryPressureRules'
 import { buildLedTransmissionRules } from './LedTransmissionRules'
@@ -12,13 +13,14 @@ import { buildOutputLanguageContract } from './OutputLanguageRules'
 import { buildLanguageRecoveryPrompt } from './LanguageRecoveryPrompt'
 
 function unknownProtocolRules(locale: Locale) {
+  const base = basePromptLocale(locale)
   const guards = {
     ja: '## 通信仕様が未確認の場合の適用範囲\n以下のNanoLEDルールは、記録された修正対象main.pyがNanoLEDを使用していると確認できた部分だけに適用する。BLE未使用・独自プロトコルなら新規導入せず、NanoLED v1なら共通送信条件のみ適用してv2へ移行しない。続くv2仕様は既存main.pyがv2の場合だけの修正条件であり、機能追加の依頼ではない。登録済み基準コード・作品・確認記録は自動変更しない。',
     en: '## Scope when the communication protocol is unconfirmed\nApply the following NanoLED rules only where the captured repair-target main.py is confirmed to use NanoLED. Do not introduce BLE/NanoLED into non-BLE or custom-protocol code. For v1 use only the shared transport rules, never upgrade to v2. The v2 section is conditional on existing v2 code, not a request to add features. Do not automatically modify registered baselines, artwork or verification records.',
     zh: '## 通信协议未确认时的适用范围\n以下 NanoLED 规则仅适用于已确认修复对象 main.py 使用 NanoLED 的部分。未使用 BLE 或使用独自协议时不新引入 BLE/NanoLED；v1 只应用共用传输规则，不升级为 v2。后面的 v2 规范仅为既有 v2 代码的修复条件，不是添加功能的要求。不自动修改已登记基准代码、作品或验证记录。',
   }
   // v1の修正にv2のカタログや操作を追加させないよう、適用範囲を明記する。
-  return `${guards[locale]}\n\n${nanoLedTransportRules[locale]}\n\n${nanoLedV2Rules[locale].replace(nanoLedTransportRules[locale], '')}`
+  return `${guards[base]}\n\n${nanoLedTransportRules[base]}\n\n${nanoLedV2Rules[base].replace(nanoLedTransportRules[base], '')}`
 }
 
 const sensitive = /(?:password|passwd|pswd|api_key|token|secret|ssid)\s*=\s*[^\n#]+/i
@@ -26,7 +28,7 @@ export const hasSensitiveAssignments = (source: string) => sensitive.test(source
 
 function metadata(locale: Locale, value: string) {
   if (locale === 'ja') return value
-  return serviceMessages[value]?.[locale] ?? appMessages[value]?.[locale] ?? value
+  return translate(locale, value)
 }
 
 // Translate only application sentinels; actual device values and captured payloads stay verbatim.
@@ -100,7 +102,8 @@ export class RepairPromptBuilder {
   build(error: ParsedTraceback, source: string, device: DeviceInfo, terminalLog: string, stage: string, workshop: WorkshopContext | null = null, options: { sourceKnown?: boolean; locale?: Locale } = {}) {
     const locale = options.locale ?? workshop?.locale ?? 'ja'
     if (error.exceptionType === 'ARDUINO_SOURCE_DETECTED') return buildLanguageRecoveryPrompt(workshop, locale)
-    const text = copy[locale]
+    const text = copy[basePromptLocale(locale)]
+    const intro = text.intro.replace('Respond in English.', `Respond in ${promptLanguageName(locale)}.`)
     // Locale may change, but the captured profile/code/device must not change.
     const context = workshop && workshop.locale !== locale ? createWorkshopContext(workshop.profile, locale) : workshop
     const sourceKnown = options.sourceKnown !== false
@@ -117,7 +120,7 @@ export class RepairPromptBuilder {
     const workshopSection = context ? `\n\n## ${text.workshop}\n${context.errors.length ? `${text.invalid}\n${context.errors.map(message => `- ${message}`).join('\n')}\n\n` : ''}${context.rules}` : ''
     return `${buildOutputLanguageContract(locale)}
 
-${text.intro.replace('{board}', target)}
+${intro.replace('{board}', target)}
 ${sourceKnown ? text.knownError : text.unknownError}
 
 ## ${text.environment}

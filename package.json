@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run check:licenses && npm run check:pwa",
+    "build": "npm run check:locales && tsc -b && vite build && npm run check:licenses && npm run check:pwa",
+    "check:locales": "node scripts/check-locales.mjs",
     "check:licenses": "node scripts/check-licenses.ts",
     "check:pwa": "node scripts/check-pwa.ts",
     "lint": "eslint .",

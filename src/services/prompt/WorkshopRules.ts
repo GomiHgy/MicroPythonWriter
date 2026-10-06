@@ -9,6 +9,9 @@ import { buildMemoryPressureRules } from './MemoryPressureRules'
 import { buildLedTransmissionRules } from './LedTransmissionRules'
 import { buildRgbGainRules } from './RgbGainRules'
 import { buildButtonGestureRules } from './ButtonGestureRules'
+import { isBaseLocale } from '../../i18n/locales'
+import { translate } from '../../i18n'
+import { promptLanguageGuide } from './PromptLanguage'
 
 export interface WorkshopContext {
   locale: Locale
@@ -133,6 +136,15 @@ ${nanoLedTransportRules.ja}
 ${remoteOffFadeRules.ja}`
 
 export function createWorkshopContext(input: WorkshopProfile, locale: Locale = 'ja'): WorkshopContext {
+  if (!isBaseLocale(locale)) {
+    const context = createWorkshopContext(input, 'en')
+    return { ...context, locale,
+      errors: validateWorkshopProfile(context.profile).map(text => translate(locale, text)),
+      bleReasons: getBlePreparationReasons(context.profile).map(text => translate(locale, text)),
+      controllerStarterError: context.controllerStarterError ? translate(locale, '対応プログラムを準備できません。機器・UIFlow2版・RGB LED数（1〜300個）・外部LEDピン・最大輝度の設定を確認してください。') : undefined,
+      rules: `${promptLanguageGuide(locale)}\n\n${context.rules}`,
+    }
+  }
   const profile = cloneWorkshopProfile(input)
   const errors = validateWorkshopProfile(profile).map(text => translateWorkshop(locale, text))
   const bleReasons = getBlePreparationReasons(profile).map(text => translateWorkshop(locale, text))
@@ -144,11 +156,7 @@ export function createWorkshopContext(input: WorkshopProfile, locale: Locale = '
       controllerStarter = buildControllerStarter(profile)
       bleSource = 'bundled-candidate'
     } catch {
-      controllerStarterError = locale === 'ja'
-        ? '対応プログラムを準備できません。機器・UIFlow2版・RGB LED数（1〜300個）・外部LEDピン・最大輝度の設定を確認してください。'
-        : locale === 'en'
-          ? 'The controller starter cannot be prepared. Check the board, UIFlow2 version, RGB LED count (1–300), external LED pin and maximum brightness settings.'
-          : '无法准备控制器入门程序。请检查设备、UIFlow2 版本、RGB LED 数量（1–300）、外接 LED 引脚及最大亮度设置。'
+      controllerStarterError = translateWorkshop(locale, '対応プログラムを準備できません。機器・UIFlow2版・RGB LED数（1〜300個）・外部LEDピン・最大輝度の設定を確認してください。')
     }
   }
   const bleEnabled = bleSource !== 'none'

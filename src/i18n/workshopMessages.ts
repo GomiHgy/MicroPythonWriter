@@ -1,6 +1,9 @@
 import type { Locale, MessageCatalog } from './types'
+import { isBaseLocale } from './locales'
+import { localeDictionaries } from './localeDictionaries'
 
 export const workshopMessages: MessageCatalog = {
+  '対応プログラムを準備できません。機器・UIFlow2版・RGB LED数（1〜300個）・外部LEDピン・最大輝度の設定を確認してください。': { en: 'The controller starter cannot be prepared. Check the board, UIFlow2 version, RGB LED count (1–300), external LED pin and maximum brightness settings.', zh: '无法准备控制器入门程序。请检查设备、UIFlow2 版本、RGB LED 数量（1–300）、外接 LED 引脚及最大亮度设置。' },
   'NanoLED v1またはv2対応の実機確認が必要です。再生・停止・アクションにはv2の確認が必要です。': { en: 'Hardware verification of NanoLED v1 or v2 is required. Playback, pause and actions require v2 verification.', zh: '需要 NanoLED v1 或 v2 的实机验证。播放、暂停及动作需要验证 v2。' },
   'NanoLED v1/v2はRGB・1〜300個のLEDに対応します。使用するLED数や形式が対応しているか確認してください。': { en: 'NanoLED v1/v2 supports 1–300 RGB LEDs. Check the LED count and format.', zh: 'NanoLED v1/v2 支持 1–300 个 RGB LED。请确认 LED 数量和格式。' },
   '外部LEDピンは0〜48の整数で入力し、使用機器で出力可能なGPIOと配線を確認してください。': { en: 'Enter an external LED pin as an integer from 0 to 48. Check that your device supports output on this GPIO and verify the wiring.', zh: '外接 LED 引脚请输入 0 到 48 的整数，并确认设备支持该 GPIO 输出及接线正确。' },
@@ -29,4 +32,4 @@ export const workshopMessages: MessageCatalog = {
   'NanoLED v1はRGB・1〜300個のLEDに対応します。使用するLED数や形式が対応しているか確認してください。': { en: 'NanoLED v1 supports 1–300 RGB LEDs. Check that your LED count and format are supported.', zh: 'NanoLED v1 支持 1–300 个 RGB LED。请确认所用 LED 的数量和格式是否受支持。' },
 }
 
-export const translateWorkshop = (locale: Locale, text: string) => locale === 'ja' ? text : workshopMessages[text]?.[locale] ?? text
+export const translateWorkshop = (locale: Locale, text: string) => locale === 'ja' ? text : (!isBaseLocale(locale) ? localeDictionaries[locale][text] : workshopMessages[text]?.[locale]) ?? workshopMessages[text]?.en ?? text

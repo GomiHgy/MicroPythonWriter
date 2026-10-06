@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { workshopPresets } from '../config/workshops'
-import type { Locale } from '../i18n/types'
+import type { BaseLocale as Locale } from '../i18n/types'
 import { buildMemoryPressureRules } from '../services/prompt/MemoryPressureRules'
 import { copyPreparationPrompt, downloadPreparationPrompt } from '../services/prompt/PromptExport'
 import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'

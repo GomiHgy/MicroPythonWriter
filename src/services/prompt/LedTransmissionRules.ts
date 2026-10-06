@@ -1,8 +1,9 @@
-import type { Locale } from '../../i18n/types'
+import type { BaseLocale, Locale } from '../../i18n/types'
+import { basePromptLocale } from '../../i18n/locales'
 
 // 初回準備文と、設定情報のない場合を含む修正依頼文で送信方針を共有する。
 // 既存の作品・登録基準コード・実機確認記録自体を書き換える機能ではない。
-const rules: Record<Locale, string> = {
+const rules: Record<BaseLocale, string> = {
   ja: `## LED送信のちらつき抑制
 - 同じ表示の不要な再送を減らす。対象は既存のLED送信処理であり、作品の色・明るさ・速さ・繰り返し回数・起動状態・GPIO・実接続LED数・RGB/BPP=3・最大輝度を維持する。NanoC6とAtomS3Liteの設定を混同せず、LED_COUNTへ2を加えたり特定の個数・輝度へ固定したりしない。
 - 次フレームのnext_frameと最終送信済みのlast_sent_frameは、それぞれ全LED分のbytearray(LED_COUNT * LED_BPP)として初期化時に別々に確保し再利用する。最大輝度・利用者の明るさ・RGBゲイン補正・フェード・補間・消灯をすべて適用した最終GRBバイト列で比較する。有効なlast_sent_frameと一致し、force=Trueでなければbitstreamと前後の待ちだけを省略する。
@@ -48,5 +49,5 @@ const rules: Record<Locale, string> = {
 }
 
 export function buildLedTransmissionRules(locale: Locale): string {
-  return rules[locale]
+  return rules[basePromptLocale(locale)]
 }

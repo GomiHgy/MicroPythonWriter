@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocale } from '../i18n'
 import { isArduinoSource } from '../services/editor/sourceLanguage'
 import { buildLanguageRecoveryPrompt } from '../services/prompt/LanguageRecoveryPrompt'
-import { copyPreparationPrompt } from '../services/prompt/PromptExport'
+import { copyPreparationPrompt, downloadRepairPrompt } from '../services/prompt/PromptExport'
 import type { WorkshopContext } from '../services/prompt/WorkshopRules'
 import './PasteCodeButton.css'
 
@@ -48,7 +48,11 @@ export function CopyLanguageRecoveryButton({ workshop, disabled = false }: Pick<
     }
   }
   return <div className="language-recovery-tools">
-    <button type="button" disabled={busy || disabled} aria-busy={busy} onClick={copy}>{t(busy ? '依頼文をコピー中…' : 'AIにMicroPython版を頼む文章をコピー')}</button>
+    <div className="prompt-export-actions"><button type="button" disabled={busy || disabled} aria-busy={busy} onClick={copy}>{t(busy ? '依頼文をコピー中…' : 'AIにMicroPython版を頼む文章をコピー')}</button><button type="button" className="quiet-button" disabled={busy || disabled} onClick={() => {
+      const result = downloadRepairPrompt(prompt)
+      setNotice({ ok: result.ok, message: result.message, prompt })
+    }}>{t('修正依頼をファイルで保存')}</button></div>
+    <p>{t('Androidなどで全文を貼り付けられないときは、ファイルで保存して、AIの会話にその.txtファイルを添付して送信してください。添付できない場合は、ファイルを開いて全文をコピーしてください。')}</p>
     {currentNotice && <p role="status" aria-live="polite" aria-atomic="true">{t(currentNotice.message)}</p>}
     <details open={currentNotice?.ok === false}><summary>{t('AIに頼む文章を見る・手動でコピー')}</summary><textarea readOnly value={prompt} rows={9} aria-label={t('MicroPython版への修正依頼文')} /></details>
   </div>

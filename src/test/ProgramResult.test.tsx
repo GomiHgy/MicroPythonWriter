@@ -28,6 +28,19 @@ const render = (patch: Partial<ProgramFeedback> = {}, props: Partial<Parameters<
 afterEach(() => setLocale('ja'))
 
 describe('機器への書き込み結果', () => {
+  it('修正依頼のコピーとファイル保存を隣接表示し、全文添付の手順を示す', () => {
+    const copy = vi.fn(), save = vi.fn()
+    const view = render({ phase: 'failed' }, { onCopyRepair: copy, onDownloadRepair: save })
+    const row = all(view, element => element.props.className === 'prompt-export-actions')[0]
+    const buttons = all(row, element => element.type === 'button')
+    expect(buttons).toHaveLength(2)
+    expect(text(buttons[1])).toBe('修正依頼をファイルで保存')
+    ;(buttons[1].props.onClick as () => void)()
+    expect(save).toHaveBeenCalledOnce()
+    expect(copy).not.toHaveBeenCalled()
+    expect(text(view)).toContain('.txtファイルを添付')
+    expect(text(render({}, { onCopyRepair: copy, onDownloadRepair: save }))).not.toContain('修正依頼をファイルで保存')
+  })
   it.each([
     ['preparing', false, '書き込みの準備中です'],
     ['writing', false, '機器へ書き込んでいます…'],

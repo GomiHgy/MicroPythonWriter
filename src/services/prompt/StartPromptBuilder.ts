@@ -3,10 +3,12 @@ import { boardDefinitions } from '../../config/boards'
 import { MAX_NAMED_CONTROLS } from '../../config/bleLimits'
 import { buildButtonGestureQuestion } from './ButtonGestureRules'
 import { buildOutputLanguageContract } from './OutputLanguageRules'
+import { basePromptLocale } from '../../i18n/locales'
+import { promptLanguageName } from './PromptLanguage'
 
 function namedControlsCheck(context: WorkshopContext, generating = false): string {
   if (!context.controllerEnabled || (context.bleSource !== 'bundled-candidate' && !context.profile.baseline.verification?.nanoLedV2)) return ''
-  if (context.locale === 'en') return generating
+  if (basePromptLocale(context.locale) === 'en') return generating
     ? `- Immediately before generation, recount named modes plus actions, including fixed/AI-added actions. Generate only when the combined count is at most ${MAX_NAMED_CONTROLS} and the separate 4096-byte check passes; never silently remove controls. Recheck after additional requests.`
     : `- Follow the early named-button count rules above during consultation. Before approval show the actual combined count / maximum ${MAX_NAMED_CONTROLS} with modes/actions separately, and agree on feasible consolidation before accepting an oversized order.`
   if (context.locale === 'zh') return generating
@@ -21,7 +23,7 @@ function controllerQuestions(context: WorkshopContext): string {
   if (!context.controllerEnabled) return ''
   const v2 = context.bleSource === 'bundled-candidate' || context.profile.baseline.verification?.nanoLedV2 === true
   const button = context.profile.features.button
-  if (context.locale === 'en') return `
+  if (basePromptLocale(context.locale) === 'en') return `
 - Include a question about how to control the lighting, not only button gestures. Offer ${button ? '"Onboard button / Web remote / Both / Choose for me"' : '"Mainly the Web remote / Light automatically on power-up and adjust with the Web remote / Choose for me"'}. ${button ? 'If both are chosen, share the same effects across button and remote controls.' : 'The onboard button is disabled: do not offer button operations or a Both option.'}
 - Also ask which remote operations they want, using plain choices: ${v2 ? '"See reported LED state / Adjust brightness / Play, pause and turn lights off / Named lighting modes and one-shot action buttons / Choose for me"' : '"See reported LED state / Adjust brightness / Switch lighting modes and turn lights off / Adjust speed / Choose for me"'}. Multiple choices are allowed. ${v2 ? 'Ask for friendly effect/action names, not protocol IDs; keep pause (hold the current frame) distinct from lights off.' : 'This registered v1 program does not support playback pause/resume, named v2 catalogs or one-shot actions. Do not offer them or automatically upgrade to v2.'}
 - Count these within the maximum 6 questions, one question per reply; skip anything already answered. Do not ask for UUIDs or APIs. After code is ready: prepare it in Program, explicitly Run on the device, then open Controller, connect and check its reported state against the actual LEDs.`
@@ -38,10 +40,10 @@ function controllerQuestions(context: WorkshopContext): string {
 export function buildStartPrompt(context: WorkshopContext): string {
   if (context.errors.length) return ''
   const buttonPin = boardDefinitions[context.profile.boardId].buttonPin
-  if (context.locale === 'en') return `${buildOutputLanguageContract(context.locale)}
+  if (basePromptLocale(context.locale) === 'en') return `${buildOutputLanguageContract(context.locale)}
 
 You are a programming support AI for beginners creating full-color LED lighting.
-Users are not engineers and may be unfamiliar with AI and programming. Respond in English. Explain technical terms briefly and only when needed.
+Users are not engineers and may be unfamiliar with AI and programming. Respond in ${promptLanguageName(context.locale)}. Explain technical terms briefly and only when needed. Translate all example questions and choices below into the response language.
 Maintain the following fixed specifications and available features throughout this conversation.
 
 ${context.rules}
@@ -54,14 +56,14 @@ ${controllerQuestions(context)}
 ${buildButtonGestureQuestion(context.locale, context.profile.features.button)}
 ${namedControlsCheck(context)}
 - Turn wishes such as "cute" or "magical" into color, lighting pattern, direction, speed, trigger, repetition, ending state and mood. Use fixed defaults for unimportant omissions and briefly explain adopted defaults.
-- After questions, summarize startup behavior, enabled button/BLE actions, colors, patterns, speed, repetition, ending state, mood and defaults in English, and ask for confirmation.
+- After questions, summarize startup behavior, enabled button/BLE actions, colors, patterns, speed, repetition, ending state, mood and defaults in ${promptLanguageName(context.locale)}, and ask for confirmation.
 - Normally wait for confirmation such as "Build this" before producing complete code. If the user already gives sufficient specifications and clearly asks for code, skip unnecessary questions.
 
 ## Producing code
 ${buildOutputLanguageContract(context.locale)}
 ${namedControlsCheck(context, true)}
-- Summarize the behavior in 3–6 simple English lines, then output the complete main.py without omissions in one Python code block. Do not use line numbers, patches only or "and so on".
-- Write English comments. Use ASCII letters, digits and underscores for identifiers. Group settings at the top, use short functions, and avoid undefined variables, unnecessary imports and overly complex classes.
+- Summarize the behavior in 3–6 simple ${promptLanguageName(context.locale)} lines, then output the complete main.py without omissions in one Python code block. Do not use line numbers, patches only or "and so on".
+- Write ${promptLanguageName(context.locale)} comments. Use ASCII letters, digits and underscores for identifiers. Group settings at the top, use short functions, and avoid undefined variables, unnecessary imports and overly complex classes.
 - Before output, statically check MicroPython compatibility, external LED GPIO${context.profile.ledPin}, button GPIO${buttonPin} when enabled, no initialization or actions for unused features, LED count/BPP, fixed bitstream values, complete-frame GRB order, brightness limits on every output, 200ms trigger and progress preservation, nonblocking execution, preservation of the enabled BLE baseline, and complete source.
 - Briefly list static checks and items not tested on hardware, not private reasoning. Never call AI-generated code hardware-verified if you did not run it on hardware.
 - Give brief operating steps: paste the generated code into MicroPythonWriter's "Program" editor and try it with "Run". Do not automatically write, run or change startup settings.`

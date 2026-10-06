@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getLocale, isLocale, messages, setLocale, translate } from '../i18n'
+import { supportedLocales } from '../i18n/locales'
 import appSource from '../App.tsx?raw'
 import preparationSource from '../components/AiPreparationPanel.tsx?raw'
 import bluetoothSource from '../components/BluetoothPanel.tsx?raw'
@@ -14,9 +15,10 @@ import ts from 'typescript'
 afterEach(() => { setLocale('ja'); vi.unstubAllGlobals() })
 
 describe('表示言語', () => {
-  it('日本語・英語・簡体字だけを受け付ける', () => {
-    expect(['ja', 'en', 'zh'].map(isLocale)).toEqual([true, true, true])
-    expect(['fr', 'zh-TW', '', null].some(isLocale)).toBe(false)
+  it('指定された9言語を受け付け、未知の値は受け付けない', () => {
+    expect(supportedLocales).toHaveLength(9)
+    expect(['ja', 'en', 'zh', 'zh-TW', 'es', 'de', 'fr', 'ko', 'pt'].every(isLocale)).toBe(true)
+    expect(['unknown', 'zh-HK', '', null].some(isLocale)).toBe(false)
   })
   it('言語を保存し、保存拒否でも切り替えられる', () => {
     const setItem = vi.fn()
@@ -36,9 +38,11 @@ describe('表示言語', () => {
   it('全翻訳が存在し、動的パラメータを保持する', () => {
     const tokens = (value: string) => [...value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map(match => match[1]).sort()
     for (const [source, translations] of Object.entries(messages)) {
-      for (const locale of ['en', 'zh'] as const) {
-        expect(translations[locale].trim(), `${locale}: ${source}`).not.toBe('')
-        expect(tokens(translations[locale]), `${locale}: ${source}`).toEqual(tokens(source))
+      for (const { id: locale } of supportedLocales) {
+        if (locale === 'ja') continue
+        expect(translations[locale], `${locale}: ${source}`).toBeDefined()
+        expect(translations[locale]?.trim(), `${locale}: ${source}`).not.toBe('')
+        expect(tokens(translations[locale] ?? ''), `${locale}: ${source}`).toEqual(tokens(source))
       }
     }
   })

@@ -19,7 +19,7 @@ import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_
 import type { ArtworkProject } from '../services/projects/types'
 import type { SavedProgram } from '../services/programs/ProgramLibrary'
 import type { AppError } from '../types'
-import { setLocale, translate } from '../i18n'
+import { supportedLocales, localeDefinition, setLocale, translate } from '../i18n'
 import { PwaPanel } from '../components/PwaPanel'
 import { beginPwaUpdate, endPwaUpdate } from '../services/pwa/PwaActivity'
 
@@ -153,7 +153,8 @@ it('ログを閉じていても実機エラーと修正への案内は隠さな�
   expect(all(folded, element => element.props.id === 'program-error-details')).toHaveLength(0)
   const help = find(view, element => element.props.className === 'notice danger program-repair-fallback')
   expect(help.props.role).toBe('alert')
-  expect(find(help, element => element.type === 'button').props.children).toBe('AIに修正を頼む文章をコピー')
+  const actions = find(help, element => element.props.className === 'prompt-export-actions')
+  expect(all(actions, element => element.type === 'button').map(button => button.props.children)).toEqual(['AIに修正を頼む文章をコピー', '修正依頼をファイルで保存'])
 })
 
 it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja', 'en', 'zh'] as const).map(locale => [tab, locale] as const)))('%sタブの%sでも共通のバージョンとライセンス欄を1か所ずつ表示する', (tab, locale) => {
@@ -218,6 +219,39 @@ function event(element: Element, name: string, value?: unknown) {
   expect(handler).toBeTypeOf('function')
   return (handler as (event: unknown) => unknown)(value)
 }
+
+it.each(supportedLocales)('$id へ切り替えても接続・コード・表示中タブを維持し、HTML言語を設定する', ({ id }) => {
+  harness.runDependentEffects = true
+  event(byId(render(), 'tab-preparation'), 'onClick')
+  const before = harness.programmer.source
+  const picker = find(render(), element => element.type === 'select' && element.props['aria-label'] === '表示言語')
+  expect(all(picker, element => element.type === 'option').map(item => item.props.value)).toEqual(supportedLocales.map(item => item.id))
+  event(picker, 'onChange', { target: { value: id } })
+  const view = render()
+  expect(byId(view, 'panel-preparation').props.hidden).toBe(false)
+  expect(find(view, element => element.type === CodeEditor).props.value).toBe(before)
+  expect(document.documentElement.lang).toBe(localeDefinition(id).htmlLang)
+  assertNoUsbOperations()
+})
+
+it('修正依頼のファイル保存は全文を渡すだけでコード・機器操作を変更しない', async () => {
+  harness.programmer.error = { exceptionType: 'ValueError', message: 'test', stage: 'RUN', traceback: '原文', repairPrompt: '診断全文\r\nコード\n原文ログ\n末尾', sourceKnown: true } as AppError
+  const before = harness.programmer.source
+  const anchor = { href: '', download: '', click: vi.fn(), remove: vi.fn() }
+  vi.stubGlobal('document', { getElementById: harness.getElementById, createElement: () => anchor, body: { appendChild: vi.fn() }, documentElement: { dataset: {} } })
+  const create = vi.mocked(URL.createObjectURL)
+  const view = render()
+  const section = find(view, element => element.props.className === 'notice danger program-repair-fallback')
+  const buttons = all(section, element => element.type === 'button')
+  event(buttons[1], 'onClick')
+  expect(await (create.mock.calls.at(-1)![0] as Blob).text()).toBe(harness.programmer.error.repairPrompt)
+  expect(anchor.download).toBe('MicroPython-AI-repair.txt')
+  expect(anchor.click).toHaveBeenCalledOnce()
+  const notice = find(render(), element => element.props.className === 'notice danger program-repair-fallback')
+  expect(all(notice, element => element.props.role === 'status')[0].props.children).toContain('保存を開始')
+  expect(harness.programmer.source).toBe(before)
+  assertNoUsbOperations()
+})
 
 beforeEach(() => {
   setLocale('ja')

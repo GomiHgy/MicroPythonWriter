@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { workshopPresets } from '../config/workshops'
-import type { Locale } from '../i18n/types'
+import type { BaseLocale as Locale } from '../i18n/types'
 import { buildButtonGestureQuestion, buildButtonGestureRules } from '../services/prompt/ButtonGestureRules'
 import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'
 import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'

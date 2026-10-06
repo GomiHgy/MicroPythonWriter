@@ -1,9 +1,10 @@
 import type { Locale } from '../../i18n/types'
+import { basePromptLocale } from '../../i18n/locales'
 
 // ボタンを使わない設定では、手順や質問を追加しない。
 export function buildButtonGestureRules(locale: Locale, enabled: boolean): string {
   if (!enabled) return ''
-  if (locale === 'en') return `## Physical-button gestures
+  if (basePromptLocale(locale) === 'en') return `## Physical-button gestures
 - For new code using the physical button, support single click, double click and 1-second long press as the basic gesture choices. Single click is the basic operation; ask whether double click and 1-second long press should also be used, and assign only the chosen gestures. Do not invent actions for unselected gestures or require all three.
 - Unless the artwork explicitly specifies otherwise, use LONG_PRESS_MS = 1000 and DOUBLE_CLICK_MS = 350. Read active-LOW input in the main loop, debounce for about 40ms, and measure elapsed time using time.ticks_ms()/time.ticks_diff(). Never sleep for the click window or hold duration; keep LEDs and enabled BLE responsive.
 - When double click is enabled, defer the first single click until the window after the first debounced release expires. A second debounced press within that window followed by a short release completes one double click, with no extra single clicks. Reserve that pending second press until it is released or becomes a long press. An enabled long press fires once at the threshold, cancels pending clicks, and must not fire a single/double click on release or repeat while held. In particular, a long second press must not also trigger the first pending single click. Keep unselected gestures from invoking unrelated effects.
@@ -22,7 +23,7 @@ export function buildButtonGestureRules(locale: Locale, enabled: boolean): strin
 
 export function buildButtonGestureQuestion(locale: Locale, enabled: boolean): string {
   if (!enabled) return ''
-  if (locale === 'en') return '- If physical-button control is chosen, ask: "Along with single click, would you like double click or a 1-second long press?" Offer "Single click only / Add double click / Add 1-second long press / Use all three / Choose for me". Count this within the maximum 6 questions and ask only one question per reply. Skip it for Web-remote-only or automatic-only control, a disabled button, or an already answered choice. If Choose for me is selected without other requirements, use single click only and briefly explain; do not silently add other gestures. Agree on each chosen gesture\'s effect within the existing questions and final summary, marking unused gestures as unused. Preserve explicitly specified gestures and durations.'
+  if (basePromptLocale(locale) === 'en') return '- If physical-button control is chosen, ask: "Along with single click, would you like double click or a 1-second long press?" Offer "Single click only / Add double click / Add 1-second long press / Use all three / Choose for me". Count this within the maximum 6 questions and ask only one question per reply. Skip it for Web-remote-only or automatic-only control, a disabled button, or an already answered choice. If Choose for me is selected without other requirements, use single click only and briefly explain; do not silently add other gestures. Agree on each chosen gesture\'s effect within the existing questions and final summary, marking unused gestures as unused. Preserve explicitly specified gestures and durations.'
   if (locale === 'zh') return '- 选择实体按钮操作时，询问：“除了单击，还想使用双击或长按 1 秒吗？”提供“只用单击 / 增加双击 / 增加长按 1 秒 / 三种都用 / 帮我决定”五个选项。计入最多 6 题，每次只问一题。仅用网页遥控器、仅自动运行、按钮禁用或已经回答时，不再询问。无其他要求且选择“帮我决定”时，只采用单击并简短说明，不擅自增加其他手势。在现有问题及最终汇总中确认各选定手势的动作，并把未使用手势标为不使用。保留作品明确指定的手势和时长。'
   return '- 物理ボタンで操作する場合は「シングルクリックに加えて、ダブルクリックや1秒長押しも使いますか？」と質問し、「シングルクリックだけ / ダブルクリックも使う / 1秒長押しも使う / 3種類すべて使う / おまかせ」の5択を示す。最大6問の中に含め、1回に1問だけ聞く。Webリモコンだけ・自動動作だけを選んだ場合、ボタン無効時、回答済みの場合は質問しない。ほかに希望がなく「おまかせ」ならシングルクリックだけを採用して短く説明し、ほかの押し方を勝手に追加しない。選んだ各押し方の動作は既存の質問と最終仕様まとめの中で確認し、未使用は未使用と明記する。作品で明示された押し方・時間は維持する。'
 }

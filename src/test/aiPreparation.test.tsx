@@ -53,6 +53,16 @@ beforeEach(() => { setLocale('ja'); harness.slots = []; harness.cursor = 0; harn
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('AIの準備パネル', () => {
+  it('準備文のコピーとファイル保存を隣接表示し、Androidの全文添付方法を示す', () => {
+    const panel = render(preparation())
+    const row = find(panel, element => element.props.className === 'prompt-export-actions')
+    const buttons = all(row, element => element.type === 'button')
+    expect(buttons).toHaveLength(2)
+    expect(content(buttons[0])).toContain('準備文をコピー')
+    expect(content(buttons[1])).toBe('準備文をファイルで保存')
+    expect(content(panel)).toContain('.txtファイルを添付')
+    expect(all(panel, element => element.type === 'button' && content(element) === '準備文をファイルで保存')).toHaveLength(1)
+  })
   const wirelessProfile = (): WorkshopProfile => ({ ...structuredClone(profile), features: { button: true, ble: true, controller: true } })
   it.each(['ja', 'en', 'zh'] as const)('%s で基準コード登録の代わりに準備・実行・リモコンの3手順を示す', locale => {
     setLocale(locale)

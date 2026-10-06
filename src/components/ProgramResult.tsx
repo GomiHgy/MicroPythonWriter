@@ -9,6 +9,7 @@ interface Props {
   onShowError?: () => void
   onRecover?: () => void
   onCopyRepair?: () => void
+  onDownloadRepair?: () => void
   repairLine?: number
   repairSourceKnown?: boolean
   repairPrompt?: string
@@ -16,7 +17,7 @@ interface Props {
   onReconnect?: () => void
 }
 
-export function ProgramResult({ feedback, source, connected, onShowError, onRecover, onCopyRepair, repairLine, repairSourceKnown = true, repairPrompt, copyNotice, onReconnect }: Props) {
+export function ProgramResult({ feedback, source, connected, onShowError, onRecover, onCopyRepair, onDownloadRepair, repairLine, repairSourceKnown = true, repairPrompt, copyNotice, onReconnect }: Props) {
   const { t } = useLocale()
   const { phase, saved, operation, failedAt } = feedback
   const pending = ['preparing', 'writing', 'verifying', 'starting'].includes(phase)
@@ -94,7 +95,8 @@ export function ProgramResult({ feedback, source, connected, onShowError, onReco
     {feedback.message && (failed || disconnected) && <p className="program-result-error">{t('エラー内容')}: {t(feedback.message)}</p>}
     {failed && onCopyRepair && <div className="program-result-repair">
       {repairLine !== undefined && <p>{t('エラーが起きたコードの{line}行目を確認します。', { line: repairLine })}</p>}
-      <button className="repair-copy-button" onClick={onCopyRepair}>{t('AIに修正を頼む文章をコピー')}</button>
+      <div className="prompt-export-actions"><button className="repair-copy-button" onClick={onCopyRepair}>{t('AIに修正を頼む文章をコピー')}</button>{onDownloadRepair && <button className="quiet-button" onClick={onDownloadRepair}>{t('修正依頼をファイルで保存')}</button>}</div>
+      {onDownloadRepair && <p className="program-result-repair-note">{t('Androidなどで全文を貼り付けられないときは、ファイルで保存して、AIの会話にその.txtファイルを添付して送信してください。添付できない場合は、ファイルを開いて全文をコピーしてください。')}</p>}
       {copyNotice && <p className={`repair-copy-notice${copyNotice.failed ? ' failed' : ''}`} role="status">{copyNotice.message}</p>}
       {copyNotice?.failed && repairPrompt && <details open><summary>{t('修正依頼を手動でコピー')}</summary><textarea readOnly rows={9} value={repairPrompt} aria-label={t('AIへの修正依頼文')} /></details>}
       <ol aria-label={t('プログラムを直して試す手順')}>

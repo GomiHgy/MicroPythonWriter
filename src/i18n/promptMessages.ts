@@ -1,4 +1,4 @@
-import type { Locale, MessageCatalog } from './types'
+import type { BaseLocale, MessageCatalog } from './types'
 import { MAX_CONTROL_ACTIONS, MAX_CONTROL_MODES, MAX_NAMED_CONTROLS } from '../config/bleLimits'
 
 // Long-form prompt blocks are kept together so every language retains the same safety contract.
@@ -8,7 +8,7 @@ export const promptMessages: MessageCatalog = {}
 const nanoLedV2Schema = `{"v":2,"mode":"RAINBOW","brightness":50,"speed":30,"pixels":"100000","playback":"playing","action":null,"controls":{"speed":true,"modes":[{"id":"RAINBOW","label":"Rainbow"}],"actions":[{"id":"SPARKLE","label":"Sparkle once"}]}}`
 
 // RXの長さやv1の項目は変更せず、TXの送信条件だけを共有する。
-export const nanoLedTransportRules: Record<Locale, string> = {
+export const nanoLedTransportRules: Record<BaseLocale, string> = {
   ja: `### NanoLED共通の送信条件（v1/v2）
 - 既存サービスとアプリ独自CharacteristicはRX/TXの2本を維持する。ボタン・キャラクター・モード・アクションごとに増設しない。MODE <id> / ACTION <id>等は既存の共通RX、状態と操作定義は共通TXを使う。v1にはv2専用操作を追加しない。Notify用にスタックが管理するDescriptorはアプリ独自Characteristicの本数に数えない。UUIDを変更・追加しない。
 - TX Notifyは接続直後・交渉済みATT MTU不明時に20バイト以下で開始する。希望ATT MTUの候補は247。有効な交渉結果を得た現在の接続だけ min(交渉済みATT MTU - 3, 244) バイト以下へ拡大する。希望値の設定やBluetooth 5.0以上という製品仕様は交渉結果ではない。
@@ -32,7 +32,7 @@ export const nanoLedTransportRules: Record<Locale, string> = {
 - 主循环少量发送，不阻塞 LED、按钮及 BLE 接收。保持有界重试与错误处理，不能仅增加重试次数或等待就宣称稳定。放弃半行时须通过断开等方式与接收方重新同步，不能把新 JSON 接在残片后。断开丢弃未完成的收发行，重连重新获取服务和 Characteristic，从完整新行开始。`,
 }
 
-export const namedControlPlanningRules: Record<Locale, string> = {
+export const namedControlPlanningRules: Record<BaseLocale, string> = {
   ja: `### 相談・仕様確認・生成前の名前付きボタン確認
 - 希望やAI自身の追加提案が増えるたびに、controls.modes / controls.actionsへの実際の登録予定数を数える。合計${MAX_NAMED_CONTROLS}個を超えそうと分かった時点で早期に案内し、超過案を先に承認して生成時に初めて拒否しない。
 - 例：「今の希望だと、光り方が15個、一回だけの演出が2個で、合計17個になります。上限は16個なので、あと1個整理する必要があります。どの方法がよさそうですか？」。実装可能な範囲で「優先度の低い演出を外す／用途を確認して似た演出をまとめる／共通の明るさ・速度調整で表す／おまかせで整理案」を示す。おまかせでも整理内容を明示し、最終仕様へ反映する。
@@ -53,7 +53,7 @@ export const namedControlPlanningRules: Record<Locale, string> = {
 - 保持每次一题、3–5 个选项含帮我决定、必要问题最多 6 个、不重复已回答内容。把早期计数检查纳入既有讨论和最终确认，不能以问题次数为由生成超限代码。不要询问 UUID、MTU 或通信 ID。BLE/网页遥控已禁用时，不为此说明启用它，也不提出不可用的遥控操作。`,
 }
 
-export const remoteOffFadeRules: Record<Locale, string> = {
+export const remoteOffFadeRules: Record<BaseLocale, string> = {
   ja: `## Webリモコンの消灯（v1/v2共通）
 - REMOTE_OFF_FADE_MS = 200。OFF受信時の最後に実際に送信した全LEDのRGBを固定し、その出力から200msで直線的に黒へフェードアウトする。目標色から再計算せず、安全上限・明るさを二重に掛けない。time.ticks_ms()/time.ticks_diff()と通常の主ループで非ブロッキングに進め、長いsleepを使わない。
 - ブラウザはOFFを1回送るだけ。BRIGHTNESSを連送してフェードを作らず、明るさ設定を0へ変更しない。選択モード・明るさ設定を保持し、アクションとフェードインは中止する。プログラムとBLEは継続する。
@@ -77,7 +77,7 @@ export const remoteOffFadeRules: Record<Locale, string> = {
 - 更新网页不会更新设备中已有程序。需重新准备兼容代码，由用户明确通过 USB 写入并运行，再在目标实机上确认。不能静默覆盖已有代码或实机验证记录。`,
 }
 
-export const nanoLedV2Rules: Record<Locale, string> = {
+export const nanoLedV2Rules: Record<BaseLocale, string> = {
   ja: `## NanoLED v2通信仕様
 - この仕様への適合と実機確認は別。上記で明示したコードの出典・確認状態を維持し、同梱候補を確認済みと扱わない。
 - 機器はPeripheral、ブラウザはCentral。選択したコードのAPIでNanoLED-から始まる完全名を広告またはscan responseへ含める。サービスUUIDの広告は任意。完全名と128-bit UUIDを同じ広告へ無理に詰めず、広告APIを推測しない。
@@ -152,7 +152,7 @@ ${nanoLedTransportRules.zh}
 ${remoteOffFadeRules.zh}`,
 }
 
-export const localizedPromptBlocks: Record<Exclude<Locale, 'ja'>, { led: string; ble: string; nanoLed: string; information: string }> = {
+export const localizedPromptBlocks: Record<Exclude<BaseLocale, 'ja'>, { led: string; ble: string; nanoLed: string; information: string }> = {
   en: {
     led: `## Fixed LED and button rules
 - External LEDs use the configured GPIO{ledPin}. Initialize machine.Pin(LED_PIN, machine.Pin.OUT). Default GPIO2 is Grove G2. If changed, verify wiring and GPIO output support without conflicting with USB, onboard LEDs or buttons. Check power requirements and maintain a common ground.

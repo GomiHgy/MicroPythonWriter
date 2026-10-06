@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { boardDefinitions } from '../config/boards'
 import { workshopPresets } from '../config/workshops'
-import type { Locale } from '../i18n/types'
+import type { BaseLocale as Locale } from '../i18n/types'
 import { buildLedTransmissionRules } from '../services/prompt/LedTransmissionRules'
 import { copyPreparationPrompt, downloadPreparationPrompt } from '../services/prompt/PromptExport'
 import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'

@@ -171,3 +171,5 @@ footer { margin-top: 12px; padding: 13px 16px; color: #61758a; font-size: .84rem
 }
 :root .app-version { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 16px 8px; font-size: .75rem; line-height: 1.7; overflow-wrap: anywhere; }
 .app-version code { font-size: inherit; }
+.prompt-export-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
+.prompt-export-actions > button { flex: 1 1 240px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }

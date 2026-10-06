@@ -14,11 +14,19 @@ import { simulationMessages } from './simulationMessages'
 import { pasteMessages } from './pasteMessages'
 import { ledCodeMessages } from './ledCodeMessages'
 import { pwaMessages } from './pwaMessages'
-import type { Locale, MessageParams } from './types'
+import { exportMessages } from './exportMessages'
+import { localeDictionaries } from './localeDictionaries'
+import { isLocale } from './locales'
+import type { ExtendedLocale, Locale, MessageCatalog, MessageParams } from './types'
 
 export type { Locale, MessageCatalog, MessageParams } from './types'
-export const messages = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages, ...ledCodeMessages, ...pwaMessages }
-export const isLocale = (value: unknown): value is Locale => value === 'ja' || value === 'en' || value === 'zh'
+export { isLocale, supportedLocales, localeDefinition } from './locales'
+export const messages: MessageCatalog = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages, ...ledCodeMessages, ...pwaMessages, ...exportMessages }
+for (const [locale, dictionary] of Object.entries(localeDictionaries)) {
+  for (const [key, value] of Object.entries(dictionary)) {
+    if (messages[key]) messages[key][locale as ExtendedLocale] = value
+  }
+}
 const readLocale = (): Locale => { try { const value = localStorage.getItem('mpw-language'); return isLocale(value) ? value : 'ja' } catch { return 'ja' } }
 let currentLocale = readLocale()
 const listeners = new Set<() => void>()
@@ -48,10 +56,10 @@ export function translate(locale: Locale, message: string, params: MessageParams
   if (locale !== 'ja' && !entry && Object.keys(params).length === 0) {
     for (const item of patterns) {
       const match = item.pattern.exec(message)
-      if (match) return interpolate(item.entry[locale], Object.fromEntries(item.names.map((name, index) => [name, match[index + 1]])))
+      if (match) return interpolate(item.entry[locale] ?? item.entry.en, Object.fromEntries(item.names.map((name, index) => [name, match[index + 1]])))
     }
   }
-  return interpolate(locale === 'ja' ? message : entry?.[locale] ?? message, params)
+  return interpolate(locale === 'ja' ? message : entry?.[locale] ?? entry?.en ?? message, params)
 }
 
 export function useLocale() {

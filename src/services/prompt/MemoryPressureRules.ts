@@ -1,7 +1,8 @@
-import type { Locale } from '../../i18n/types'
+import type { BaseLocale, Locale } from '../../i18n/types'
+import { basePromptLocale } from '../../i18n/locales'
 
 // 初回準備・コピー/保存・修正依頼で同じ対策を共有する。実測値を必要容量の閾値にしない。
-const generalRules: Record<Locale, string> = {
+const generalRules: Record<BaseLocale, string> = {
   ja: `## メモリ圧迫を防ぐ実装と確認
 - 作品の演出・タイミング・ACTION再押下の明示仕様、GPIO、LED数、最大輝度、通信仕様を維持したまま、メモリ使用量を抑える。対策のために機能を削除したり、BLEやWi-Fiを無断で無効にしたりしない。
 - LEDのbytearrayは初期化時に必要量だけ確保し再利用する。フレームごとの大きなリスト・辞書・文字列の作り直し、巨大な事前計算済み演出表、無制限の履歴・ログ・キューを避ける。演出に必要な現在値・復帰値や送信中の固定スナップショットは保持し、再利用で進行中の内容を壊さない。
@@ -25,7 +26,7 @@ const generalRules: Record<Locale, string> = {
 - 输出时简短说明为减少内存压力采取的措施和未实机验证的项目。一般用户按准备、运行、确认实物的流程操作，不要求先分析堆内存或实现基准代码。`,
 }
 
-const bleRules: Record<Locale, string> = {
+const bleRules: Record<BaseLocale, string> = {
   ja: `### BLEを使う場合のメモリ上の注意
 - NanoLED v2使用時はmodes/actionsのID・ラベルと固定controlsを初期化時に構築して再利用し、通知ごとに大きな辞書・リストを作り直さない。ただし毎回のSTATUSへcontrols全体を含める仕様は維持する。初回だけの送信へ変えず、共有オブジェクトの変更で送信中の固定スナップショットを壊さない。NanoLED未使用ならこのために追加しない。
 - 通知は送信中の1行と待機最新1件まで。新しい待機状態は古い待機分だけを置き換え、送信中の行を変更しない。Notifyサイズが拡大してもキューやBLEバッファを無条件に増やさない。ログも無制限に出力・保持しない。
@@ -50,5 +51,6 @@ const bleRules: Record<Locale, string> = {
 }
 
 export function buildMemoryPressureRules(locale: Locale, includeBle: boolean): string {
-  return generalRules[locale] + (includeBle ? `\n\n${bleRules[locale]}` : '')
+  const base = basePromptLocale(locale)
+  return generalRules[base] + (includeBle ? `\n\n${bleRules[base]}` : '')
 }

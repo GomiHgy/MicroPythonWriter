@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { workshopPresets } from '../config/workshops'
-import type { Locale } from '../i18n/types'
+import type { BaseLocale as Locale } from '../i18n/types'
 import { copyPreparationPrompt, downloadPreparationPrompt } from '../services/prompt/PromptExport'
 import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'
 import { buildRgbGainRules } from '../services/prompt/RgbGainRules'

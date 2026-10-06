@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { copyPreparationPrompt, downloadPreparationPrompt, preparationFileName, PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
+import { copyPreparationPrompt, downloadPreparationPrompt, downloadRepairPrompt, preparationFileName, PREPARATION_COPY_TIMEOUT_MS } from '../services/prompt/PromptExport'
 import { setLocale, translate } from '../i18n'
 
 beforeEach(() => { setLocale('ja') })
@@ -118,5 +118,40 @@ describe('準備文のコピーとファイル保存', () => {
   })
   it('ファイル名にパス・制御文字・クエリ文字を使わない', () => {
     expect(preparationFileName('../007\n', 'v1/?unsafe')).toMatch(/^MicroPython-[A-Za-z0-9_-]+-[A-Za-z0-9_-]+-AI-preparation\.txt$/)
+  })
+  it('修正依頼はクリップボードを使わず、長い原文とコード・ログをUTF-8でそのまま保存する', async () => {
+    vi.useFakeTimers()
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:repair')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const anchor = { href: '', download: '', click: vi.fn(), remove: vi.fn() }
+    vi.stubGlobal('document', { createElement: () => anchor, body: { appendChild: vi.fn() } })
+    const writeText = vi.fn()
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const prompt = '日本語 / 繁體中文 / 한국어 / español / português 💡\r\n' + 'print("preserve")\r\n'.repeat(20000) + 'Traceback: 原文\n末尾'
+    const result = downloadRepairPrompt(prompt)
+    expect(result).toMatchObject({ ok: true, cancelled: false })
+    expect(result.message).toContain('開始')
+    expect(await (create.mock.calls[0][0] as Blob).text()).toBe(prompt)
+    expect(anchor.download).toBe('MicroPython-AI-repair.txt')
+    expect(writeText).not.toHaveBeenCalled()
+    expect(anchor.click).toHaveBeenCalledOnce()
+    expect(anchor.remove).toHaveBeenCalledOnce()
+    vi.runAllTimers()
+    expect(revoke).toHaveBeenCalledWith('blob:repair')
+  })
+  it.each(['', 'ssid="private"\nprint("full code")'])('空の依頼や秘密情報の拒否ではファイル生成しない: %s', text => {
+    const create = vi.spyOn(URL, 'createObjectURL')
+    expect(downloadRepairPrompt(text, () => false)).toMatchObject({ ok: false, cancelled: true })
+    expect(create).not.toHaveBeenCalled()
+  })
+  it('修正依頼のダウンロード失敗もURLを解放し、手動コピーへ案内する', () => {
+    vi.useFakeTimers()
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:repair')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const anchor = { href: '', download: '', click: () => { throw new Error('denied') }, remove: vi.fn() }
+    vi.stubGlobal('document', { createElement: () => anchor, body: { appendChild: vi.fn() } })
+    expect(downloadRepairPrompt('full prompt').message).toContain('手動でコピー')
+    vi.runAllTimers()
+    expect(revoke).toHaveBeenCalledWith('blob:repair')
   })
 })

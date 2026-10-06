@@ -1,7 +1,8 @@
-import type { Locale } from '../../i18n/types'
+import type { BaseLocale, Locale } from '../../i18n/types'
+import { basePromptLocale } from '../../i18n/locales'
 
 // 利用者への質問やブラウザ設定は増やさず、生成・修正時の内部出力パラメータを共有する。
-const rules: Record<Locale, string> = {
+const rules: Record<BaseLocale, string> = {
   ja: `## RGBゲイン補正（利用者に質問しない内部パラメータ）
 - 新しく生成するコードの設定部へ RGB_GAIN_R = 1.0、RGB_GAIN_G = 0.7、RGB_GAIN_B = 0.95 を置く。赤/緑/青 = 100%/70%/95% を標準値とし、利用者への質問・選択肢・確認必須項目にしない。色の希望とは区別し、RGBとGRBの並びを取り違えない。
 - 元の演出の色・タイミング・GPIO・LED数・最大輝度は維持し、共通の最終出力処理でRGBを0〜255に制限した後、最大輝度・ユーザー輝度・フェード係数と各チャンネルのゲインを一度だけ掛け、整数化してGRBバッファへ格納する。通常描画の各色の例は int(clamp(channel, 0, 255) * maximum_level * user_level * fade_level * channel_gain)。各係数を0.0〜1.0に制限し、補正分を補うために最大輝度を上げたり色を再正規化したりしない。
@@ -23,5 +24,5 @@ const rules: Record<Locale, string> = {
 }
 
 export function buildRgbGainRules(locale: Locale): string {
-  return rules[locale]
+  return rules[basePromptLocale(locale)]
 }
