@@ -14,6 +14,7 @@ import { BootModePanel } from '../components/BootModePanel'
 import { ProgramLibraryPanel } from '../components/ProgramLibraryPanel'
 import type { BootFeedback } from '../types/bootFeedback'
 import { LicenseNotice } from '../components/LicenseNotice'
+import { SupportPanel } from '../components/SupportPanel'
 import type { ProgramFeedback } from '../types/programFeedback'
 import { createProject, markWorking, PROJECT_DRAFT_STORAGE_KEY, PROJECT_STORAGE_KEY, serializeProject } from '../services/projects/ProjectStorage'
 import type { ArtworkProject } from '../services/projects/types'
@@ -144,6 +145,66 @@ it('エディタの右に独立したシミュレーション、その下に閉�
   assertNoUsbOperations()
 })
 
+it('プログラム画面を接続・コードと試写・実行と結果・保存・起動設定・ログのDOM順に並べる', () => {
+  const program = byId(render(), 'panel-program')
+  const ordered = all(program, element => ['program-connection', 'program-code-workspace', 'program-execution', 'program-boot-guide'].includes(String(element.props.id)) || element.type === ProgramLibraryPanel || element.props.className === 'program-records')
+  expect(ordered.map(element => element.type === ProgramLibraryPanel ? 'library' : element.props.id ?? element.props.className)).toEqual([
+    'program-connection', 'program-code-workspace', 'program-execution', 'library', 'program-boot-guide', 'program-records',
+  ])
+  const steps = find(program, element => element.props.className === 'steps')
+  expect(all(steps, element => element.type === 'a').map(element => element.props.href)).toEqual(['#program-connection', '#program-code-workspace', '#program-execution'])
+  assertNoUsbOperations()
+})
+
+it.each(['disconnected', 'connection-lost', 'unsupported'])('未接続の%sでも実行欄は表示し操作を無効にする', state => {
+  harness.programmer.state = state
+  const actions = byId(render(), 'program-execution')
+  expect(find(actions, element => element.props.className === 'run-button').props.disabled).toBe(true)
+  expect(find(actions, element => element.props.className === 'auto-run-button').props.disabled).toBe(true)
+  assertNoUsbOperations()
+})
+
+it('起動ガイドは通常閉じ、解除リンクではガイドを開くだけで機器設定を変えない', () => {
+  const view = render()
+  const guide = byId(view, 'program-boot-guide')
+  expect(guide.type).toBe('details')
+  expect(guide.props.open).toBeUndefined()
+  const domGuide = { open: false }
+  harness.getElementById.mockReturnValueOnce(domGuide)
+  event(find(view, element => element.props.className === 'program-boot-link'), 'onClick')
+  expect(domGuide.open).toBe(true)
+  expect(harness.getElementById).toHaveBeenLastCalledWith('program-boot-guide')
+  assertNoUsbOperations()
+})
+
+it('実行中の停止はコード欄までスクロールせず接続欄で押せる', () => {
+  const view = render()
+  const stop = find(view, element => element.props.className === 'stop-button')
+  expect(all(byId(view, 'program-connection'), element => element === stop)).toEqual([stop])
+  event(stop, 'onClick')
+  expect(harness.programmer.stop).toHaveBeenCalledOnce()
+  expect(harness.programmer.setBoot).not.toHaveBeenCalled()
+})
+
+it('切断中の起動ガイドは前回の取得値を現在の設定として表示しない', () => {
+  harness.programmer.state = 'connection-lost'
+  harness.programmer.info.bootOption = 0
+  const guide = byId(render(), 'program-boot-guide')
+  expect(find(guide, element => element.props.className === 'small-badge').props.children).toBe('まだ確認できていません')
+  assertNoUsbOperations()
+})
+
+it('実行失敗は編集欄の前にも通知し、結果と修正へのリンクを表示する', () => {
+  harness.programmer.programFeedback = { id: 1, phase: 'failed', operation: 'run', saved: false, source: harness.programmer.source }
+  const view = render()
+  const notice = find(view, element => element.props.className === 'notice danger program-result-shortcut')
+  expect(notice.props.role).toBe('alert')
+  expect(find(notice, element => element.type === 'a').props.href).toBe('#program-execution')
+  const nodes = all(byId(view, 'panel-program'), element => element === notice || element.props.id === 'program-code-workspace')
+  expect(nodes[0]).toBe(notice)
+  assertNoUsbOperations()
+})
+
 it('ログを閉じていても実機エラーと修正への案内は隠さない', () => {
   harness.programmer.error = { exceptionType: 'ValueError', message: 'test', stage: 'test', traceback: 'test' } as AppError
   const view = render()
@@ -175,6 +236,43 @@ it.each((['program', 'preparation', 'controller'] as const).flatMap(tab => (['ja
     expect(all(panel, element => element.type === LicenseNotice)).toHaveLength(0)
   }
   expect(find(footer, element => element.type === 'time').props.dateTime).toBe(__APP_BUILD__.builtAt)
+  assertNoUsbOperations()
+})
+
+it.each(['preparation', 'program', 'controller'])('%sでも支援入口は共通領域の1つだけで編集・通信パネルを保持する', tab => {
+  const before = render()
+  const editor = find(before, element => element.type === CodeEditor)
+  const controller = find(before, element => element.type === BluetoothPanel)
+  const preparation = find(before, element => element.type === AiPreparationPanel)
+  event(byId(before, `tab-${tab}`), 'onClick')
+  const view = render()
+  const support = find(view, element => element.type === SupportPanel)
+  expect(support.props).toEqual({ blockedReason: undefined })
+  expect(((view as Element).props.children as ReactNode[]).at(-1)).toBe(support)
+  for (const panel of all(view, element => element.props.role === 'tabpanel')) expect(all(panel, element => element.type === SupportPanel)).toHaveLength(0)
+  expect(editorContent(find(view, element => element.type === CodeEditor).props)).toEqual(editorContent(editor.props))
+  expect(find(view, element => element.type === BluetoothPanel).props.remoteButtons).toEqual(controller.props.remoteButtons)
+  expect(find(view, element => element.type === AiPreparationPanel).props.preparation).toEqual(preparation.props.preparation)
+  assertNoUsbOperations()
+})
+
+it.each(['requesting-port', 'opening', 'interrupting', 'entering-raw-repl', 'probing', 'uploading', 'verifying', 'starting', 'stopping', 'setting-boot-mode', 'resetting'])('%s中は支援外部リンクを抑止する理由を渡す', state => {
+  harness.programmer.state = state
+  expect(find(render(), element => element.type === SupportPanel).props.blockedReason).toContain('処理が終わるまで')
+  assertNoUsbOperations()
+})
+
+it.each(['disconnected', 'raw-repl-ready', 'running', 'running-no-marker', 'stopped', 'error'])('%sだけでは支援操作を禁止しない', state => {
+  harness.programmer.state = state
+  expect(find(render(), element => element.type === SupportPanel).props.blockedReason).toBeUndefined()
+  assertNoUsbOperations()
+})
+
+it('PWA更新中だけ支援遷移を止め、完了後は戻す', () => {
+  expect(beginPwaUpdate()).toBe(true)
+  expect(find(render(), element => element.type === SupportPanel).props.blockedReason).toContain('アプリの更新中')
+  endPwaUpdate()
+  expect(find(render(), element => element.type === SupportPanel).props.blockedReason).toBeUndefined()
   assertNoUsbOperations()
 })
 
@@ -1410,6 +1508,7 @@ it.each(['saving', 'resetting', 'saved', 'failed'] as const)('起動設定の%s�
   programmer.bootFeedback = feedback
   try {
     expect(find(render(), element => element.type === BootModePanel).props.feedback).toBe(feedback)
+    expect(byId(render(), 'program-boot-guide').props.open).toBe(true)
     assertNoUsbOperations()
   } finally {
     delete programmer.bootFeedback

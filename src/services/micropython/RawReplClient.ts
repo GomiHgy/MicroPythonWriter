@@ -1,6 +1,7 @@
-import { DeviceTimeoutError, RawReplProtocolError, ReplNotAvailableError, type ExecutionResult } from '../../types'
+import { DeviceRestartError, DeviceTimeoutError, RawReplProtocolError, ReplNotAvailableError, type ExecutionResult } from '../../types'
 import type { SerialTransport } from '../serial/SerialTransport'
 import { RawPasteProtocol } from './RawPasteProtocol'
+import { DeviceFaultMonitor } from './DeviceFault'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -13,7 +14,7 @@ export const CTRL_D = new Uint8Array([4])
 export type RunState = 'starting' | 'running' | 'stopping' | 'stopped' | 'completed' | 'error'
 export type LongRunningConfirmation = 'startup-marker' | 'execution-accepted' | 'still-running'
 export interface LongRunningCompletion { stdout: string; stderr: string; state: Extract<RunState, 'stopped' | 'completed' | 'error'>; intentionalStop: boolean; hostError?: Error }
-export interface LongRunningStartResult { state: 'running' | 'completed'; initialOutput: string; stderr: string; confirmedBy: LongRunningConfirmation; session: LongRunningSession }
+export interface LongRunningStartResult { state: 'running' | 'completed'; initialOutput: string; stderr: string; confirmedBy: LongRunningConfirmation; session: LongRunningSession; hostError?: Error }
 export interface LongRunningSession { readonly state: RunState; stop(): Promise<LongRunningCompletion>; dispose(): void }
 export interface LongRunningCallbacks { onOutput?(text: string): void; onComplete?(result: LongRunningCompletion): void }
 export interface StreamingCallbacks { onStdout?(text: string): void; onStderr?(text: string): void; onStarted?(): void }
@@ -23,6 +24,7 @@ class ManagedLongRunningSession implements LongRunningSession {
   private readonly controller = new AbortController()
   private readonly stdout: number[] = []
   private readonly stderr: number[] = []
+  private readonly faults = new DeviceFaultMonitor()
   private phase: 'stdout' | 'stderr' | 'prompt' = 'stdout'
   private stopRequested = false
   private startTimer?: ReturnType<typeof setTimeout>
@@ -102,6 +104,12 @@ class ManagedLongRunningSession implements LongRunningSession {
         this.finish({ stdout: this.stdoutText(), stderr, state: this.stopRequested ? 'stopped' : stderr ? 'error' : 'completed', intentionalStop: this.stopRequested })
         return
       }
+      const fault = this.faults.consume(byte)
+      if (fault) {
+        // Raw REPLの終端は再起動で失われる。Ctrl-C待ちや起動成功扱いを続けない。
+        this.finish({ stdout: this.stdoutText(), stderr: this.stderrText(), state: 'error', intentionalStop: false, hostError: fault })
+        return
+      }
     }
     const output = this.stdoutText()
     if (!this.startResolved && output.includes(marker)) this.resolveRunning('startup-marker')
@@ -122,20 +130,22 @@ class ManagedLongRunningSession implements LongRunningSession {
     this.completionResolved = true
     this.completion = result
     this.currentState = result.state
+    this.controller.abort()
     if (this.startTimer) clearTimeout(this.startTimer)
     if (!this.startResolved) {
       this.startResolved = true
-      this.startResult = { state: 'completed', initialOutput: result.stdout, stderr: result.stderr, confirmedBy: 'execution-accepted', session: this }
+      this.startResult = { state: 'completed', initialOutput: result.stdout, stderr: result.stderr, confirmedBy: 'execution-accepted', session: this, hostError: result.hostError }
       this.resolveStart(this.startResult)
     }
     this.resolveCompletion(result)
-    this.callbacks.onComplete?.(result)
     this.onFinished()
+    this.callbacks.onComplete?.(result)
   }
 
   private async waitForCompletion(timeoutMs: number) {
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new DeviceTimeoutError(`常駐プログラム停止: 受信待機が${timeoutMs}msでタイムアウトしました。`)), timeoutMs))
-    return Promise.race([this.completed, timeout])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new DeviceTimeoutError(`常駐プログラム停止: 受信待機が${timeoutMs}msでタイムアウトしました。`)), timeoutMs) })
+    try { return await Promise.race([this.completed, timeout]) } finally { clearTimeout(timer) }
   }
 
   private stdoutText() { return decoder.decode(new Uint8Array(this.stdout)) }
@@ -146,6 +156,7 @@ export class RawReplClient {
   private readonly transport: SerialTransport
   private readonly timings: { interrupt: number; rawRepl: number; command: number; startupGrace: number; stop: number }
   private activeSession?: ManagedLongRunningSession
+  private requiresSync = false
   constructor(transport: SerialTransport, timings: Partial<{ interrupt: number; rawRepl: number; command: number; startupGrace: number; stop: number }> = {}) {
     this.transport = transport
     this.timings = { interrupt: timings.interrupt ?? 3000, rawRepl: timings.rawRepl ?? 3000, command: timings.command ?? 10000, startupGrace: timings.startupGrace ?? 2500, stop: timings.stop ?? 3000 }
@@ -154,6 +165,7 @@ export class RawReplClient {
   async enterRawRepl() {
     await this.transport.write(new Uint8Array([3, 3])); await new Promise(resolve => setTimeout(resolve, 80)); await this.transport.write(CTRL_A)
     try { await this.transport.queue.readUntil(encoder.encode('raw REPL; CTRL-B to exit'), this.timings.rawRepl, undefined, true, 'Raw REPL同期') } catch { throw new ReplNotAvailableError() }
+    this.requiresSync = false
   }
   async friendlyRepl() { await this.transport.write(CTRL_B) }
   async interrupt(retries = 3) { for (let index = 0; index < retries; index++) { await this.transport.write(CTRL_C); await new Promise(resolve => setTimeout(resolve, 100)) } }
@@ -161,6 +173,7 @@ export class RawReplClient {
   hasLongRunningSession() { return Boolean(this.activeSession) }
   discardPendingInput() { return this.transport.queue.drain() }
   async reset() {
+    this.checkSync()
     if (this.activeSession) throw new RawReplProtocolError('常駐プログラム実行中です。停止してからリセットしてください。')
     this.discardPendingInput()
     await this.transport.write(encoder.encode('import machine\nmachine.reset()'))
@@ -168,23 +181,32 @@ export class RawReplClient {
   }
 
   async execute(code: string): Promise<ExecutionResult> {
+    this.checkSync()
     if (this.activeSession) throw new RawReplProtocolError('常駐プログラム実行中です。停止してから有限コマンドを実行してください。')
     const started = performance.now(); const result = await this.executeInternal(code); return { ...result, durationMs: performance.now() - started, completed: true, interrupted: false }
   }
 
   async startLongRunning(code: string, callbacks: LongRunningCallbacks = {}): Promise<LongRunningStartResult> {
+    this.checkSync()
     if (this.activeSession) throw new RawReplProtocolError('前の常駐プログラムを停止してから起動してください。')
     this.discardPendingInput()
     await this.transport.write(encoder.encode(code)); await this.transport.write(CTRL_D)
     const accepted = decoder.decode(await this.transport.queue.readUntil(encoder.encode('OK'), this.timings.command, undefined, true, '常駐プログラム受付'))
     if (!accepted.endsWith('OK')) throw new RawReplProtocolError('Raw REPL が常駐プログラムを受け付けませんでした。')
-    const session = new ManagedLongRunningSession(this.transport, this.timings.startupGrace, this.timings.stop, callbacks, () => { if (this.activeSession === session) this.activeSession = undefined })
+    const session = new ManagedLongRunningSession(this.transport, this.timings.startupGrace, this.timings.stop, {
+      ...callbacks,
+      onComplete: result => {
+        if (result.hostError instanceof DeviceRestartError) this.requiresSync = true
+        callbacks.onComplete?.(result)
+      },
+    }, () => { if (this.activeSession === session) this.activeSession = undefined })
     this.activeSession = session
     session.begin()
     return session.waitForStart()
   }
 
   async executeStreaming(code: string, callbacks: StreamingCallbacks = {}) {
+    this.checkSync()
     const rawPaste = new RawPasteProtocol(this.transport)
     const bytes = encoder.encode(code)
     const window = await rawPaste.negotiate(700).catch(() => false)
@@ -208,5 +230,8 @@ export class RawReplClient {
     const stderr = decoder.decode(await this.transport.queue.readUntil(CTRL_D, this.timings.command, undefined, false, '有限コマンド標準エラー'))
     await this.transport.queue.readUntil(encoder.encode('>'), this.timings.command, undefined, true, 'Raw REPLプロンプト')
     return { stdout, stderr }
+  }
+  private checkSync() {
+    if (this.requiresSync) throw new RawReplProtocolError('機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。')
   }
 }

@@ -6,6 +6,7 @@ import type { RemoteButton } from '../services/projects/types'
 import type { BluetoothSnapshot } from '../services/bluetooth/BluetoothController'
 import type { LedStatus } from '../services/bluetooth/protocol'
 import { bluetoothMessages } from '../i18n/bluetoothMessages'
+import { remoteStatusMessages } from '../i18n/remoteStatusMessages'
 import type { Locale } from '../i18n/types'
 import panelSource from '../components/BluetoothPanel.tsx?raw'
 import editorSource from '../components/RemoteButtonEditor.tsx?raw'
@@ -30,7 +31,7 @@ vi.mock('../i18n', () => ({
   useLocale: () => ({
     locale: harness.locale,
     t: (text: string, params: Record<string, string | number> = {}) => {
-      const translated = harness.locale === 'ja' ? text : bluetoothMessages[text]?.[harness.locale] ?? text
+      const translated = harness.locale === 'ja' ? text : (remoteStatusMessages[text] ?? bluetoothMessages[text])?.[harness.locale] ?? text
       return translated.replace(/\{(\w+)\}/g, (match, key: string) => String(params[key] ?? match))
     },
   }),
@@ -276,8 +277,8 @@ describe('Bluetoothコントローラの接続と受信状態', () => {
     const view = panel()
     const off = button(view, 'ライトを消す')
     expect(off.props['aria-describedby']).toBe('lights-off-help')
-    expect(content(view)).toContain('0.2秒かけてふわっと消灯')
-    expect(content(view)).toContain('以前のプログラムは更新が必要')
+    expect(content(view)).toContain('ライトを消す動きは作品のプログラムに従います')
+    expect(content(view)).not.toContain('以前のプログラムは更新が必要')
     event(off, 'onClick')
     await vi.advanceTimersByTimeAsync(250)
     expect(harness.send.mock.calls).toEqual([['OFF']])
@@ -323,7 +324,7 @@ describe('Bluetoothコントローラの接続と受信状態', () => {
     expect(slider('BRIGHTNESS').props.disabled).toBe(true)
     expect(button(view, 'ライトを消す').props.disabled).toBe(false)
     expect(button(view, '状態をもう一度受け取る').props.disabled).toBe(false)
-    expect(content(view)).toContain('最後に届いた状態')
+    expect(content(view)).toContain('最後に受信した表示です。いまの光と同じとは限りません。')
     expect(content(view)).toContain('5秒以上、新しい状態が届いていません')
     connected()
     expect(button(panel(), 'ピンク').props.disabled).toBe(false)
@@ -363,8 +364,8 @@ describe('未接続からのリモコン案内', () => {
     ['disconnected', '未接続'],
     ['connecting', '接続中'],
     ['waiting', '状態待ち'],
-    ['legacy', '旧仕様（NanoLED v1）'],
-    ['modern', '新仕様（NanoLED v2）'],
+    ['legacy', '受信中'],
+    ['modern', '受信中'],
     ['unsupported', '接続非対応'],
   ] as const
 
@@ -420,7 +421,7 @@ describe('未接続からのリモコン案内', () => {
       event(button(view, label), 'onClick')
     }
     expect(button(view, 'アクションを実行').props.onClick).toBeUndefined()
-    expect(content(view)).toContain('NanoLED v2')
+    expect(content(view)).toContain('このプログラムでは再生・停止を使えません')
     expect(harness.send).not.toHaveBeenCalled()
   })
 
@@ -445,17 +446,20 @@ describe('未接続からのリモコン案内', () => {
     expect(guide.type).toBe('section')
     expect(guide.props.hidden).not.toBe(true)
     expect(all(guide, element => element.type === 'li')).toHaveLength(3)
-    expect(content(guide)).toContain('UIFlow2')
-    expect(content(guide)).toContain('NanoLED v2対応の main.py')
+    expect(content(guide)).toContain('「AIの準備」')
+    expect(content(guide)).toContain('WebリモコンをON')
+    expect(content(guide)).toContain('「対応プログラムを準備」')
     expect(content(guide)).toContain('「実行」')
-    expect(content(guide)).toContain('実機確認済みのBLE基準コードは含まれていません')
-    expect(content(guide)).toContain('動作確認をしていないコードを確認済みにしない')
+    expect(content(guide)).toContain('同梱プログラムは試用用')
+    expect(content(guide)).toContain('実機確認済みの保証はない')
+    expect(content(guide)).not.toContain('作成者')
+    expect(content(guide)).not.toContain('登録')
     const details = all(view, element => element.type === 'details')
     expect(details.every(detail => all(detail, element => element === guide).length === 0)).toBe(true)
     const reason = availability(view)
     expect(all(reason, element => element.type === 'p').length).toBeGreaterThanOrEqual(2)
-    if (state === 'waiting') expect(content(reason)).toContain('通信仕様はまだ未確認')
-    if (state === 'legacy') expect(content(reason)).toContain('新仕様の対応プログラムが必要')
+    if (state === 'waiting') expect(content(reason)).toContain('機器から光り方と状態が届くまで')
+    if (state === 'legacy') expect(content(reason)).toContain('受信中')
   })
 
   it('新仕様受信後は初回準備の大きな案内を畳み、再確認用の導線とヘルプを残す', () => {
@@ -469,12 +473,75 @@ describe('未接続からのリモコン案内', () => {
     expect(button(view, 'プログラム画面')).toBeDefined()
   })
 
+  it.each(['legacy', 'modern'] as const)('%sの通信状態と対応仕様を分け、仕様や演出の説明は折り畳む', state => {
+    selectState(state)
+    const view = panel()
+    expect(content(availability(view))).toContain('接続状況受信中')
+    expect(content(availability(view))).not.toMatch(/旧仕様|新仕様|NanoLED/u)
+    const protocol = find(view, element => element.props.className === 'remote-protocol')
+    expect(protocol.type).toBe('details')
+    expect(protocol.props.open).not.toBe(true)
+    expect(content(protocol)).toContain('操作のしくみ・通信仕様')
+    expect(content(protocol)).toContain(state === 'legacy' ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）')
+    if (state === 'modern') {
+      expect(content(protocol)).toContain('演出中にもう一度押したときの動きは、作品のプログラムに従います。')
+      expect(content(view)).not.toContain('終わると元のモードと再生状態に戻ります。')
+    }
+    expect(all(view, element => element.props.className === 'bluetooth-guide')).toHaveLength(0)
+  })
+
+  it('状態待ちでは通信仕様も未確認と示し、古い仕様と決めつけない', () => {
+    selectState('waiting')
+    const view = panel()
+    expect(content(availability(view))).toContain('状態待ち')
+    const protocol = find(view, element => element.props.className === 'remote-protocol')
+    expect(content(protocol)).toContain('通信仕様: 未確認')
+    expect(content(protocol)).not.toMatch(/旧仕様（NanoLED v1）|新仕様（NanoLED v2）/u)
+  })
+
+  it.each(['playing', 'paused', 'off'] as const)('更新停止でも%sという最後の再生状態・モード・色は保ち、現状と区別する', playback => {
+    modern({ playback, action: 'SPARK' })
+    panel()
+    vi.advanceTimersByTime(6000)
+    const view = panel()
+    const lastPlayback = find(view, element => element.props.className === 'playback-status')
+    expect(content(lastPlayback)).toContain('最後に受信した再生状態')
+    expect(content(lastPlayback)).toContain(playback === 'playing' ? '再生中' : playback === 'paused' ? '停止中（色を保持）' : '消灯')
+    expect(content(find(view, element => element.props.id === 'led-title'))).toBe('最後に届いたLED')
+    expect(content(find(view, element => element.props.className === 'led-summary'))).toContain('にじいろ散歩')
+    expect(content(find(view, element => element.props.className === 'last-status-note'))).toContain('いまの光と同じとは限りません')
+    expect(find(view, element => element.props.className === 'led-preview').props['aria-label']).toBe('最後に届いた状態。3個のLED。2個が点灯。にじいろ散歩')
+    expect(content(find(view, element => element.props.className === 'led-values'))).toContain('50%')
+    expect(content(find(view, element => element.props.className === 'action-status'))).toBe('最後に届いた演出: 一度だけ光る')
+    expect(find(view, element => element.props.title === 'LED 1: #330000').props.style).toMatchObject({ backgroundColor: '#330000' })
+    expect(content(availability(view))).toContain('更新停止')
+    for (const label of ['再生', '停止', '一度だけ光る']) expect(button(view, label).props.disabled).toBe(true)
+    expect(button(view, 'ライトを消す').props.disabled).toBe(false)
+    expect(button(view, '状態をもう一度受け取る').props.disabled).toBe(false)
+    expect(button(availability(view), '状態をもう一度受け取る').props.disabled).toBe(false)
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
+  it('切断中に前の受信表示が残っていても最後の状態と明示し、操作を許可しない', () => {
+    modern({ playback: 'paused', action: 'SPARK' })
+    harness.snapshot = { ...harness.snapshot, phase: 'disconnected' }
+    const view = panel()
+    expect(content(availability(view))).toContain('未接続')
+    expect(content(find(view, element => element.props.className === 'playback-status'))).toBe('最後に受信した再生状態停止中（色を保持）')
+    expect(content(find(view, element => element.props.id === 'led-title'))).toBe('最後に届いたLED')
+    expect(content(find(view, element => element.props.className === 'action-status'))).toBe('最後に届いた演出: 一度だけ光る')
+    for (const label of ['再生', '停止', '一度だけ光る', 'ライトを消す', '状態をもう一度受け取る']) expect(button(view, label).props.disabled).toBe(true)
+    expect(harness.send).not.toHaveBeenCalled()
+  })
+
   it.each(['legacy', 'modern'] as const)('%sで受信停止しても仕様を取り違えず、復旧後に操作を再開する', state => {
     selectState(state)
     panel()
     vi.advanceTimersByTime(6000)
     const view = panel()
-    expect(content(availability(view))).toContain(state === 'legacy' ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）')
+    const protocol = find(view, element => element.props.className === 'remote-protocol')
+    expect(content(protocol)).toContain(state === 'legacy' ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）')
+    expect(content(availability(view))).not.toContain('NanoLED')
     expect(content(availability(view))).toContain('更新停止')
     expect(content(view)).toContain('更新が止まっています')
     expect(button(view, state === 'legacy' ? 'ピンク' : 'にじいろ散歩').props.disabled).toBe(true)
@@ -1163,10 +1230,11 @@ describe('Bluetooth画面の言語切り替え', () => {
     }
     expect(keys.length).toBeGreaterThan(80)
     for (const key of keys) {
-      expect(bluetoothMessages, key).toHaveProperty(key)
+      const messages = { ...bluetoothMessages, ...remoteStatusMessages }
+      expect(messages, key).toHaveProperty(key)
       const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()
       for (const locale of ['en', 'zh'] as const) {
-        const translated = bluetoothMessages[key][locale]
+        const translated = messages[key][locale]
         expect(translated.trim(), `${locale}: ${key}`).not.toBe('')
         expect(translated, `${locale}: ${key}`).not.toMatch(/[ぁ-んァ-ヶ]/u)
         expect(placeholders(translated), `${locale}: ${key}`).toEqual(placeholders(key))

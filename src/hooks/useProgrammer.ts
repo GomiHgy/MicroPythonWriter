@@ -7,7 +7,7 @@ import { RepairPromptBuilder } from '../services/prompt/RepairPromptBuilder'
 import type { WorkshopContext } from '../services/prompt/WorkshopRules'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { createSerialTransport } from '../services/serial/createSerialTransport'
-import { SerialDisconnectedError, type AppError, type DeviceInfo, type DeviceState, type ParsedTraceback } from '../types'
+import { DeviceRestartError, SerialDisconnectedError, type AppError, type DeviceInfo, type DeviceState, type ParsedTraceback } from '../types'
 import type { ProgramFeedback } from '../types/programFeedback'
 import type { BootFeedback } from '../types/bootFeedback'
 import { isArduinoSource } from '../services/editor/sourceLanguage'
@@ -76,6 +76,14 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     if (id !== runId.current) return
     activeSnapshot.current = undefined
     setRunningSource(null)
+    if (result.hostError instanceof DeviceRestartError) {
+      setBootConfigured(null); clearBootFeedback()
+      setDeviceInfo({ ...infoRef.current, bootOption: undefined })
+      updateFeedback(id, { phase: 'failed', failedAt: 'runtime', message: result.hostError.message })
+      force('error')
+      saveError(result.hostError.name, { exceptionType: result.hostError.name, message: result.hostError.message, traceback: `${result.stdout}\n${result.stderr}`, intentionalInterrupt: false }, snapshot)
+      return
+    }
     if (result.hostError) {
       const disconnected = connectionLost.current || result.hostError instanceof SerialDisconnectedError
       updateFeedback(id, { phase: disconnected ? 'disconnected' : 'failed', failedAt, message: result.hostError.message })
@@ -203,7 +211,7 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
         updateFeedback(id, { confirmation: started.confirmedBy })
         // 終了通知は起動受付のPromiseより先に届くことがある。終了・失敗を実行中へ戻さない。
         if (completionReceived) return
-        if (started.state === 'completed') { handleCompletion(id, { state: started.stderr ? 'error' : 'completed', stdout: started.initialOutput, stderr: started.stderr, intentionalStop: false }, snapshot); return }
+        if (started.state === 'completed') { handleCompletion(id, { state: started.stderr || started.hostError ? 'error' : 'completed', stdout: started.initialOutput, stderr: started.stderr, intentionalStop: false, hostError: started.hostError }, snapshot); return }
         setRunningSource(snapshot.source)
         updateFeedback(id, { phase: 'running' })
         force(started.confirmedBy === 'still-running' ? 'running-no-marker' : 'running')
@@ -316,8 +324,10 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
   const localizedError = useMemo(() => {
     const saved = errorContext
     if (!error || !saved) return error
-    const { snapshot, terminalLog } = saved
+    const { snapshot } = saved
+    // panicの検知後もダンプ・起動ログが届く。コードのスナップショットは固定し、記録だけ追記する。
+    const terminalLog = error.stage === 'DEVICE_PANIC' || error.stage === 'DEVICE_RESTART' ? log.slice(-16000) : saved.terminalLog
     return { ...error, repairPrompt: prompt.build(error, snapshot.source, snapshot.device, terminalLog, error.stage, snapshot.workshop, { sourceKnown: snapshot.sourceKnown, locale }) }
-  }, [error, errorContext, locale, prompt])
+  }, [error, errorContext, locale, prompt, log])
   return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
 }

@@ -1,6 +1,9 @@
 import type { ParsedTraceback } from '../../types'
+import { detectDeviceFault } from './DeviceFault'
 export class TracebackParser {
   parse(output: string, source = '', intentionalStop = false): ParsedTraceback | undefined {
+    const fault = detectDeviceFault(output)
+    if (fault) return { exceptionType: fault.name, message: fault.message, traceback: output, intentionalInterrupt: false }
     const start = output.lastIndexOf('Traceback (most recent call last):'); const body = start >= 0 ? output.slice(start) : output
     const match = body.match(/File "main\.py", line (\d+)/g); const lineMatch = match?.at(-1)?.match(/(\d+)/); const line = lineMatch ? Number(lineMatch[1]) : undefined
     const exception = body.match(/(?:^|\n)(SyntaxError|IndentationError|NameError|TypeError|ValueError|ImportError|ModuleNotFoundError|OSError|MemoryError|RuntimeError|KeyboardInterrupt)(?::\s*(.*))?\s*$/m)

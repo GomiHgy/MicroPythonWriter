@@ -63,15 +63,16 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
   const legacy = state.status?.v === 1
   const canPlay = canControl && artwork !== null && (artwork.playback !== 'playing' || artwork.action !== null)
   const canPause = canControl && artwork !== null && artwork.playback === 'playing'
-  const connectionLabel = unsupported ? '接続非対応' : connecting ? '接続中' : !connected ? '未接続' : !state.status ? '状態待ち' : legacy ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）'
+  const outdated = !connected || stale
+  const connectionLabel = unsupported ? '接続非対応' : connecting ? '接続中' : !connected ? '未接続' : !state.status ? '状態待ち' : stale ? '更新停止' : '受信中'
+  const protocolLabel = !state.status ? '未確認' : legacy ? '旧仕様（NanoLED v1）' : '新仕様（NanoLED v2）'
   const availabilityReason = unsupported
     ? state.error ?? 'このブラウザはWeb Bluetoothに対応していません。'
     : connecting ? '機器を選び、接続が完了するまで待ってください。'
     : !connected ? 'まだ機器とつながっていません。対応プログラムを実行し、「Bluetoothでつなぐ」を押してください。'
-    : !state.status ? 'Bluetoothには接続できました。機器から操作一覧と状態が届くまで待っています。通信仕様はまだ未確認です。'
+    : !state.status ? '接続できました。機器から光り方と状態が届くまで待っています。'
     : stale ? '状態の更新が止まったため、操作を一時的に無効にしています。再受信を試し、戻らなければ接続を切ってつなぎ直してください。'
-    : legacy ? '明るさ・消灯・従来の4モードは使えます。再生・停止・作品専用アクションには、新仕様の対応プログラムが必要です。'
-    : '機器から新仕様の状態と操作一覧を受け取りました。この作品で使えるボタンを表示しています。'
+    : '機器の状態を受信しています。下のボタンで光り方を変えられます。'
   const showSpeed = !artwork || artwork.controls.speed
   const pixels = state.status?.pixels.match(/.{6}/g) ?? []
   const litCount = pixels.filter(pixel => pixel !== '000000').length
@@ -106,26 +107,27 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
     </section>
 
     {state.error && !unsupported && <div className="notice warn" role="alert">{t(state.error)}</div>}
-    <p className="bluetooth-guide">{t('はじめてなら、プログラム画面で対応プログラムを「実行」しよう。タブを変えてもプログラムは止まりません。')}</p>
+    {!connected && <p className="bluetooth-guide">{t('はじめてなら、プログラム画面で対応プログラムを「実行」しよう。タブを変えてもプログラムは止まりません。')}</p>}
     {artwork && <div className="remote-view-toggle"><strong>{projectName}</strong><button className="quiet-button" aria-pressed={focused} onClick={() => setFocused(value => !value)}>{t(focused ? '設定も表示する' : '作品を使う画面にする')}</button></div>}
 
     <div className="controller-grid">
       <section className="panel remote-panel" aria-labelledby="remote-title">
         <div className="section-heading"><div><p className="eyebrow">{t('1. 光り方をえらぶ')}</p><h2 id="remote-title">{t('リモコン')}</h2></div><span className="small-badge">{t(state.sending ? '送信中…' : canControl ? '操作できます' : '接続・受信してから操作')}</span></div>
-        <div className={`remote-availability${canControl ? ' available' : ''}`} role="status" aria-live="polite">
-          <p><span>{t(stale ? '最後に確認した仕様' : '接続・対応状況')}</span><strong>{t(connectionLabel)}</strong>{stale && <span className="small-badge">{t('更新停止')}</span>}</p>
+        <div className={`remote-availability${canControl ? ' available' : stale || waitingTooLong ? ' interrupted' : ''}`} role="status" aria-live="polite">
+          <p><span>{t('接続状況')}</span><strong>{t(connectionLabel)}</strong></p>
           <p>{t(availabilityReason)}</p>
           {waitingTooLong && <p>{t('5秒以上届いていません。下の「状態をもう一度受け取る」を試してください。')}</p>}
+          {(stale || waitingTooLong) && <button className="quiet-button refresh-status" disabled={state.sending} onClick={() => void send('STATUS')}>↻ {t('状態をもう一度受け取る')}</button>}
         </div>
         <button className="lights-off quiet-button" disabled={!connected} aria-describedby="lights-off-help" onClick={() => void send('OFF')}>◯ {t('ライトを消す')}</button>
-        <p id="lights-off-help" className="controller-note">{t('対応プログラムでは、0.2秒かけてふわっと消灯します。以前のプログラムは更新が必要です。')}</p>
+        <p id="lights-off-help" className="controller-note">{t('ライトを消す動きは作品のプログラムに従います。送信後は実際の光も確認してください。')}</p>
         <div className="playback-controls" aria-describedby="playback-help">
-          <p className="playback-status"><span>{t('機器の再生状態')}</span><strong>{stale ? t('最後に届いた状態') : playbackName}</strong></p>
+          <p className="playback-status"><span>{t(outdated && state.status ? '最後に受信した再生状態' : '機器の再生状態')}</span><strong>{playbackName}</strong></p>
           <div className="playback-buttons">
             <button className="run-button" disabled={!canPlay} onClick={() => { if (canPlay) void send('PLAY') }}>▶ {t('再生')}</button>
             <button className="quiet-button" disabled={!canPause} onClick={() => { if (canPause) void send('PAUSE') }}>■ {t('停止')}</button>
           </div>
-          <p id="playback-help" className="controller-note">{t(artwork ? '停止すると、その色のまま動きが止まります。もう一度「再生」で続けられます。' : legacy ? 'この旧仕様では再生・停止を使えません。下の準備手順で新仕様のプログラムを確認してください。' : '再生・停止は、新仕様（NanoLED v2）の状態を受信すると使えます。今は操作できません。')}</p>
+          <p id="playback-help" className="controller-note">{t(artwork ? '停止すると、その色のまま動きが止まります。もう一度「再生」で続けられます。' : legacy ? 'このプログラムでは再生・停止を使えません。使いたいときは、下の準備手順で対応プログラムを用意してください。' : '再生・停止は、機器の状態が届いてから使えます。')}</p>
         </div>
         <h3 className="control-title">{t('モードを選ぶ')}</h3>
         <div className="mode-buttons">
@@ -137,8 +139,8 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
         </div>
         <section className="action-controls" aria-labelledby="action-title">
           <h3 id="action-title" className="control-title">{t('一度だけ演出する')}</h3>
-          {artwork ? artwork.controls.actions.length ? <><div className="action-buttons">{artwork.controls.actions.map(item => <button key={item.id} className="action-button" disabled={!canControl || state.sending} onClick={() => { if (canControl && !state.sending) void send(`ACTION ${item.id}`) }}><span aria-hidden="true">{effectIcons[appearance('action', item.id, item.label).icon]}</span> {appearance('action', item.id, item.label).label}</button>)}</div><p className="controller-note">{t('演出中にもう一度押したときの動きは、作品のプログラムに従います。通常は今の光からやり直すか別の演出に切り替わりますが、再操作を受け付けず最後まで続ける作品もあります。')}</p><p className="controller-note">{t('終わると元のモードと再生状態に戻ります。途中でモード変更・停止・消灯もできます。')}</p></> : <p className="controller-note">{t('この作品には、一度だけの演出はありません。')}</p> : <><button className="action-button control-placeholder" disabled>✧ {t('アクションを実行')}</button><p className="controller-note">{t(legacy ? '作品専用アクションは新仕様（NanoLED v2）で使えます。' : '作品専用のボタン名は、接続後に機器から受け取ります。')}</p></>}
-          {actionName && <p className="action-status" role="status">{t(stale ? '最後に届いた演出: {name}' : '機器からの報告: 「{name}」を実行中', { name: actionName })}</p>}
+          {artwork ? artwork.controls.actions.length ? <div className="action-buttons">{artwork.controls.actions.map(item => <button key={item.id} className="action-button" disabled={!canControl || state.sending} onClick={() => { if (canControl && !state.sending) void send(`ACTION ${item.id}`) }}><span aria-hidden="true">{effectIcons[appearance('action', item.id, item.label).icon]}</span> {appearance('action', item.id, item.label).label}</button>)}</div> : <p className="controller-note">{t('この作品には、一度だけの演出はありません。')}</p> : <><button className="action-button control-placeholder" disabled>✧ {t('アクションを実行')}</button><p className="controller-note">{t(legacy ? 'このプログラムでは未対応' : '作品専用のボタン名は、接続後に機器から受け取ります。')}</p></>}
+          {actionName && <p className="action-status" role="status">{t(outdated ? '最後に届いた演出: {name}' : '機器からの報告: 「{name}」を実行中', { name: actionName })}</p>}
         </section>
         {sentNotice && connected && sentNotice.connectedAt === state.connectedAt && now - sentNotice.at < 5000 && <p className="controller-note command-notice" role="status">{t('操作を送信しました。実行完了の確認ではありません。機器から届く状態と実際の光を確認してください。')}</p>}
         <div className="slider-heading"><p className="eyebrow">{t('2. 好みに合わせる')}</p><h3>{t(showSpeed ? '明るさとスピード' : '明るさ')}</h3></div>
@@ -149,29 +151,35 @@ export function BluetoothPanel({ onOpenProgram, onOpenPreparation, remoteButtons
         {!artwork && <section className="remote-setup" aria-labelledby="remote-setup-title">
           <h3 id="remote-setup-title">{t('対応プログラムの準備')}</h3>
           <ol>
-            <li>{t('「AIの準備」で機器・UIFlow2版・LEDの設定を確認します。')}</li>
-            <li>{t('再生・停止・作品専用ボタンには、NanoLED v2対応の main.py が必要です。通常のLEDプログラムや旧仕様だけでは使えません。')}</li>
-            <li>{t('対応コードを用意したら「プログラム」画面に貼り、「実行」。この画面へ戻り、Bluetoothでつないで状態を受け取ります。')}</li>
+            <li>{t('「AIの準備」で機器・LEDの設定と「どう操作する？」を確認し、WebリモコンをONにします。')}</li>
+            <li>{t('「対応プログラムを準備」で同梱プログラムを試すか、準備文をAIへ渡して自分の光り方を作ります。')}</li>
+            <li>{t('「プログラム」で対応コードを「実行」し、ここに戻ってBluetoothでつなぎます。')}</li>
           </ol>
-          <p className="controller-note">{t('対応コードがまだない場合は、作成者に使用機器・UIFlow2版・LED構成を伝えて準備を依頼してください。このアプリには実機確認済みのBLE基準コードは含まれていません。')}</p>
-          <p className="controller-note">{t('確認済みの基準コードは「AIの準備」の詳細設定で登録できます。動作確認をしていないコードを確認済みにしないでください。接続だけではプログラムは更新されません。')}</p>
+          <p className="controller-note">{t('同梱プログラムは試用用です。実機確認済みの保証はないため、配線と実際の光を確認してください。')}</p>
+          <p className="controller-note">{t('接続しただけでは、機器のプログラムは変わりません。')}</p>
         </section>}
         <div className="remote-setup-links"><button className="quiet-button" onClick={onOpenPreparation}>{t('AIの準備へ')}</button><button className="text-button" onClick={onOpenProgram}>{t('プログラム画面')}</button></div>
+        <details className="remote-protocol"><summary>{t('操作のしくみ・通信仕様')}</summary>
+          <p><span>{t('通信仕様')}: </span><strong>{t(protocolLabel)}</strong></p>
+          <p className="controller-note">{t(legacy ? '明るさ・消灯・従来の4モードは使えます。再生・停止・作品専用アクションには、新仕様の対応プログラムが必要です。' : artwork ? '受信した操作一覧に合わせて、使えるボタンを表示しています。' : '再生・停止・作品の操作には、新しい通信仕様に対応した機器の状態確認が必要です。')}</p>
+          {artwork && artwork.controls.actions.length > 0 && <p className="controller-note">{t('演出中にもう一度押したときの動きは、作品のプログラムに従います。通常は今の光からやり直すか別の演出に切り替わりますが、再操作を受け付けず最後まで続ける作品もあります。')}</p>}
+        </details>
       </section>
 
-      <section className={`panel led-panel${!connected || stale ? ' outdated' : ''}`} aria-labelledby="led-title">
-        <div className="section-heading"><div><p className="eyebrow">{t('3. 機器から届いた光を見る')}</p><h2 id="led-title">{t('いまのLED')}</h2></div><span className={`small-badge ${canControl ? 'live' : ''}`}>{t(!connected ? '未接続' : stale ? '更新が止まっています' : state.status ? '受信中' : '受信待ち')}</span></div>
+      <section className={`panel led-panel${outdated ? ' outdated' : ''}`} aria-labelledby="led-title">
+        <div className="section-heading"><div><p className="eyebrow">{t('3. 機器から届いた光を見る')}</p><h2 id="led-title">{t(outdated && state.status ? '最後に届いたLED' : '機器から届いたLED')}</h2></div><span className={`small-badge ${canControl ? 'live' : ''}`}>{t(!connected ? '未接続' : stale ? '更新が止まっています' : state.status ? '受信中' : '受信待ち')}</span></div>
         {!state.status ? <div className="led-placeholder"><span aria-hidden="true">✦</span><h3>{t(connected ? 'LEDの状態を待っています' : 'つながると、ここに光が届きます')}</h3><p>{t(connected ? 'しばらく待っても表示されない場合は、下の「うまくつながらないとき」を確認してください。' : '機器が送ったLEDの色を、ひとつずつ表示します。')}</p></div> : <>
-          <div className="led-summary"><strong>{!connected || stale ? t('最後に届いた状態') : modeName}</strong><span>{litCount === 0 ? t('すべて消灯') : t('{count}個のうち{lit}個が点灯', { count: pixels.length, lit: litCount })}</span></div>
-          <div className="led-preview" aria-label={t('{count}個のLED。{lit}個が点灯。{mode}', { count: pixels.length, lit: litCount, mode: modeName ?? '' })}>
+          {outdated && <p className="last-status-note" role="status">{t('最後に受信した表示です。いまの光と同じとは限りません。')}</p>}
+          <div className="led-summary"><strong>{modeName}</strong><span>{litCount === 0 ? t('すべて消灯') : t('{count}個のうち{lit}個が点灯', { count: pixels.length, lit: litCount })}</span></div>
+          <div className="led-preview" aria-label={outdated ? t('最後に届いた状態。{state}', { state: t('{count}個のLED。{lit}個が点灯。{mode}', { count: pixels.length, lit: litCount, mode: modeName ?? '' }) }) : t('{count}個のLED。{lit}個が点灯。{mode}', { count: pixels.length, lit: litCount, mode: modeName ?? '' })}>
             {pixels.map((color, index) => <span key={index} className={`led-dot${color === '000000' ? ' off' : ''}`} style={{ backgroundColor: `#${color}`, boxShadow: color === '000000' ? 'none' : `0 0 12px #${color}80` }} title={`LED ${index + 1}: #${color.toUpperCase()}`} />)}
           </div>
           <dl className="led-values"><div><dt>{t('光り方')}</dt><dd>{modeName}</dd></div><div><dt>{t('明るさの設定')}</dt><dd>{state.status.brightness}%</dd></div>{showSpeed && <div><dt>{t('スピードの設定')}</dt><dd>{state.status.speed}%</dd></div>}{artwork && <div><dt>{t('機器の再生状態')}</dt><dd>{playbackName}</dd></div>}</dl>
-          <p className="received-time">{t('最終受信')} {state.receivedAt === null ? '—' : new Date(state.receivedAt).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : locale === 'en' ? 'en-US' : 'ja-JP')}</p>
+          <p className="received-time">{t('最終受信')} {state.receivedAt === null ? '—' : new Date(state.receivedAt).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : locale)}</p>
         </>}
         {stale && <p className="notice warn" role="status">{t('5秒以上、新しい状態が届いていません。機器の電源とプログラムを確認してください。表示は最後に届いたものです。')}</p>}
         {waitingTooLong && <p className="notice warn" role="status">{t('接続できましたが、5秒以上LEDの状態が届いていません。「状態をもう一度受け取る」を試し、変わらなければ対応プログラムを実行してつなぎ直してください。')}</p>}
-        <button className="quiet-button refresh-status" disabled={!connected || state.sending} onClick={() => void send('STATUS')}>↻ {t('状態をもう一度受け取る')}</button>
+        {!stale && !waitingTooLong && <button className="quiet-button refresh-status" disabled={!connected || state.sending} onClick={() => void send('STATUS')}>↻ {t('状態をもう一度受け取る')}</button>}
         <p className="controller-note">{t('表示は、機器が報告したLEDへの出力色です。実際の光をセンサーで測ったものではありません。動く光は間をあけて表示します。')}</p>
       </section>
     </div>

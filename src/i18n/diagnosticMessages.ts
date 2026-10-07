@@ -1,0 +1,28 @@
+import type { MessageCatalog } from './types'
+
+export const diagnosticMessages: MessageCatalog = {
+  "機器内部でクラッシュが発生しました。実行は正常に継続していません。": { en: "The device crashed internally. Execution is no longer continuing normally.", zh: "设备内部发生崩溃，程序未正常继续运行。" },
+  "実行中に機器の再起動を検出しました。実行は正常に継続していません。": { en: "A device restart was detected during execution. Execution is no longer continuing normally.", zh: "运行期间检测到设备重启，程序未正常继续运行。" },
+  "機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。": { en: "The device restarted. Restore USB communication or reconnect before continuing. No write or execution was performed.", zh: "设备已重启。请恢复USB通信或重新连接。未进行写入或运行。" },
+  "書き込み成功・機器が異常終了しました": { en: "Write succeeded · the device stopped abnormally", zh: "写入成功 · 设备异常终止" },
+  "機器が異常終了しました": { en: "The device stopped abnormally", zh: "设备异常终止" },
+  "機器内部のクラッシュまたは再起動を検出しました。起動が落ち着いてからUSB操作を復旧してください。復旧できなければ、接続を切り、電源を入れ直してUSBをつなぎ直してください。自動で再実行はしません。": { en: "A device crash or restart was detected. Wait for startup to settle, then restore USB communication. If that fails, disconnect, power-cycle the device, and reconnect USB. The program will not be rerun automatically.", zh: "检测到设备崩溃或重启。请等待启动稳定后恢复USB通信。若无法恢复，请断开连接、重新上电并重新连接USB。不会自动重新运行程序。" },
+  "USB操作を復旧する": { en: "Restore USB communication", zh: "恢复USB通信" },
+  "書き込み済みの作品と編集中のコードは残します。復旧操作は自動起動設定を変えず、作品を再実行しません。": { en: "The saved work and editor code are kept. Recovery does not change the autostart setting or rerun the work.", zh: "保留已写入的作品和编辑中的代码。恢复操作不会更改自动启动设置，也不会重新运行作品。" },
+  "起動時に再起動する場合の診断（必要なときだけ）": { en: "Startup restart diagnostics (only when needed)", zh: "启动时重启的诊断（仅在需要时）" },
+  "元の作品を残したまま、初期化の番号とメモリ情報を出す別ファイルを作ります。エディタ・機器・自動起動設定は、この操作では変更しません。": { en: "Create a separate file with numbered initialization logs and memory information while keeping the original work. This action does not change the editor, device, or autostart setting.", zh: "保留原作品，创建带有编号初始化日志和内存信息的独立文件。此操作不会更改编辑器、设备或自动启动设置。" },
+  "元コードを保存し、ダウンロードできたことを確認する": { en: "Save the original code and check that it downloaded", zh: "保存原代码，并确认下载成功" },
+  "診断版を保存し、その全文をコード欄に貼って「実行」を1回押す": { en: "Save the diagnostic version, paste its full contents into the editor, and press Run once", zh: "保存诊断版，将全文粘贴到代码栏，然后按一次“运行”" },
+  "起動中は本体ボタン・BLEを操作せず、診断ログを保存する。終わったら元コードに戻す": { en: "Do not use the device button or BLE during startup. Save the diagnostic log, then restore the original code", zh: "启动期间不要操作本体按钮或BLE。保存诊断日志，结束后恢复原代码" },
+  "診断版の実行は機器のmain.pyを上書きします。自動実行がONなら次の電源投入でも診断版が動きます。元コードは機器のバックアップだけに頼らず保管してください。": { en: "Running the diagnostic version overwrites main.py on the device. If autostart is ON, it will also run at the next power-on. Keep a separate copy of the original code; do not rely only on the device backup.", zh: "运行诊断版会覆盖设备的main.py。若自动运行已开启，下次上电也会运行诊断版。请另行保管原代码，不要只依赖设备备份。" },
+  "元コードを保存": { en: "Save original code", zh: "保存原代码" },
+  "診断版を保存": { en: "Save diagnostic version", zh: "保存诊断版" },
+  "診断ログを保存": { en: "Save diagnostic log", zh: "保存诊断日志" },
+  "元コードを別ファイルに保管しました": { en: "I kept the original code in a separate file", zh: "我已将原代码保存在独立文件中" },
+  "構文エラーや診断用変数との競合があるコードには、自動でログを追加できません。元コードとログを保存して相談してください。": { en: "Logs cannot be added automatically to code with syntax errors or conflicting diagnostic variable names. Save the original code and log for consultation.", zh: "代码存在语法错误或与诊断变量冲突时，无法自动添加日志。请保存原代码和日志以便咨询。" },
+  "診断対象は{count}か所です。一行に複数の処理がある場合など、{skipped}か所は変更せずに残しました。": { en: "There are {count} diagnostic sites. {skipped} sites were left unchanged, for example where a line contains multiple statements.", zh: "共有{count}处诊断点。对于一行包含多条语句等情况，保留了{skipped}处不作修改。" },
+  "診断はクラッシュの修正ではありません。ログ追加自体でメモリ・タイミングが変わります。診断版が動いても、元作品の問題解消や実機確認済みとは扱いません。": { en: "Diagnostics do not fix crashes. Adding logs changes memory use and timing. A working diagnostic version does not prove the original work is fixed or hardware-verified.", zh: "诊断不是崩溃修复。添加日志会改变内存使用和时序。诊断版能运行，并不证明原作品已修复或通过实机验证。" },
+  "コードやログにWi-Fi情報・アクセスコードなどが含まれる場合があります。保存後、共有する前に内容を確認してください。保存しますか？": { en: "Code or logs may contain Wi-Fi details or access codes. Check the contents before sharing the saved file. Save it?", zh: "代码或日志可能包含Wi-Fi信息、访问码等。保存后，请在分享前检查内容。是否保存？" },
+  "ファイル保存を開始しました。ブラウザのダウンロードを確認してください。": { en: "File saving has started. Check your browser downloads.", zh: "已开始保存文件，请检查浏览器下载。" },
+  "ファイルを保存できませんでした。ブラウザのダウンロード設定を確認してください。": { en: "The file could not be saved. Check your browser download settings.", zh: "无法保存文件，请检查浏览器下载设置。" },
+}

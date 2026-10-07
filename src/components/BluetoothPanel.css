@@ -50,6 +50,11 @@
 .remote-availability p:first-child > span:first-child { font-size: .76rem; }
 .remote-availability strong { color: #163d63; }
 .remote-availability.available { background: #eaf6ee; }
+.remote-availability.interrupted { background: #fff2d8; border: 1px solid #d4a643; }
+.remote-availability .refresh-status { margin-top: 12px; }
+.remote-protocol { margin-top: 20px; border-top: 1px solid #d7e4ef; padding-top: 16px; font-size: .85rem; }
+.remote-protocol summary { cursor: pointer; color: #526b84; font-weight: 650; }
+.remote-protocol > p { line-height: 1.8; margin-bottom: 0; }
 .control-placeholder { width: 100%; grid-column: 1 / -1; border-style: dashed; }
 .bluetooth-panel .control-placeholder:disabled { opacity: .75; }
 .remote-setup { margin-top: 24px; border-top: 1px solid #d7e4ef; padding-top: 18px; }
@@ -85,6 +90,7 @@
 .led-values dt { font-size: .72rem; font-weight: 400; color: #526b84; }
 .led-values dd { font-weight: 750; margin-top: 4px; overflow-wrap: anywhere; }
 .received-time { font-size: .78rem; color: #526b84; margin: 18px 0; }
+.last-status-note { color: #765518; background: #fff2d8; border: 1px dashed #d4a643; border-radius: 10px; padding: 12px; line-height: 1.8; font-size: .85rem; }
 .refresh-status { width: 100%; }
 .bluetooth-help ol { padding-left: 22px; margin: 0 0 12px; font-size: .9rem; line-height: 1.9; }
 .bluetooth-help .advanced-body > p { font-size: .86rem; line-height: 1.9; }
@@ -106,6 +112,9 @@
 :root[data-theme=dark] .remote-availability { background: #243447; color: #d1deed; }
 :root[data-theme=dark] .remote-availability strong { color: #eff7ff; }
 :root[data-theme=dark] .remote-availability.available { background: #183b31; }
+:root[data-theme=dark] .remote-availability.interrupted, :root[data-theme=dark] .last-status-note { color: #f3ddb2; background: #3b301e; border-color: #ac8536; }
+:root[data-theme=dark] .remote-protocol { border-color: #3c5268; }
+:root[data-theme=dark] .remote-protocol summary { color: #adbed0; }
 :root[data-theme=dark] .remote-setup { border-color: #3c5268; }
 :root[data-theme=dark] .small-badge { background: #263a4e; color: #bcd0e5; }
 :root[data-theme=dark] .small-badge.live { background: #163e31; color: #8bebbd; }

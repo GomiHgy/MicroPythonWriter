@@ -29,7 +29,7 @@ vi.mock('react', async () => ({
 const profile: WorkshopProfile = { boardId: 'm5nanoc6', materialId: 'test-material', revision: 'test-1', displayName: 'テスト教材', firmwareVersion: 'test-ui-2', ledModel: 'WS2812B', ledCount: 37, ledPin: 2, ledBpp: 3, maxBrightnessPercent: 30, features: { button: true, ble: false, controller: false }, baseline: { code: '', verification: null } }
 function preparation(selectedProfile = profile): WorkshopPreparation {
   const context = createWorkshopContext(selectedProfile)
-  return { profiles: [{ id: 'test', profile: selectedProfile }], selectedId: 'test', selectedProfile, context, prompt: buildStartPrompt(context), draft: selectedProfile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), adoptProjectSettings: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
+  return { profiles: [{ id: 'test', profile: selectedProfile }], selectedId: 'test', selectedProfile, context, prompt: buildStartPrompt(context), draft: selectedProfile, draftErrors: [], hasPendingChanges: false, isImporting: false, notice: '', selectProfile: vi.fn(), adoptProjectSettings: vi.fn(), editDraft: vi.fn(), editLedSettings: vi.fn(), editOperationSettings: vi.fn(), applyDraft: vi.fn(() => true), saveDraft: vi.fn(), confirmBaseline: vi.fn(), importBaseline: vi.fn(async () => {}), resetProfile: vi.fn() }
 }
 type Element = ReactElement<Record<string, unknown>>
 function all(node: ReactNode, predicate: (element: Element) => boolean): Element[] {
@@ -123,7 +123,7 @@ describe('AIの準備パネル', () => {
   it('Bluetoothだけの初期設定ではWebコントローラを使う入口を案内する', () => {
     const selected = wirelessProfile(); selected.features.controller = false
     const panel = render(preparation(selected))
-    expect(content(panel)).toContain('「Webコントローラ」をONにして「設定を適用」')
+    expect(content(panel)).toContain('「どう操作する？」でWebリモコンをON')
     expect(content(panel)).not.toContain('BLE基準コードが未登録です')
   })
 
@@ -231,14 +231,48 @@ describe('AIの準備パネル', () => {
   function featureInput(node: ReactNode, label: string) {
     return find(find(node, element => element.type === 'label' && content(element) === label), element => element.type === 'input')
   }
-  it('WebコントローラをONにするとBluetoothも同時にONにする', () => {
+  it('本体ボタンとWebリモコンは基本欄で選べ、詳細の適用操作を呼ばない', () => {
     const prep = preparation()
-    const node = featureSettings(prep)
-    expect(featureInput(node, 'Bluetooth').props).toMatchObject({ checked: false, disabled: false })
-    event(featureInput(node, 'Webコントローラ（NanoLED v1/v2）'), 'onChange', { target: { checked: true } })
-    expect(prep.editDraft).toHaveBeenCalledExactlyOnceWith({ features: { button: true, ble: true, controller: true } })
+    const panel = render(prep)
+    const node = find(panel, element => element.type === 'fieldset' && element.props.className === 'ai-operation-settings')
+    expect(node.props.disabled).toBe(false)
+    expect(content(node)).toContain('どう操作する？')
+    const buttonInput = find(node, element => element.props.id === 'ai-operation-button')
+    const remoteInput = find(node, element => element.props.id === 'ai-operation-controller')
+    expect(buttonInput.props.checked).toBe(true)
+    expect(remoteInput.props.checked).toBe(false)
+    event(buttonInput, 'onChange', { target: { checked: false } })
+    event(remoteInput, 'onChange', { target: { checked: true } })
+    expect(prep.editOperationSettings).toHaveBeenNthCalledWith(1, { button: false })
+    expect(prep.editOperationSettings).toHaveBeenNthCalledWith(2, { controller: true })
+    expect(prep.editDraft).not.toHaveBeenCalled()
     expect(prep.applyDraft).not.toHaveBeenCalled()
     expect(prep.confirmBaseline).not.toHaveBeenCalled()
+    const advanced = featureSettings(prep)
+    expect(all(advanced, element => element.type === 'input')).toHaveLength(1)
+    expect(featureInput(advanced, 'Bluetooth').props).toMatchObject({ checked: false, disabled: false })
+  })
+  it('機器選択前は操作方法を出さず、読み込み中は基本欄を無効化する', () => {
+    expect(all(render({ ...preparation(), selectedProfile: null }), element => element.props.className === 'ai-operation-settings')).toHaveLength(0)
+    const node = find(render({ ...preparation(), isImporting: true }), element => element.props.className === 'ai-operation-settings')
+    expect(node.props.disabled).toBe(true)
+  })
+  it('両方OFFの自動演出と独自Bluetooth設定を区別する', () => {
+    const auto = preparation({ ...profile, features: { button: false, ble: false, controller: false } })
+    expect(content(render(auto))).toContain('どちらもOFF：ボタンやリモコンを使わず')
+    const custom = preparation({ ...profile, features: { button: false, ble: true, controller: false } })
+    const customNode = render(custom)
+    expect(content(customNode)).toContain('独自のBluetooth通信が詳細設定で有効')
+    expect(content(customNode)).not.toContain('どちらもOFF：')
+  })
+  it('ファームウェア版が未入力でも、機器の機能タグは選んだ操作方法と一致する', () => {
+    const prep = preparation({ ...profile, firmwareVersion: null, features: { button: true, ble: true, controller: true } })
+    expect(prep.context?.controllerEnabled).toBe(false)
+    const node = render(prep)
+    const tags = find(node, element => element.props.className === 'ai-feature-list')
+    expect(all(tags, element => element.type === 'span').map(content)).toEqual(['LED', '本体ボタン', 'Bluetooth', 'Webリモコン'])
+    expect(content(node)).toContain('設定を確認してください')
+    expect(button(node, 'AIに渡す準備文をコピー').props.disabled).toBe(true)
   })
   it.each(['ja', 'en', 'zh'] as const)('%s でBluetoothをON固定し、理由をチェック欄に関連付ける', locale => {
     setLocale(locale)
@@ -247,14 +281,11 @@ describe('AIの準備パネル', () => {
     const bluetooth = featureInput(node, 'Bluetooth')
     expect(bluetooth.props).toMatchObject({ checked: true, disabled: true, 'aria-describedby': 'ai-controller-ble-help' })
     const hint = find(node, element => element.props.id === 'ai-controller-ble-help')
-    expect(content(hint)).toBe(translate(locale, 'WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。'))
+    expect(content(hint)).toBe(translate(locale, '選んだ操作方法は準備文へすぐ反映し、機種別にこのブラウザへ自動保存します。Webリモコンを使うとBluetoothも有効になります。'))
     if (locale !== 'ja') expect(content(hint)).not.toMatch(/[ぁ-んァ-ヶ]/)
     event(bluetooth, 'onChange', { target: { checked: false } })
     expect(prep.editDraft).not.toHaveBeenCalled()
-    const controller = featureInput(node, translate(locale, 'Webコントローラ（NanoLED v1/v2）'))
-    expect(controller.props.disabled).toBe(false)
-    event(controller, 'onChange', { target: { checked: false } })
-    expect(prep.editDraft).toHaveBeenCalledExactlyOnceWith({ features: { button: true, ble: true, controller: false } })
+    expect(all(node, element => element.type === 'input')).toHaveLength(1)
   })
   it('WebコントローラがOFFならBluetoothを利用者がOFFにできる', () => {
     const prep = { ...preparation(), draft: { ...profile, features: { button: false, ble: true, controller: false } } }

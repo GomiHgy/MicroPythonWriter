@@ -15,13 +15,18 @@ import { pasteMessages } from './pasteMessages'
 import { ledCodeMessages } from './ledCodeMessages'
 import { pwaMessages } from './pwaMessages'
 import { exportMessages } from './exportMessages'
+import { basicOperationMessages } from './basicOperationMessages'
+import { remoteStatusMessages } from './remoteStatusMessages'
+import { programWorkflowMessages } from './programWorkflowMessages'
+import { diagnosticMessages } from './diagnosticMessages'
+import { supportMessages } from './supportMessages'
 import { localeDictionaries } from './localeDictionaries'
 import { isLocale } from './locales'
 import type { ExtendedLocale, Locale, MessageCatalog, MessageParams } from './types'
 
 export type { Locale, MessageCatalog, MessageParams } from './types'
 export { isLocale, supportedLocales, localeDefinition } from './locales'
-export const messages: MessageCatalog = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages, ...ledCodeMessages, ...pwaMessages, ...exportMessages }
+export const messages: MessageCatalog = { ...appMessages, ...preparationMessages, ...bluetoothMessages, ...serviceMessages, ...workshopMessages, ...promptMessages, ...makerMessages, ...projectMessages, ...licenseMessages, ...bootMessages, ...programLibraryMessages, ...simulationMessages, ...pasteMessages, ...ledCodeMessages, ...pwaMessages, ...exportMessages, ...basicOperationMessages, ...remoteStatusMessages, ...programWorkflowMessages, ...diagnosticMessages, ...supportMessages }
 for (const [locale, dictionary] of Object.entries(localeDictionaries)) {
   for (const [key, value] of Object.entries(dictionary)) {
     if (messages[key]) messages[key][locale as ExtendedLocale] = value

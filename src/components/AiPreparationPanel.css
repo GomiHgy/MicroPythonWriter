@@ -69,6 +69,18 @@
 }
 .ai-led-settings { margin: 18px 0; border: 1px solid #8da4bb; border-radius: 12px; padding: 16px; min-width: 0; }
 .ai-led-settings legend { font-weight: 700; padding: 0 6px; }
+.ai-operation-settings { margin: 18px 0; border: 1px solid #8da4bb; border-radius: 12px; padding: 16px; min-width: 0; }
+.ai-operation-settings legend { padding: 0 6px; font-weight: 750; }
+.ai-operation-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ai-operation-option { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid #a7bdcf; border-radius: 10px; min-width: 0; cursor: pointer; }
+.ai-operation-option.selected { border-color: #1769bc; background: #e8f4ff; }
+.ai-operation-option input { flex-shrink: 0; margin: 4px 0 0; }
+.ai-operation-option strong, .ai-operation-option small { display: block; }
+.ai-operation-option small { margin-top: 5px; font-size: .85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ai-operation-settings .ai-help:last-child { margin-bottom: 0; }
+:root[data-theme=dark] .ai-operation-option { border-color: #55708a; }
+:root[data-theme=dark] .ai-operation-option.selected { border-color: #7cc0ff; background: #173b5b; }
+@media (max-width: 650px) { .ai-operation-options { grid-template-columns: 1fr; } }
 .ai-controller-guide { margin: 20px 0; padding: 18px; border: 1px solid #8da4bb; border-radius: 12px; }
 .ai-controller-guide h3 { margin: 0 0 8px; font-size: 1.15rem; }
 .ai-controller-guide > p { line-height: 1.65; }

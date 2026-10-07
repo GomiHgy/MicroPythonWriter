@@ -1,0 +1,28 @@
+.support-panel { display: flex; justify-content: flex-end; margin-top: 12px; }
+.support-entry { position: fixed; right: 20px; bottom: 20px; z-index: 10; max-width: min(360px, calc(100vw - 40px)); font-size: .84rem; box-shadow: 0 2px 10px #15253620; }
+.support-dialog { box-sizing: border-box; width: min(560px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); padding: 24px; border: 1px solid #a6bbd0; border-radius: 16px; background: #fff; color: #203850; overflow: auto; overflow-wrap: anywhere; }
+.support-dialog::backdrop { background: #101821aa; }
+.support-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.support-heading h2 { margin: 4px 0 0; font-size: 1.2rem; }
+.support-heading button { flex-shrink: 0; }
+.support-dialog p { line-height: 1.7; }
+.support-optional { padding: 12px; background: #edf4fa; border-radius: 10px; }
+.support-online-note { font-size: .84rem; color: #526981; }
+.support-blocked { padding: 12px; border: 1px solid #c79c38; border-radius: 10px; background: #fff8e7; color: #674600; }
+.support-destinations { display: grid; gap: 10px; }
+.support-destinations a { padding: 12px 16px; border: 1px solid #1769bc; border-radius: 10px; color: #07549f; text-decoration: none; font-weight: 700; background: #edf7ff; }
+.support-dialog a small { display: block; font-size: .78rem; font-weight: 400; margin-top: 4px; }
+.support-dialog a[aria-disabled=true] { opacity: .6; cursor: not-allowed; }
+.support-disclosure { margin-top: 16px; font-size: .85rem; }
+.support-disclosure a { color: #07549f; }
+:root[data-theme=dark] .support-dialog { background: #182431; color: #eef5ff; border-color: #55708a; }
+:root[data-theme=dark] .support-optional { background: #22384d; }
+:root[data-theme=dark] .support-online-note { color: #adbed0; }
+:root[data-theme=dark] .support-blocked { background: #3b301b; color: #ffe6a5; }
+:root[data-theme=dark] .support-destinations a { background: #22384d; color: #c4e2ff; border-color: #55708a; }
+:root[data-theme=dark] .support-disclosure a { color: #82c2ff; }
+@media (max-width: 950px), (max-height: 500px) {
+  .support-entry { position: static; max-width: 100%; white-space: normal; }
+  .support-panel { justify-content: center; }
+  .support-dialog { padding: 18px; }
+}
