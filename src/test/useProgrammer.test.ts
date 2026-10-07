@@ -8,7 +8,7 @@ import { BootModeService } from '../services/micropython/BootModeService'
 import { WebSerialTransport } from '../services/serial/WebSerialTransport'
 import { WebUsbCdcTransport } from '../services/serial/WebUsbCdcTransport'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
-import { DeviceTimeoutError, SerialDisconnectedError } from '../types'
+import { DeviceRestartError, DeviceTimeoutError, SerialDisconnectedError } from '../types'
 import { workshopPresets } from '../config/workshops'
 import { setLocale } from '../i18n'
 import { createWorkshopContext, type WorkshopContext } from '../services/prompt/WorkshopRules'
@@ -694,6 +694,24 @@ describe('書込み・実行結果の構造化フィードバック', () => {
     callbacks[0].onComplete?.({ state: 'error', stdout: '', stderr: '', intentionalStop: false, hostError: kind === 'host' ? new Error('host failed') : undefined })
     expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'runtime' })
     expect(render().state).toBe('error')
+  })
+
+  it.each(['panic', 'restart'] as const)('機器の%sは通信タイムアウトと区別し、保存状態・元コードを残す', async reason => {
+    const boot = vi.spyOn(BootModeService.prototype, 'set')
+    await startProgram()
+    const source = render().source
+    const written = render().writtenSource
+    callbacks[0].onComplete?.({ state: 'error', stdout: "Guru Meditation Error: Core 0 panic'ed (Load access fault).", stderr: '', intentionalStop: false, hostError: new DeviceRestartError(reason) })
+    expect(render().state).toBe('error')
+    expect(render().error?.stage).toBe(reason === 'panic' ? 'DEVICE_PANIC' : 'DEVICE_RESTART')
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: true, failedAt: 'runtime' })
+    expect(render().source).toBe(source)
+    expect(render().writtenSource).toBe(written)
+    expect(render().runningSource).toBeNull()
+    expect(render().bootConfigured).toBeNull()
+    expect(render().info.bootOption).toBeUndefined()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledOnce()
+    expect(boot).not.toHaveBeenCalled()
   })
 
   it.each(['completed', 'error'] as const)('起動Promiseより先に%s通知が届いても、遅い起動結果で実行中へ戻さない', async finalState => {

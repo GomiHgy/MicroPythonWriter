@@ -7,6 +7,7 @@ import { buildStartPrompt } from '../services/prompt/StartPromptBuilder'
 import { createWorkshopContext } from '../services/prompt/WorkshopRules'
 import { cloneWorkshopProfile, getBlePreparationReasons, MAX_BASELINE_CODE_LENGTH, validateWorkshopProfile, type WorkshopProfile } from '../services/workshop/WorkshopProfile'
 import { removeWorkshopProfile, restoreWorkshopProfile, storeWorkshopProfile } from '../services/workshop/WorkshopStorage'
+import { operationSettingsKey, restoreOperationSettings, storeOperationSettings } from '../services/workshop/OperationSettings'
 
 export const APPLY_DRAFT_SUCCESS_NOTICE = 'この画面に設定を適用しました。再読み込み後も使う場合は、ブラウザに保存してください。'
 
@@ -21,7 +22,8 @@ function initialSettings() {
   const loaded = workshopPresets.map(preset => {
     const saved = restoreWorkshopProfile(preset)
     const led = restoreLedSettings(preset, saved.profile)
-    return { preset, restored: { profile: withControllerBluetooth(led.profile), notice: saved.notice || led.notice } }
+    const operation = restoreOperationSettings(preset, led.profile)
+    return { preset, restored: { profile: withControllerBluetooth(operation.profile), notice: saved.notice || led.notice || operation.notice } }
   })
   return {
     profiles: loaded.map(({ preset, restored }) => ({ id: preset.id, profile: restored.profile })),
@@ -62,6 +64,20 @@ export function useWorkshopPreparation() {
     setDraft(next ? cloneWorkshopProfile(next.profile) : null)
   }
 
+  function editOperationSettings(patch: Partial<Pick<WorkshopProfile['features'], 'button' | 'controller'>>) {
+    const preset = workshopPresets.find(item => item.id === selectedId)
+    if (!preset || !selectedProfile || !draft || isImporting) return
+    // リモコンのON/OFFは通信も一緒に切り替える。本体ボタンだけの変更は独自BLE設定を保つ。
+    const featurePatch: Partial<WorkshopProfile['features']> = {}
+    if (typeof patch.button === 'boolean') featurePatch.button = patch.button
+    if (typeof patch.controller === 'boolean') { featurePatch.controller = patch.controller; featurePatch.ble = patch.controller }
+    if (Object.entries(featurePatch).every(([key, value]) => selectedProfile.features[key as keyof WorkshopProfile['features']] === value)) return
+    const features = { ...selectedProfile.features, ...featurePatch }
+    const notice = storeOperationSettings(preset, features) || '操作方法をこのブラウザに自動保存しました。基準コードや未適用の詳細設定は保存していません。'
+    setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === selectedId ? { ...item, profile: { ...selectedProfile, features } } : item), notice }))
+    setDraft(previous => previous ? { ...previous, features: { ...previous.features, ...featurePatch } } : previous)
+  }
+
   function adoptProjectSettings(value: ProjectSettings, wireless: boolean) {
     const preset = settings.profiles.find(item => item.profile.boardId === value.boardId)
     const original = workshopPresets.find(item => item.id === preset?.id)
@@ -69,7 +85,7 @@ export function useWorkshopPreparation() {
     editGeneration.current++
     setIsImporting(false)
     const next = { ...preset.profile, firmwareVersion: value.firmwareVersion || null, ledModel: value.ledModel, ledCount: value.ledCount, ledPin: value.ledPin, maxBrightnessPercent: value.maxBrightnessPercent, features: { button: true, ble: wireless, controller: wireless }, baseline: { ...preset.profile.baseline, verification: null } }
-    const failure = storeLedSettings(original, next, true)
+    const failure = storeLedSettings(original, next, true) || storeOperationSettings(original, next.features)
     setSelectedId(preset.id)
     setDraft(cloneWorkshopProfile(next))
     setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: next } : item), notice: failure || '作品の設定を引き継ぎました。BLEの実機確認情報は引き継いでいません。' }))
@@ -103,7 +119,16 @@ export function useWorkshopPreparation() {
     // 実機確認済みコードの明示保存だけが、設定編集による永続的な失効を解除する。
     const baselineConfirmed = persistBaseline && draft.baseline.verification !== null
       && getBlePreparationReasons({ ...draft, features: { ...draft.features, ble: true } }).length === 0
-    const failure = storeWorkshopProfile(preset, draft, persistBaseline) || storeLedSettings(preset, draft, !baselineConfirmed)
+    // 一つの保存失敗で後続を飛ばさない。古い操作方法が明示保存した設定を上書きするのを防ぐ。
+    const profileFailure = storeWorkshopProfile(preset, draft, persistBaseline)
+    const ledFailure = storeLedSettings(preset, draft, !baselineConfirmed)
+    const operationFailure = storeOperationSettings(preset, draft.features)
+    if (!profileFailure && operationFailure) {
+      // 操作キーだけ保存できない場合は、明示保存できたプロフィールの操作方法へ戻せるようにする。
+      // 削除も拒否された場合は元の失敗通知を残し、保存成功と扱わない。
+      try { localStorage.removeItem(operationSettingsKey(preset)) } catch { /* operationFailureを表示する */ }
+    }
+    const failure = profileFailure || ledFailure || operationFailure
     setNotice(failure || (persistBaseline ? '設定と基準コードを、このブラウザに保存しました。' : '設定をこのブラウザに保存しました。基準コードは保存していません。'))
   }
 
@@ -137,7 +162,7 @@ export function useWorkshopPreparation() {
     if (!preset) return
     const failure = removeWorkshopProfile(preset)
     if (failure) { setNotice(failure); return }
-    try { localStorage.removeItem(ledSettingsKey(preset)) } catch { setNotice('LED設定を保存できませんでした。この画面では使えますが、再読み込みすると失われます。'); return }
+    try { localStorage.removeItem(ledSettingsKey(preset)); localStorage.removeItem(operationSettingsKey(preset)) } catch { setNotice('このブラウザには設定を保存できませんでした。現在の画面では設定を使えますが、再読み込みすると失われます。'); return }
     editGeneration.current++
     setIsImporting(false)
     const original = cloneWorkshopProfile(preset.profile)
@@ -145,7 +170,7 @@ export function useWorkshopPreparation() {
     setSettings(previous => ({ profiles: previous.profiles.map(item => item.id === preset.id ? { ...item, profile: original } : item), notice: 'この機器を初期設定に戻しました。保存済みのブラウザ設定も削除しました。' }))
   }
 
-  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, adoptProjectSettings, editDraft, editLedSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
+  return { profiles: settings.profiles, selectedId, selectedProfile, context, prompt, draft, draftErrors, hasPendingChanges, isImporting, notice: settings.notice, selectProfile, adoptProjectSettings, editDraft, editLedSettings, editOperationSettings, applyDraft, saveDraft, confirmBaseline, importBaseline, resetProfile }
 }
 
 export type WorkshopPreparation = ReturnType<typeof useWorkshopPreparation>

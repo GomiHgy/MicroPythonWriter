@@ -15,9 +15,10 @@ interface Props {
   repairPrompt?: string
   copyNotice?: { message: string; failed: boolean }
   onReconnect?: () => void
+  deviceRestarted?: boolean
 }
 
-export function ProgramResult({ feedback, source, connected, onShowError, onRecover, onCopyRepair, onDownloadRepair, repairLine, repairSourceKnown = true, repairPrompt, copyNotice, onReconnect }: Props) {
+export function ProgramResult({ feedback, source, connected, onShowError, onRecover, onCopyRepair, onDownloadRepair, repairLine, repairSourceKnown = true, repairPrompt, copyNotice, onReconnect, deviceRestarted = false }: Props) {
   const { t } = useLocale()
   const { phase, saved, operation, failedAt } = feedback
   const pending = ['preparing', 'writing', 'verifying', 'starting'].includes(phase)
@@ -78,6 +79,10 @@ export function ProgramResult({ feedback, source, connected, onShowError, onReco
         : '保存が完了したか確認できません。USBをつなぎ直してから、もう一度書き込んでください。'
       break
   }
+  if (failed && deviceRestarted) {
+    title = saved ? '書き込み成功・機器が異常終了しました' : '機器が異常終了しました'
+    description = '機器内部のクラッシュまたは再起動を検出しました。起動が落ち着いてからUSB操作を復旧してください。復旧できなければ、接続を切り、電源を入れ直してUSBをつなぎ直してください。自動で再実行はしません。'
+  }
   const writeState = saved ? '成功' : phase === 'preparing' ? '準備中' : phase === 'writing' ? '書き込み中' : failed ? '未完了' : '未確認'
   const runState = operation === 'write' ? '今回は実行しません'
     : phase === 'running' ? '実行開始' : phase === 'completed' ? '終了' : phase === 'stopped' ? '停止済み'
@@ -108,7 +113,7 @@ export function ProgramResult({ feedback, source, connected, onShowError, onReco
     </div>}
     {disconnected && onReconnect && <button onClick={onReconnect}>{t('↻ もう一度つなぐ')}</button>}
     {failed && onShowError && <button className="quiet-button" onClick={onShowError}>{t('エラーの詳細・対処を見る')}</button>}
-    {failed && onRecover && <div className="program-result-recovery"><button onClick={onRecover}>{t('再試行の準備')}</button><p>{t('機器を停止・再初期化します。編集中のコードは変えません。準備後に「実行」または「プログラム更新」を押してください。')}</p></div>}
+    {failed && onRecover && <div className="program-result-recovery"><button onClick={onRecover}>{t(deviceRestarted ? 'USB操作を復旧する' : '再試行の準備')}</button><p>{t(deviceRestarted ? '書き込み済みの作品と編集中のコードは残します。復旧操作は自動起動設定を変えず、作品を再実行しません。' : '機器を停止・再初期化します。編集中のコードは変えません。準備後に「実行」または「プログラム更新」を押してください。')}</p></div>}
     {source !== feedback.source && <p className="program-result-note">{t('この結果は変更前のコードのものです。現在の編集内容はまだ機器に反映されていません。')}</p>}
     {!connected && !disconnected && <p className="program-result-note">{t('これは切断前の操作結果です。現在の機器の動作は確認できません。')}</p>}
   </section>

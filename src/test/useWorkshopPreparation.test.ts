@@ -5,6 +5,7 @@ import { setLocale } from '../i18n'
 import { ledSettingsKey } from '../services/workshop/LedSettings'
 import { createProject } from '../services/projects/ProjectStorage'
 import { workshopStorageKey } from '../services/workshop/WorkshopStorage'
+import { operationSettingsKey, restoreOperationSettings } from '../services/workshop/OperationSettings'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }))
 vi.mock('react', () => ({
@@ -55,6 +56,190 @@ function expectTrialCandidate() {
 
 beforeEach(() => { setLocale('ja'); hooks.slots = []; hooks.cursor = 0; vi.stubGlobal('localStorage', { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() }) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+describe('基本設定の操作方法', () => {
+  function persistedSettings() {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: vi.fn((key: string, value: string) => values.set(key, value)), removeItem: vi.fn((key: string) => values.delete(key)) })
+    return values
+  }
+  it.each(workshopPresets)('$profile.boardId: 操作方法を即反映し、コードを含めず機種別に保存・復元する', preset => {
+    const values = persistedSettings()
+    render().selectProfile(preset.id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ button: false, controller: true })
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().draft?.features).toEqual(render().selectedProfile?.features)
+    expect(render().hasPendingChanges).toBe(false)
+    expect(render().context).toMatchObject({ bleEnabled: true, controllerEnabled: true })
+    expect(render().notice).toContain('自動保存')
+    expect(JSON.parse(values.get(operationSettingsKey(preset))!)).toEqual({ button: false, ble: true, controller: true })
+    expect(values.get(operationSettingsKey(preset))).not.toMatch(/baseline|verification|code|firmwareVersion/)
+    expect(values.has(workshopStorageKey(preset))).toBe(false)
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(preset.id)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: true })
+    const other = workshopPresets.find(item => item.id !== preset.id)!
+    render().selectProfile(other.id)
+    expect(render().selectedProfile?.features).toEqual({ button: true, ble: false, controller: false })
+  })
+  it('WebリモコンOFFはBluetoothもOFFにし、両方OFFを準備文へ反映する', () => {
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ controller: true })
+    expect(render().context?.controllerEnabled).toBe(true)
+    render().editOperationSettings({ button: false, controller: false })
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: false, controller: false })
+    expect(render().context).toMatchObject({ bleEnabled: false, controllerEnabled: false })
+    expect(render().hasPendingChanges).toBe(false)
+    expect(render().prompt).not.toBe('')
+  })
+  it('未適用の詳細設定や基準コードを適用・保存せず、変更対象の項目だけ同期する', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editDraft({ displayName: '未適用の名前', baseline: { code: 'password = "not_saved"', verification: null }, features: { button: true, ble: true, controller: false } })
+    render().editOperationSettings({ button: false })
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: false, controller: false })
+    expect(render().draft?.features).toEqual({ button: false, ble: true, controller: false })
+    expect(render().draft?.displayName).toBe('未適用の名前')
+    expect(render().draft?.baseline.code).toContain('not_saved')
+    expect(render().selectedProfile?.baseline.code).toBe('')
+    expect(render().hasPendingChanges).toBe(true)
+    expect([...values.values()].join()).not.toMatch(/not_saved|未適用の名前/)
+    render().editOperationSettings({ controller: true })
+    expect(render().draft?.features).toEqual({ button: false, ble: true, controller: true })
+    expect(render().draft?.baseline.code).toContain('not_saved')
+  })
+  it('本体ボタンのON/OFFだけでは独自BLE設定や登録済み基準コードを失効させない', () => {
+    verifyBaseline(); render().applyDraft()
+    const baseline = render().selectedProfile!.baseline
+    render().editOperationSettings({ button: false })
+    expect(render().selectedProfile?.baseline).toBe(baseline)
+    expect(render().draft?.baseline.verification).toEqual(baseline.verification)
+    expect(render().context?.bleSource).toBe('registered')
+  })
+  it('同じ値への操作や未選択時には保存しない', () => {
+    render().editOperationSettings({ controller: true })
+    render().selectProfile(workshopPresets[0].id)
+    render().editOperationSettings({ button: true, controller: false })
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+  })
+  it('基準コード読み込み中は操作方法を変更・保存しない', async () => {
+    prepare()
+    let resolve!: (value: string) => void
+    const pending = render().importBaseline({ name: 'baseline.py', size: 5, text: () => new Promise(done => { resolve = done }) })
+    const before = render().selectedProfile
+    render().editOperationSettings({ controller: true })
+    expect(render().selectedProfile).toBe(before)
+    expect(localStorage.setItem).not.toHaveBeenCalled()
+    resolve('new code'); await pending
+    expect(render().draft?.baseline.code).toBe('new code')
+  })
+  it('保存失敗でも画面の操作方法は使え、成功通知は出さない', () => {
+    render().selectProfile(workshopPresets[0].id)
+    vi.mocked(localStorage.setItem).mockImplementation(() => { throw Error('quota') })
+    render().editOperationSettings({ controller: true })
+    expect(render().selectedProfile?.features).toEqual({ button: true, ble: true, controller: true })
+    expect(render().notice).toContain('保存できませんでした')
+    expect(render().notice).not.toContain('自動保存しました')
+  })
+  it('基本欄の保存がない旧版では明示保存された操作設定を維持する', () => {
+    persistedSettings()
+    prepare(); render().saveDraft(false)
+    localStorage.removeItem(operationSettingsKey(workshopPresets[0]))
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.features).toEqual({ button: true, ble: true, controller: true })
+  })
+  it('後から明示保存した詳細設定は古い基本欄の保存より優先される', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ controller: true })
+    render().editDraft({ features: { button: false, ble: true, controller: false } })
+    render().saveDraft(false)
+    expect(JSON.parse(values.get(operationSettingsKey(workshopPresets[0]))!)).toEqual({ button: false, ble: true, controller: false })
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: false })
+  })
+  it('LED保存だけが失敗しても操作方法は同期し、失敗通知を残す', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ controller: true })
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      if (key === ledSettingsKey(workshopPresets[0])) throw Error('LED quota')
+      values.set(key, value)
+    })
+    render().editDraft({ features: { button: false, ble: true, controller: false } })
+    render().saveDraft(false)
+    expect(render().notice).toContain('保存できませんでした')
+    expect(JSON.parse(values.get(operationSettingsKey(workshopPresets[0]))!)).toEqual({ button: false, ble: true, controller: false })
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: false })
+  })
+  it('操作キーの更新に失敗した場合は古いキーを削除し、明示保存できた操作方法を復元する', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ controller: true })
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      if (key === operationSettingsKey(workshopPresets[0])) throw Error('operation quota')
+      values.set(key, value)
+    })
+    render().editDraft({ features: { button: false, ble: true, controller: false } })
+    render().saveDraft(false)
+    expect(render().notice).toContain('保存できませんでした')
+    expect(values.has(operationSettingsKey(workshopPresets[0]))).toBe(false)
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: false })
+  })
+  it('更新と削除の両方が拒否された場合も成功通知は出さない', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editLedSettings({ firmwareVersion: 'test-ui-2' })
+    render().editOperationSettings({ controller: true })
+    const old = values.get(operationSettingsKey(workshopPresets[0]))
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      if (key === operationSettingsKey(workshopPresets[0])) throw Error('operation unavailable')
+      values.set(key, value)
+    })
+    vi.mocked(localStorage.removeItem).mockImplementation(() => { throw Error('operation locked') })
+    render().editDraft({ features: { button: false, ble: true, controller: false } })
+    render().saveDraft(false)
+    expect(render().notice).toContain('保存できませんでした')
+    expect(render().notice).not.toContain('設定をこのブラウザに保存しました')
+    expect(values.get(operationSettingsKey(workshopPresets[0]))).toBe(old)
+    expect(render().selectedProfile?.features).toEqual({ button: false, ble: true, controller: false })
+  })
+  it('作品設定の取り込みも基本欄の保存を同期する', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editOperationSettings({ button: false, controller: true })
+    render().adoptProjectSettings({ ...createProject().draft.settings, firmwareVersion: 'test-ui-2' }, false)
+    expect(JSON.parse(values.get(operationSettingsKey(workshopPresets[0]))!)).toEqual({ button: true, ble: false, controller: false })
+  })
+  it('初期設定へ戻すと基本欄の保存も削除し、再読み込みしても復活しない', () => {
+    const values = persistedSettings()
+    render().selectProfile(workshopPresets[0].id)
+    render().editOperationSettings({ controller: true })
+    render().resetProfile()
+    expect(values.has(operationSettingsKey(workshopPresets[0]))).toBe(false)
+    hooks.slots = []; hooks.cursor = 0
+    render().selectProfile(workshopPresets[0].id)
+    expect(render().selectedProfile?.features).toEqual({ button: true, ble: false, controller: false })
+  })
+  it.each(['{', '[]', '{"button":true,"ble":false,"controller":true}', '{"button":true,"ble":false,"controller":false,"code":"secret"}', '{"button":"true","ble":false,"controller":false}', 'x'.repeat(129)])('不正な操作設定 %s は復元せず、基本値と警告に戻す', raw => {
+    vi.stubGlobal('localStorage', { getItem: () => raw })
+    const result = restoreOperationSettings(workshopPresets[0], workshopPresets[0].profile)
+    expect(result.profile).toBe(workshopPresets[0].profile)
+    expect(result.notice).toContain('読み込めません')
+  })
+})
 
 describe('WebコントローラとBluetoothの依存関係', () => {
   it('WebコントローラをONにするとBluetoothもONにし、明示適用までは編集中の設定にとどめる', () => {
@@ -410,7 +595,7 @@ describe('AI準備用hookは講師設定だけを扱う', () => {
     const saved = JSON.parse(vi.mocked(localStorage.setItem).mock.calls[0][1])
     expect(saved.profile.baseline.code).toBe('')
     render().saveDraft(true)
-    expect(vi.mocked(localStorage.setItem).mock.calls[2][1]).toContain('test baseline')
+    expect(vi.mocked(localStorage.setItem).mock.calls.findLast(([key]) => key === workshopStorageKey(workshopPresets[0]))?.[1]).toContain('test baseline')
   })
   it('確認者・コード・版が不足した確認登録を拒否する', () => {
     prepare()

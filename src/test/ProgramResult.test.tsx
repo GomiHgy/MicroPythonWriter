@@ -23,6 +23,17 @@ function text(node: ReactNode): string {
   return isValidElement<Record<string, unknown>>(node) ? text(node.props.children as ReactNode) : ''
 }
 const base: ProgramFeedback = { id: 3, operation: 'run', phase: 'running', source: 'known code', saved: true, confirmation: 'startup-marker' }
+
+it('本体の異常終了では書き込み成功を維持し、コード修正と通信復旧を区別する', () => {
+  const onRecover = vi.fn()
+  const view = ProgramResult({ feedback: { ...base, phase: 'failed' }, source: base.source, connected: true, deviceRestarted: true, onRecover })
+  expect(text(view)).toContain('書き込み成功・機器が異常終了しました')
+  expect(text(view)).toContain('自動で再実行はしません')
+  expect(text(view)).not.toContain('プログラムにエラーがあります')
+  const button = all(view, element => element.type === 'button' && text(element) === 'USB操作を復旧する')[0]
+  ;(button.props.onClick as () => void)()
+  expect(onRecover).toHaveBeenCalledOnce()
+})
 const render = (patch: Partial<ProgramFeedback> = {}, props: Partial<Parameters<typeof ProgramResult>[0]> = {}) => ProgramResult({ feedback: { ...base, ...patch }, source: base.source, connected: true, ...props })
 
 afterEach(() => setLocale('ja'))

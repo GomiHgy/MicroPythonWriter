@@ -13,5 +13,13 @@ export class RawPasteProtocolError extends Error { constructor(message: string) 
 export class DeviceTimeoutError extends Error { constructor(message: string) { super(message) } }
 export class DeviceCompileError extends Error { constructor(message: string) { super(message) } }
 export class DeviceRuntimeError extends Error { constructor(message: string) { super(message) } }
+export class DeviceRestartError extends Error {
+  readonly reason: 'panic' | 'restart'
+  constructor(reason: 'panic' | 'restart') {
+    super(reason === 'panic' ? '機器内部でクラッシュが発生しました。実行は正常に継続していません。' : '実行中に機器の再起動を検出しました。実行は正常に継続していません。')
+    this.name = reason === 'panic' ? 'DEVICE_PANIC' : 'DEVICE_RESTART'
+    this.reason = reason
+  }
+}
 export class FileSystemError extends Error { constructor(message: string) { super(message) } }
 export class BootModeUnsupportedError extends Error { constructor() { super('このファームウェアではUIFlowの起動モードを安全に変更できません。main.pyの書込みと実行は利用できますが、boot_optionの変更は行いません。') } }

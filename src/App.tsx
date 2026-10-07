@@ -4,6 +4,7 @@ import { PasteCodeButton } from './components/PasteCodeButton'
 import { SourceLanguageNotice } from './components/SourceLanguageNotice'
 import { LedCodeSettingsPanel } from './components/LedCodeSettingsPanel'
 import { Terminal } from './components/Terminal'
+import { StartupDiagnosticsPanel } from './components/StartupDiagnosticsPanel'
 import { SimulationPanel } from './components/SimulationPanel'
 import { BluetoothPanel } from './components/BluetoothPanel'
 import { AiPreparationPanel } from './components/AiPreparationPanel'
@@ -392,11 +393,12 @@ export default function App() {
       <p>{t('この接続ではmain.pyの読み込み・書き込み・実行と、自動実行ON／OFFの変更を行えます。UIFlow2自体の書き込み・復旧用フラッシュは行いません。起動設定の変更は対応ファームウェアでのみ利用できます。')}</p>
     </section>}
 
-    <section className={`device-card ${status.tone}`} aria-live="polite">
+    <section id="program-connection" className={`device-card ${status.tone}`} aria-live="polite">
       <div className="status-badge" aria-hidden="true">{status.icon}</div>
       <div className="device-copy"><p className="eyebrow">{t(status.eyebrow)}</p><h2>{t(status.title)}</h2><p>{t(status.description)}</p></div>
       <div className="device-actions">
         <button className="connect-button" disabled={!app.supported || busy || (app.state !== 'disconnected' && app.state !== 'connection-lost')} onClick={app.connect}>{t("🔌 USBをつなぐ")}</button>
+        {running && <button className="stop-button" onClick={app.stop}>{t("■ 停止")}</button>}
         {connected && <button className="quiet-button" onClick={app.disconnect}>{t("接続を切る")}</button>}
       </div>
       <details className="device-details"><summary>{t("機器と通信のくわしい情報")}</summary><div className="device-details-grid"><dl><dt>{t("つながっている機器")}</dt><dd>{t(app.info.deviceName)}</dd><dt>{t("電源を入れた時の動き")}</dt><dd>{t(bootSummary)}</dd><dt>MicroPython</dt><dd>{t(app.info.microPythonVersion)}</dd></dl><label className="baud-rate">{t("通信速度")}<input type="number" value={app.baudRate} min="1200" onChange={event => app.setBaudRate(Number(event.target.value))} /> bps</label></div></details>
@@ -404,16 +406,12 @@ export default function App() {
 
     {app.state === 'connection-lost' && <section className="disconnect-screen" role="alert"><h2>{t("USB接続が切断されました")}</h2><p>{t("ケーブルと機器の電源を確認してから、もう一度つないでください。")}</p><div><button onClick={app.reconnect}>{t("↻ もう一度つなぐ")}</button><button className="quiet-button" onClick={app.connect}>{t("USBを選び直す")}</button></div><small>{t("うまくいかないときは、数秒待ってから「USBを選び直す」を押してください。")}</small></section>}
 
-    <BootModePanel state={app.state} supported={app.supported} bootOption={app.info.bootOption} bootSupported={app.info.bootOptionSupported || app.info.nvsFallbackSupported} feedback={app.bootFeedback}
-      onDisable={() => app.setBoot(1)} onEnable={() => app.setBoot(0)} onConnect={app.connect} onRecover={app.normalMode} onReset={app.reset} />
-
     <section className="steps" aria-label={t("使い方")}>
-      <div className={`step ${app.state === 'disconnected' || app.state === 'connection-lost' ? 'active' : 'done'}`}><span>1</span><div><strong>{t("つなぐ")}</strong><small>{t("機器をUSBでつなぐ")}</small></div></div>
-      <div className={`step ${ready || running ? 'active' : ''}`}><span>2</span><div><strong>{t("書く")}</strong><small>{t("下のプログラムを編集する")}</small></div></div>
-      <div className={`step ${running ? 'active' : ''}`}><span>3</span><div><strong>{t("試す")}</strong><small>{t("「実行」で動きを確認する")}</small></div></div>
+      <a href="#program-connection" className={`step ${app.state === 'disconnected' || app.state === 'connection-lost' ? 'active' : 'done'}`}><span>1</span><div><strong>{t("つなぐ")}</strong><small>{t("機器をUSBでつなぐ")}</small></div></a>
+      <a href="#program-code-workspace" className={`step ${ready || running ? 'active' : ''}`}><span>2</span><div><strong>{t("コードとシミュレーション")}</strong><small>{t("下のプログラムを編集する")}</small></div></a>
+      <a href="#program-execution" className={`step ${running ? 'active' : ''}`}><span>3</span><div><strong>{t("実行・結果")}</strong><small>{t("「実行」で動きを確認する")}</small></div></a>
     </section>
 
-    <ProgramLibraryPanel source={app.source} settings={librarySettings} busy={busy} onLoad={loadLibraryProgram} onOpenPreparation={() => openTab('preparation')} />
     {programLibraryError && <p role="alert" className="program-library-feedback error">{t(programLibraryError)}</p>}
     {canUndoReplacement && <button type="button" className="quiet-button" disabled={busy} onClick={undoReplacement}>{t('直前の読み込み・復元を取り消す')}</button>}
 
@@ -434,28 +432,14 @@ export default function App() {
       <ol aria-label={t('プログラムを直して試す手順')}><li>{t('コードを作ったAIとの会話に貼って送る')}</li><li>{t('AIが返した修正版を、下のコード欄に貼る')}</li><li>{t('もう一度「実行」で試す')}</li></ol>
     </section>}
 
-    {(connected || app.programFeedback) && <section className="action-card">
-      <div className="section-heading"><div><p className="eyebrow">{t("プログラムを試す")}</p><h2>{t(app.programFeedback ? '機器への書き込みと実行' : 'まずは「実行」を押そう')}</h2><p>{t("実行すると、編集内容を機器へ保存してから動かします。")}</p></div>{running && <button className="stop-button" onClick={app.stop}>{t("■ 停止")}</button>}</div>
-      {app.programFeedback && <ProgramResult feedback={app.programFeedback} source={app.source} connected={connected} onShowError={app.error ? () => {
-        const details = document.getElementById('program-error-details') as HTMLDetailsElement | null
-        if (details) details.open = true
-        details?.scrollIntoView({ block: 'start' })
-        details?.focus({ preventScroll: true })
-      } : undefined} onRecover={app.state === 'error' ? app.normalMode : undefined}
-        onCopyRepair={canRepairCode ? copyPrompt : undefined} onDownloadRepair={canRepairCode ? saveRepairPrompt : undefined} repairLine={app.error?.sourceKnown === false ? undefined : app.error?.line}
-        repairSourceKnown={app.error?.sourceKnown !== false}
-        repairPrompt={app.error?.repairPrompt}
-        copyNotice={currentCopyNotice ? { message: t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') }), failed: currentCopyNotice.failed } : undefined}
-        onReconnect={app.state === 'connection-lost' ? app.reconnect : undefined} />}
-      <div className="main-actions"><button className="run-button" disabled={!canModifyProgram} onClick={runProject}><span>{t("▶ 実行")}</span><small>{t(runDescription)}</small></button><button className="auto-run-button" disabled={!canEnableAutoRun} aria-describedby="auto-run-hint" onClick={() => { if (canEnableAutoRun) return app.setBoot(0) }}><span>{t("電源を入れたら自動実行")}</span><small>{t("機器に保存したコードを、次の電源投入時にも動かします。")}</small></button></div>
-      <p id="auto-run-hint" className="auto-run-hint">{t(autoRunHint)}</p>
-      {!app.programFeedback && <p className="action-tip">{t("まず「実行」で試し、完成したら「電源を入れたら自動実行」を設定してください。「実行」だけでは起動設定は変わりません。")}</p>}
-      <details className="program-more-actions"><summary>{t("その他の操作")}</summary><div><button className="update-button" disabled={!canModifyProgram} onClick={app.write}><span>{t("プログラム更新")}</span><small>{t("保存だけ。今は動かしません。")}</small></button><button className="load-button" disabled={!ready} onClick={app.load}>{t("保存済みのプログラムを読む")}</button></div></details>
+    {app.programFeedback?.phase === 'failed' && <section className="notice danger program-result-shortcut" role="alert">
+      <strong>{t('書き込み・実行で問題が起きました。結果と修正の案内を確認してください。')}</strong>
+      <a href="#program-execution">{t('実行・結果')}</a>
     </section>}
 
-    <section className="workspace">
+    <section id="program-code-workspace" className="workspace">
       <div className="panel program-panel">
-        <div className="panel-head"><div><p className="eyebrow">{t("プログラム")}</p><h2>{t("LEDやボタンの動きを書く場所")}</h2><p>{t("ここを書き換えて、上の「実行」で試します。")}</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} />{t("長い行を折り返す")}</label></div>
+        <div className="panel-head"><div><p className="eyebrow">{t("プログラム")}</p><h2>{t("LEDやボタンの動きを書く場所")}</h2><p>{t("AIのコードを貼り付けて、シミュレーションや下の「実行」で試します。")}</p></div><label className="wrap-toggle"><input type="checkbox" checked={wrap} onChange={event => setWrap(event.target.checked)} />{t("長い行を折り返す")}</label></div>
         <LedCodeSettingsPanel source={app.source} onReplace={replaceEditorSource} disabled={busy || pwaActivity.updating} />
         <SourceLanguageNotice source={app.source} workshop={matchingPreparation ? preparation.context : null} disabled={busy || activeTab !== 'program'} />
         <PasteCodeButton source={app.source} onReplace={replaceEditorSource} disabled={busy || pwaActivity.updating} active={activeTab === "program"} workshop={matchingPreparation ? preparation.context : null} />
@@ -464,7 +448,44 @@ export default function App() {
       </div>
       <SimulationPanel source={app.source} settings={librarySettings} active={activeTab === "program"} />
     </section>
+
+    <section id="program-execution" className="action-card">
+      <div className="section-heading"><div><p className="eyebrow">{t("プログラムを試す")}</p><h2>{t(app.programFeedback ? '機器への書き込みと実行' : 'まずは「実行」を押そう')}</h2><p>{t("実行すると、編集内容を機器へ保存してから動かします。")}</p></div></div>
+      {app.programFeedback && <ProgramResult feedback={app.programFeedback} source={app.source} connected={connected} onShowError={app.error ? () => {
+        const details = document.getElementById('program-error-details') as HTMLDetailsElement | null
+        if (details) details.open = true
+        const diagnostic = app.error?.stage === 'DEVICE_PANIC' || app.error?.stage === 'DEVICE_RESTART'
+          ? document.getElementById('program-startup-diagnostics') as HTMLDetailsElement | null : null
+        if (diagnostic) diagnostic.open = true
+        const target = diagnostic ?? details
+        target?.scrollIntoView({ block: 'start' })
+        target?.focus({ preventScroll: true })
+      } : undefined} onRecover={app.state === 'error' ? app.normalMode : undefined}
+        deviceRestarted={app.error?.stage === 'DEVICE_PANIC' || app.error?.stage === 'DEVICE_RESTART'}
+        onCopyRepair={canRepairCode ? copyPrompt : undefined} onDownloadRepair={canRepairCode ? saveRepairPrompt : undefined} repairLine={app.error?.sourceKnown === false ? undefined : app.error?.line}
+        repairSourceKnown={app.error?.sourceKnown !== false}
+        repairPrompt={app.error?.repairPrompt}
+        copyNotice={currentCopyNotice ? { message: t(currentCopyNotice.text, { message: t(currentCopyNotice.detail ?? '') }), failed: currentCopyNotice.failed } : undefined}
+        onReconnect={app.state === 'connection-lost' ? app.reconnect : undefined} />}
+      <div className="main-actions"><button className="run-button" disabled={!canModifyProgram} onClick={runProject}><span>{t("▶ 実行")}</span><small>{t(runDescription)}</small></button><button className="auto-run-button" disabled={!canEnableAutoRun} aria-describedby="auto-run-hint" onClick={() => { if (canEnableAutoRun) return app.setBoot(0) }}><span>{t("電源を入れたら自動実行")}</span><small>{t("機器に保存したコードを、次の電源投入時にも動かします。")}</small></button></div>
+      <p id="auto-run-hint" className="auto-run-hint">{t(autoRunHint)}</p>
+      {!app.programFeedback && <p className="action-tip">{t("まず「実行」で試し、完成したら「電源を入れたら自動実行」を設定してください。「実行」だけでは起動設定は変わりません。")}</p>}
+      <a className="program-boot-link" href="#program-boot-guide" onClick={() => {
+        const guide = document.getElementById('program-boot-guide') as HTMLDetailsElement | null
+        if (guide) guide.open = true
+      }}>{t('自動実行を解除する・困ったとき')}</a>
+      <details className="program-more-actions"><summary>{t("その他の操作")}</summary><div><button className="update-button" disabled={!canModifyProgram} onClick={app.write}><span>{t("プログラム更新")}</span><small>{t("保存だけ。今は動かしません。")}</small></button><button className="load-button" disabled={!ready} onClick={app.load}>{t("保存済みのプログラムを読む")}</button></div></details>
+    </section>
+
+    <ProgramLibraryPanel source={app.source} settings={librarySettings} busy={busy} onLoad={loadLibraryProgram} onOpenPreparation={() => openTab('preparation')} />
+
+    <details id="program-boot-guide" className="program-boot-guide panel" open={app.bootFeedback ? true : undefined}>
+      <summary><strong>{t('電源を入れた時の動き')}</strong><span className="small-badge">{t(ready || running ? bootSummary : 'まだ確認できていません')}</span></summary>
+      <BootModePanel state={app.state} supported={app.supported} bootOption={app.info.bootOption} bootSupported={app.info.bootOptionSupported || app.info.nvsFallbackSupported} feedback={app.bootFeedback}
+        onDisable={() => app.setBoot(1)} onEnable={() => app.setBoot(0)} onConnect={app.connect} onRecover={app.normalMode} onReset={app.reset} />
+    </details>
     <section className="program-records">
+      <div className="panel"><StartupDiagnosticsPanel source={app.source} log={app.log} disabled={busy || pwaActivity.updating} /></div>
       <details className="panel terminal-panel"><summary><span className="eyebrow">{t("見守りログ")}</span><h2>{t("うまくいかない時に見る記録")}</h2></summary><div className="panel-head"><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t("自動スクロール")}</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} />{t("時刻")}</label><button className="quiet-button" onClick={() => app.setLog('')}>{t("消去")}</button></span></div><Terminal label={t("シリアルターミナル")} log={stampLog()} dark={dark} autoScroll={autoScroll} /></details>
       {app.error && <details id="program-error-details" className="panel error" tabIndex={-1}>
         <summary><span className="eyebrow">{t("困ったとき")}</span><h2>{t('エラーの詳しい記録')} — {app.error.exceptionType}</h2></summary>

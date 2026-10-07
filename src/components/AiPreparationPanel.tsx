@@ -47,7 +47,17 @@ export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareContro
         <option value="">{t('選んでください（準備なしでプログラムも使えます）')}</option>
         {preparation.profiles.map(preset => <option key={preset.id} value={preset.id}>{t(preset.profile.displayName)}</option>)}
       </select>
-      {profile && <div className="ai-kit-summary"><p><strong>{t(profile.displayName)}</strong></p><div className="ai-feature-list"><span>LED</span>{profile.features.button && <span>{t('本体ボタン')}</span>}{context?.bleEnabled && <span>Bluetooth</span>}{context?.controllerEnabled && <span>{t('Webコントローラ')}</span>}</div></div>}
+      {profile && <div className="ai-kit-summary"><p><strong>{t(profile.displayName)}</strong></p><div className="ai-feature-list"><span>LED</span>{profile.features.button && <span>{t('本体ボタン')}</span>}{profile.features.ble && <span>Bluetooth</span>}{profile.features.controller && <span>{t('Webリモコン')}</span>}</div></div>}
+      {profile && <fieldset className="ai-operation-settings" disabled={copying || preparation.isImporting} aria-describedby="ai-operation-help">
+        <legend>{t('どう操作する？')}</legend>
+        <div className="ai-operation-options">
+          <label className={`ai-operation-option${profile.features.button ? ' selected' : ''}`}><input id="ai-operation-button" type="checkbox" checked={profile.features.button} onChange={event => preparation.editOperationSettings({ button: event.target.checked })} /><span><strong>{t('本体ボタン')}</strong><small>{t('機器のボタンで光り方を変える')}</small></span></label>
+          <label className={`ai-operation-option${profile.features.controller ? ' selected' : ''}`}><input id="ai-operation-controller" type="checkbox" checked={profile.features.controller} onChange={event => preparation.editOperationSettings({ controller: event.target.checked })} /><span><strong>{t('Webリモコン')}</strong><small>{t('スマホやパソコンから無線で操作する')}</small></span></label>
+        </div>
+        <p id="ai-operation-help" className="ai-help">{t('選んだ操作方法は準備文へすぐ反映し、機種別にこのブラウザへ自動保存します。Webリモコンを使うとBluetoothも有効になります。')}</p>
+        {!profile.features.button && !profile.features.controller && !profile.features.ble && <p className="ai-help">{t('どちらもOFF：ボタンやリモコンを使わず、プログラムで光り方を動かします。')}</p>}
+        {profile.features.ble && !profile.features.controller && <p className="ai-help">{t('独自のBluetooth通信が詳細設定で有効です。Webリモコンとは別の設定です。')}</p>}
+      </fieldset>}
       {board && <section className="notice ai-firmware-setup" aria-labelledby="ai-firmware-heading">
         <h3 id="ai-firmware-heading">{t('はじめて使うとき：UIFlow2を書き込む')}</h3>
         <p>{t('すでにUIFlow2を書き込んでいる人は、この手順を飛ばせます。')}</p>
@@ -89,7 +99,7 @@ export function AiPreparationPanel({ preparation, onOpenProgram, onPrepareContro
           <p className="ai-help">{t('動きを変えたくなったら、下の準備文をAIへ送って相談できます。AIが、選んだ機能に合わせてWebリモコンなどの使い方を質問します。')}</p>
         </>}
       </section>}
-      {profile?.features.ble && !profile.features.controller && !context?.bleEnabled && <p className="ai-help">{t('はじめてBluetoothを使う場合は、詳細設定の「Webコントローラ」をONにして「設定を適用」してください。同梱プログラムで試す手順が表示されます。独自のBluetooth通信を使う場合だけ、開発者向け設定で基準コードを登録します。')}</p>}
+      {profile?.features.ble && !profile.features.controller && !context?.bleEnabled && <p className="ai-help">{t('Webリモコンを試す場合は、上の「どう操作する？」でWebリモコンをONにしてください。独自のBluetooth通信を使う場合だけ、開発者向け設定で基準コードを登録します。')}</p>}
       <ol className="ai-simple-steps"><li><strong>{t('準備文をコピー')}</strong><span>{t('入力した設定は自動で入ります')}</span></li><li><strong>{t('好きなAIへ貼って送信')}</strong><span>{t('新しい会話で、質問に答えよう')}</span></li><li><strong>{t('コードを貼って「実行」')}</strong><span>{t('できた main.py をプログラム画面へ')}</span></li></ol>
       {preparation.hasPendingChanges && <p className="notice warn">{t('詳細設定に未適用の変更があります。先に「設定を適用」を押してください。適用するまでコピー・ファイル保存はできません。')}</p>}
       {preparation.isImporting && <p role="status" className="notice">{t('基準コードを読み込み中です。完了するまでコピー・ファイル保存を待ってください。')}</p>}
@@ -134,13 +144,11 @@ function TeacherSettings({ preparation }: { preparation: WorkshopPreparation }) 
         <label>{t('設定の表示名')}<input value={draft.displayName} maxLength={200} onChange={event => setField('displayName', event.target.value)} /></label>
       </div>
       <p className="ai-help">{t('最大輝度が範囲内でも電源の安全性は保証されません。LED数と電源に合わせて確認してください。USBから取得したMicroPython版を、対象UIFlow2版として自動設定することはありません。')}</p>
-      <fieldset className="ai-features"><legend>{t('使う機能')}</legend>{([['button', '本体ボタン'], ['ble', 'Bluetooth'], ['controller', 'Webコントローラ（NanoLED v1/v2）']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={key === 'ble' ? draft.features.ble || draft.features.controller : draft.features[key]} disabled={key === 'ble' && draft.features.controller} aria-describedby={key === 'ble' && draft.features.controller ? 'ai-controller-ble-help' : undefined} onChange={event => {
-        if (key === 'ble' && draft.features.controller) return
-        const features = { ...draft.features, [key]: event.target.checked }
-        if (features.controller) features.ble = true
-        setField('features', features)
-      }} />{t(label)}</label>)}
-        {draft.features.controller && <p id="ai-controller-ble-help" className="ai-help">{t('WebコントローラはBluetoothで通信するため、使用中はBluetoothがONに固定されます。OFFにするには、先にWebコントローラをOFFにしてください。')}</p>}
+      <fieldset className="ai-features"><legend>{t('使う機能')}</legend><label><input type="checkbox" checked={draft.features.ble || draft.features.controller} disabled={draft.features.controller} aria-describedby={draft.features.controller ? 'ai-controller-ble-help' : undefined} onChange={event => {
+        if (draft.features.controller) return
+        setField('features', { ...draft.features, ble: event.target.checked })
+      }} />{t('Bluetooth')}</label>
+        {draft.features.controller && <p id="ai-controller-ble-help" className="ai-help">{t('選んだ操作方法は準備文へすぐ反映し、機種別にこのブラウザへ自動保存します。Webリモコンを使うとBluetoothも有効になります。')}</p>}
       </fieldset>
       <details className="ai-baseline"><summary>{t('開発者向け：独自の基準コードと実機確認（通常は不要）')}</summary><p className="ai-help">{t('独自のBluetoothプログラムを使う人向けです。同梱プログラムを試すだけなら、入力や確認登録は不要です。実機確認していないコードを確認済みとして登録しないでください。')}</p>
         {!!preparation.context?.bleReasons.length && <ul className="ai-help">{preparation.context.bleReasons.map(reason => <li key={reason}>{t(reason)}</li>)}</ul>}
