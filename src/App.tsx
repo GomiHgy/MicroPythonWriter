@@ -451,11 +451,9 @@ export default function App() {
 
     <section id="program-execution" className="action-card">
       <div className="section-heading"><div><p className="eyebrow">{t("プログラムを試す")}</p><h2>{t(app.programFeedback ? '機器への書き込みと実行' : 'まずは「実行」を押そう')}</h2><p>{t("実行すると、編集内容を機器へ保存してから動かします。")}</p></div></div>
-      {app.blePreflightEligible && <div className="ble-preflight-option">
-        <label><input type="checkbox" checked={app.blePreflightEnabled} disabled={busy || pwaActivity.updating} aria-describedby="ble-preflight-help" onChange={event => {
-          if (!busy && !getPwaActivity().updating) app.setBlePreflightEnabled(event.target.checked)
-        }} />{t('Bluetoothを先に準備する（起動時のメモリ対策）')}</label>
-        <p id="ble-preflight-help" className="small-note">{t('Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。')}</p>
+      {app.blePreflightRequired && <div className="ble-preflight-notice" role="note">
+        <strong>{t('Bluetoothを自動で先に準備します')}</strong>
+        <p className="small-note">{t('Bluetoothが有効な作品は、書き込み・コンパイルの前に自動で準備します。コード・Wi-Fi・自動起動設定は変更しません。')}</p>
       </div>}
       {app.programFeedback && <ProgramResult feedback={app.programFeedback} source={app.source} connected={connected} onShowError={app.error ? () => {
         const details = document.getElementById('program-error-details') as HTMLDetailsElement | null

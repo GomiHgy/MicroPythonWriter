@@ -12,6 +12,7 @@ import { DeviceRestartError, DeviceTimeoutError, SerialDisconnectedError } from 
 import { workshopPresets } from '../config/workshops'
 import { setLocale, supportedLocales, translate } from '../i18n'
 import { createWorkshopContext, type WorkshopContext } from '../services/prompt/WorkshopRules'
+import { buildStarterProgram } from '../services/projects/StarterProgram'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, mounted: false, effects: [] as Array<() => unknown> }))
 vi.mock('react', () => ({
@@ -1088,23 +1089,86 @@ describe('自動起動を解除して編集へ戻す', () => {
   })
 })
 
-describe('明示同意したBLE作品だけを転送・コンパイル前に先行準備する', () => {
+describe('Bluetoothが有効な作品を転送・コンパイル前に自動で先行準備する', () => {
   const bleSource = 'class NanoBle:\n    def __init__(self):\n        import bluetooth\n        self.ble = bluetooth.BLE()\n        self.ble.active(True)\nradio = NanoBle()\n'
 
-  it('先行準備は初期状態OFFで、BLEコードを入れただけでは無線へ触れない', async () => {
+  const wirelessContext = (enabled: boolean) => {
+    const profile = kit('ble-auto').profile
+    return createWorkshopContext({ ...profile, features: { ...profile.features, ble: enabled } })
+  }
+
+  it('BLE初期化を含む作品の実行は、利用者の追加操作なしで先行準備する', async () => {
     await render().connect()
     render().setSource(bleSource)
-    expect(render().blePreflightEligible).toBe(true)
-    expect(render().blePreflightEnabled).toBe(false)
+    expect(render().blePreflightRequired).toBe(true)
     await render().run()
-    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledOnce()
     expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(bleSource, true, true)
     expect(render().programFeedback).toMatchObject({ phase: 'running', saved: true, source: bleSource })
   })
 
+  it('CONFIGのwireless=Trueは、BLE初期化が別ファイルに委譲されていても先行準備する', async () => {
+    await render().connect()
+    const source = 'CONFIG = {"wireless": True, "led_count": 37}\nfrom artwork import start\nstart(CONFIG)\n'
+    render().setSource(source)
+    expect(render().blePreflightRequired).toBe(true)
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledOnce()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+  })
+
+  it('CONFIGのwireless=FalseはAI準備設定のBluetooth ONより優先する', async () => {
+    selectedWorkshop = wirelessContext(true)
+    await render().connect()
+    const source = `CONFIG = {"wireless": False}\n${bleSource}`
+    render().setSource(source)
+    expect(render().blePreflightRequired).toBe(false)
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+  })
+
+  it('CONFIGのない作品も、適用済みAI準備設定でBluetooth ONなら先行準備する', async () => {
+    selectedWorkshop = wirelessContext(true)
+    await render().connect()
+    const source = 'from artwork import start\nstart()\n'
+    render().setSource(source)
+    expect(render().blePreflightRequired).toBe(true)
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledOnce()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+  })
+
+  it.each([false, true])('生成した入門プログラムはJSONの無線設定を優先して実行する: wireless=%s', async wireless => {
+    selectedWorkshop = wirelessContext(!wireless)
+    const source = buildStarterProgram(
+      { boardId: 'm5nanoc6', firmwareVersion: 'v2.5.3', ledModel: 'WS2812B-MINI', ledCount: 37, ledPin: 2, maxBrightnessPercent: 40 },
+      { modes: [{ id: 'YELLOW', label: '黄色キラキラ', icon: 'star', kind: 'twinkle', color: '#ffff00', speed: 50, repeats: 0, endState: 'hold' }], shortPress: 'next', doublePress: 'none', longPress: 'toggle', whileHeld: false, wireless },
+    )
+    await render().connect()
+    render().setSource(source)
+    expect(render().blePreflightRequired).toBe(wireless)
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledTimes(wireless ? 1 : 0)
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+    expect(render().programFeedback).toMatchObject({ phase: 'running', saved: true, source })
+  })
+
+  it('再読み込み後も、古いOFF設定や利用者の追加同意に依存せず自動準備する', async () => {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'mpw-source' ? bleSource : 'false', setItem: vi.fn() })
+    expect(render().blePreflightRequired).toBe(true)
+    await render().connect(); await render().run(); await render().disconnect()
+    for (const slot of hooks.slots) (slot as { cleanup?: () => void } | undefined)?.cleanup?.()
+    hooks.slots = []; hooks.cursor = 0; hooks.mounted = false; hooks.effects = []
+    expect(render().source).toBe(bleSource)
+    expect(render().blePreflightRequired).toBe(true)
+    await render().connect(); await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledTimes(2)
+  })
+
   it('再実行では停止→BLE先行準備→転送・構文確認→保存検証→実行の順に進む', async () => {
     await render().connect(); await render().run()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     const order: string[] = []
     vi.mocked(RawReplClient.prototype.stopLongRunning).mockImplementationOnce(async () => { order.push('stop'); return completeStop() })
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => { order.push('ble') })
@@ -1120,10 +1184,10 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
     expect(render().log).toContain('BLE先行準備の完了。これからプログラムを書き込みます。')
   })
 
-  it.each(['non-ble', 'save-only'] as const)('有効フラグが残っていても%s操作では先行準備しない', async operation => {
+  it.each(['non-ble', 'save-only'] as const)('%s操作では先行準備しない', async operation => {
     await render().connect()
     const source = operation === 'non-ble' ? 'print("LED without radio")' : bleSource
-    render().setSource(source); render().setBlePreflightEnabled(true)
+    render().setSource(source)
     await render()[operation === 'save-only' ? 'write' : 'run']()
     expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
     expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, operation !== 'save-only')
@@ -1134,13 +1198,38 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
     }
   })
 
+  it.each([0, 1] as const)('Bluetooth作品でも起動設定%sの変更だけでは先行準備しない', async mode => {
+    selectedWorkshop = wirelessContext(true)
+    vi.spyOn(BootModeService.prototype, 'set').mockResolvedValue()
+    vi.spyOn(BootModeService.prototype, 'reset').mockResolvedValue()
+    await render().connect(); render().setSource(bleSource)
+    expect(render().blePreflightRequired).toBe(true)
+    await render().setBoot(mode)
+    expect(BootModeService.prototype.set).toHaveBeenCalledOnce()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+  })
+
+  it('構文不正な作品はBluetooth ONでも先行準備せず、従来の構文エラー経路へ渡す', async () => {
+    selectedWorkshop = wirelessContext(true)
+    await render().connect()
+    const source = 'CONFIG = {"wireless": True}\ndef broken(:\n    pass\n'
+    render().setSource(source)
+    expect(render().blePreflightRequired).toBe(false)
+    vi.mocked(FileTransferService.prototype.writeMain).mockRejectedValueOnce(new Error('SyntaxError: invalid syntax'))
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: false, failedAt: 'write' })
+  })
+
   it('先行準備の例外では書き込まず、前に保存できたコードの記録を維持する', async () => {
     await render().connect(); render().setSource('print("previous saved artwork")'); await render().run()
     const previous = render().writtenSource
     vi.mocked(FileTransferService.prototype.writeMain).mockClear()
     vi.mocked(MicroPythonDevice.prototype.validateMain).mockClear()
     vi.mocked(RawReplClient.prototype.startLongRunning).mockClear()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new Error('BLE_MEMORY_PRESSURE'))
     await render().run()
     expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
@@ -1157,7 +1246,7 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
   it('動作中の作品を停止できなかったらBLE先行準備も書き込みも始めない', async () => {
     await render().connect(); await render().run()
     vi.mocked(FileTransferService.prototype.writeMain).mockClear()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     vi.mocked(RawReplClient.prototype.stopLongRunning).mockRejectedValueOnce(new Error('stop not confirmed'))
     await render().run()
     expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
@@ -1168,7 +1257,7 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
   it.each(supportedLocales.map(definition => definition.id))('先行準備の失敗案内を%sで表示する', async locale => {
     setLocale(locale)
     await render().connect()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new Error('OSError: BLE activation failed'))
     await render().run()
     const message = translate(locale, 'BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。')
@@ -1180,7 +1269,7 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
 
   it.each(['event', 'rejection'] as const)('先行準備中のUSB切断（%s）後に書き込みへ進まず、遅い成功も無視する', async kind => {
     await render().connect()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     const entered = deferred(), done = deferred()
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => {
       entered.resolve(); await done.promise
@@ -1198,25 +1287,45 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
     expect(render().programFeedback).toMatchObject({ phase: 'disconnected', saved: false })
   })
 
-  it('先行準備中の編集・OFF切り替え・連打で、受け付け済みのコードと実行設定を変えない', async () => {
+  it('先行準備中の編集・連打で、受け付け済みのコードと実行設定を変えない', async () => {
     await render().connect()
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     const entered = deferred(), done = deferred()
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => { entered.resolve(); await done.promise })
     const pending = render().run()
     await entered.promise
-    render().setSource('print("new unsaved edit")'); render().setBlePreflightEnabled(false)
+    render().setSource('print("new unsaved edit")')
     await render().run(); await render().write(); await render().stop()
     expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledOnce()
     expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
-    expect(render().blePreflightEligible).toBe(false)
+    expect(render().blePreflightRequired).toBe(false)
     done.resolve(); await pending
     expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(bleSource, true, true)
     expect(render().writtenSource).toBe(bleSource)
     expect(render().runningSource).toBe(bleSource)
     expect(render().source).toBe('print("new unsaved edit")')
-    expect(render().blePreflightEnabled).toBe(false)
+    expect(render().blePreflightRequired).toBe(false)
     expect(render().programFeedback).toMatchObject({ phase: 'running', saved: true, source: bleSource })
+  })
+
+  it.each([true, false])('受付済みのBluetooth設定%sを、停止待ち中のコード・準備設定の変更から保護する', async enabled => {
+    selectedWorkshop = wirelessContext(enabled)
+    await render().connect()
+    const source = 'from artwork import start\nstart()\n'
+    render().setSource(source)
+    const entered = deferred(), done = deferred()
+    vi.spyOn(MicroPythonDevice.prototype, 'prepareForWrite').mockImplementationOnce(async () => { entered.resolve(); await done.promise })
+    const pending = render().run()
+    await entered.promise
+    selectedWorkshop = wirelessContext(!enabled)
+    render().setSource(`CONFIG = {"wireless": ${enabled ? 'False' : 'True'}}\nprint("edited")\n`)
+    expect(render().blePreflightRequired).toBe(!enabled)
+    await render().run()
+    done.resolve(); await pending
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledTimes(enabled ? 1 : 0)
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, true)
+    expect(render().runningSource).toBe(source)
+    expect(render().source).not.toBe(source)
   })
 
   it.each(['panic', 'restart'] as const)('先行準備中の%sをネイティブ異常として表示し、起動情報を無効にして再実行しない', async reason => {
@@ -1225,7 +1334,7 @@ describe('明示同意したBLE作品だけを転送・コンパイル前に先�
     const reset = vi.spyOn(BootModeService.prototype, 'reset')
     await render().connect()
     expect(render().info.bootOption).toBe(0)
-    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    render().setSource(bleSource)
     vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new DeviceRestartError(reason))
     await render().run()
     expect(render().state).toBe('error')

@@ -36,7 +36,7 @@ const harness = vi.hoisted(() => ({
   anchor: { href: '', download: '', click: vi.fn() },
   programmer: {
     state: 'running', source: 'print("keep this draft")', log: 'existing log', supported: true,
-    blePreflightEligible: false, blePreflightEnabled: false, setBlePreflightEnabled: vi.fn(),
+    blePreflightRequired: false,
     connectionMethod: 'web-serial' as 'web-serial' | 'webusb-cdc',
     runningSource: 'print("keep this draft")' as string | null, writtenSource: 'print("keep this draft")' as string | null,
     bootConfigured: null as { mode: 0 | 1; source: string | null } | null,
@@ -337,7 +337,7 @@ beforeEach(() => {
   harness.programmer.runningSource = harness.programmer.source; harness.programmer.writtenSource = harness.programmer.source
   harness.programmer.bootConfigured = null; harness.programmer.info.bootOption = 1
   harness.programmer.programFeedback = null
-  harness.programmer.blePreflightEligible = false; harness.programmer.blePreflightEnabled = false
+  harness.programmer.blePreflightRequired = false
   harness.programmer.info.boardId = 'm5nanoc6'; harness.programmer.info.bootOptionSupported = true; harness.programmer.info.nvsFallbackSupported = false
   harness.starterVerified = false; harness.starterSource = 'print("starter")\n'; harness.starterThrows = false; harness.values = new Map()
   vi.clearAllMocks()
@@ -356,46 +356,32 @@ beforeEach(() => {
 
 afterEach(() => { endPwaUpdate(); setLocale('ja'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-it('BLE候補だけに初期OFFの先行準備欄を表示し、設定変更でUSB操作やコード変更を行わない', () => {
-  expect(all(render(), element => element.props.className === 'ble-preflight-option')).toHaveLength(0)
-  harness.programmer.blePreflightEligible = true
-  const option = find(render(), element => element.props.className === 'ble-preflight-option')
-  const checkbox = find(option, element => element.type === 'input')
-  expect(checkbox.props).toMatchObject({ type: 'checkbox', checked: false, disabled: false, 'aria-describedby': 'ble-preflight-help' })
-  expect(byId(option, 'ble-preflight-help').props.children).toContain('コード・Wi-Fi・自動起動設定は変更しません')
-  event(checkbox, 'onChange', { target: { checked: true } })
-  expect(harness.programmer.setBlePreflightEnabled).toHaveBeenCalledExactlyOnceWith(true)
+it('Bluetooth有効な作品だけに自動準備の説明を表示し、切替え操作やコード変更を行わない', () => {
+  expect(all(render(), element => element.props.className === 'ble-preflight-notice')).toHaveLength(0)
+  harness.programmer.blePreflightRequired = true
+  const notice = find(render(), element => element.props.className === 'ble-preflight-notice')
+  expect(notice.props.role).toBe('note')
+  expect(all(notice, element => ['input', 'button'].includes(String(element.type)))).toHaveLength(0)
+  expect(find(notice, element => element.type === 'strong').props.children).toBe('Bluetoothを自動で先に準備します')
+  expect(find(notice, element => element.type === 'p').props.children).toContain('コード・Wi-Fi・自動起動設定は変更しません')
   expect(harness.programmer.setSource).not.toHaveBeenCalled()
   assertNoUsbOperations()
 })
 
-it.each(['uploading', 'verifying', 'starting', 'setting-boot-mode'])('短いUSB処理%s中は先行準備の切替えを無効にする', state => {
-  harness.programmer.blePreflightEligible = true
-  harness.programmer.blePreflightEnabled = true
+it.each(['uploading', 'verifying', 'starting', 'setting-boot-mode'])('短いUSB処理%s中も自動先行準備を解除する操作を出さない', state => {
+  harness.programmer.blePreflightRequired = true
   harness.programmer.state = state
-  const checkbox = find(find(render(), element => element.props.className === 'ble-preflight-option'), element => element.type === 'input')
-  expect(checkbox.props.disabled).toBe(true)
-  event(checkbox, 'onChange', { target: { checked: false } })
-  expect(harness.programmer.setBlePreflightEnabled).not.toHaveBeenCalled()
+  const notice = find(render(), element => element.props.className === 'ble-preflight-notice')
+  expect(all(notice, element => ['input', 'button'].includes(String(element.type)))).toHaveLength(0)
   assertNoUsbOperations()
 })
 
-it('PWA更新中は先行準備を切り替えず、古いハンドラの直呼びも抑止する', () => {
-  harness.programmer.blePreflightEligible = true
-  const checkbox = find(find(render(), element => element.props.className === 'ble-preflight-option'), element => element.type === 'input')
-  expect(beginPwaUpdate()).toBe(true)
-  event(checkbox, 'onChange', { target: { checked: true } })
-  expect(harness.programmer.setBlePreflightEnabled).not.toHaveBeenCalled()
-  expect(find(find(render(), element => element.props.className === 'ble-preflight-option'), element => element.type === 'input').props.disabled).toBe(true)
-})
-
-it.each(supportedLocales.map(definition => definition.id))('BLE先行準備のラベルと説明を%sで表示する', locale => {
+it.each(supportedLocales.map(definition => definition.id))('BLE自動先行準備の説明を%sで表示する', locale => {
   setLocale(locale)
-  harness.programmer.blePreflightEligible = true
-  const option = find(render(), element => element.props.className === 'ble-preflight-option')
-  const label = find(option, element => element.type === 'label')
-  expect((label.props.children as ReactNode[])[1]).toBe(translate(locale, 'Bluetoothを先に準備する（起動時のメモリ対策）'))
-  expect(byId(option, 'ble-preflight-help').props.children).toBe(translate(locale, 'Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。'))
+  harness.programmer.blePreflightRequired = true
+  const notice = find(render(), element => element.props.className === 'ble-preflight-notice')
+  expect(find(notice, element => element.type === 'strong').props.children).toBe(translate(locale, 'Bluetoothを自動で先に準備します'))
+  expect(find(notice, element => element.type === 'p').props.children).toBe(translate(locale, 'Bluetoothが有効な作品は、書き込み・コンパイルの前に自動で準備します。コード・Wi-Fi・自動起動設定は変更しません。'))
 })
 
 it('PWA更新前に最新コード・下書き・表示設定を同期保存し、USBは操作しない', () => {

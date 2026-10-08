@@ -1,4 +1,6 @@
 {
+  "Bluetoothを自動で先に準備します": "Bluetooth wird automatisch zuerst vorbereitet",
+  "Bluetoothが有効な作品は、書き込み・コンパイルの前に自動で準備します。コード・Wi-Fi・自動起動設定は変更しません。": "Bei Werken mit aktiviertem Bluetooth wird Bluetooth vor dem Schreiben und Kompilieren automatisch vorbereitet. Code, WLAN und Autostart-Einstellungen werden nicht geändert.",
   "Bluetoothを先に準備する（起動時のメモリ対策）": "Bluetooth zuerst vorbereiten (Speicherproblem beim Start umgehen)",
   "Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。": "Aktiviere diese Option, wenn ein Werk mit Bluetooth beim Start neu startet. Bluetooth wird vor dem Ausführen aktiviert. Code, WLAN und Autostart-Einstellungen werden nicht geändert.",
   "BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。": "Die BLE-Vorbereitung ist fehlgeschlagen. Das Programm wurde nicht auf das Gerät geschrieben. Schalte das Gerät aus und wieder ein, verbinde USB erneut und versuche es noch einmal.",

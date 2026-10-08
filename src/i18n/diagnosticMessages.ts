@@ -1,6 +1,8 @@
 import type { MessageCatalog } from './types'
 
 export const diagnosticMessages: MessageCatalog = {
+  "Bluetoothを自動で先に準備します": { en: "Bluetooth is prepared first automatically", zh: "自动提前准备Bluetooth" },
+  "Bluetoothが有効な作品は、書き込み・コンパイルの前に自動で準備します。コード・Wi-Fi・自動起動設定は変更しません。": { en: "For works with Bluetooth enabled, Bluetooth is prepared automatically before writing and compiling. The code, Wi-Fi, and autostart settings will not be changed.", zh: "对于已启用Bluetooth的作品，会在写入和编译前自动准备Bluetooth。不会更改代码、Wi-Fi或自动启动设置。" },
   "Bluetoothを先に準備する（起動時のメモリ対策）": { en: "Prepare Bluetooth first (startup memory workaround)", zh: "提前准备Bluetooth（启动时的内存应对措施）" },
   "Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。": { en: "Turn this on if a work using Bluetooth restarts during startup. Bluetooth will be enabled before Run. The code, Wi-Fi, and autostart settings will not be changed.", zh: "如果使用Bluetooth的作品在启动时重启，请开启此选项。将在“运行”前启用Bluetooth，不会更改代码、Wi-Fi或自动启动设置。" },
   "BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。": { en: "BLE preparation failed. The program has not been written. Power-cycle the device, reconnect USB, and try again.", zh: "BLE提前准备失败，未写入程序。请将设备断电后重新上电，重新连接USB，再试一次。" },

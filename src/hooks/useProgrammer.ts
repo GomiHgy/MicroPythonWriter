@@ -11,7 +11,7 @@ import { DeviceRestartError, SerialDisconnectedError, type AppError, type Device
 import type { ProgramFeedback } from '../types/programFeedback'
 import type { BootFeedback } from '../types/bootFeedback'
 import { isArduinoSource } from '../services/editor/sourceLanguage'
-import { hasBleInitialization } from '../services/editor/bleProgram'
+import { shouldPrepareBle } from '../services/editor/bleProgram'
 
 const starter = 'print("Hello from M5NanoC6 / AtomS3Lite")\n'
 const emptyInfo: DeviceInfo = { deviceName: '未接続', microPythonVersion: '未取得', firmwareInfo: '未取得', nanoC6Confirmed: false, bootOptionSupported: false, nvsFallbackSupported: false }
@@ -42,8 +42,8 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
   const [log, updateLog] = useState('')
   const [error, setError] = useState<AppError>()
   const [source, setSource] = useState(() => preferProjectSource && fallbackSource !== undefined ? fallbackSource : readPreference('mpw-source') ?? fallbackSource ?? starter)
-  const [blePreflightEnabled, setBlePreflightEnabled] = useState(false)
-  const blePreflightEligible = useMemo(() => hasBleInitialization(source), [source])
+  const preparationBleEnabled = workshop?.profile.features.ble === true
+  const blePreflightRequired = useMemo(() => shouldPrepareBle(source, preparationBleEnabled), [source, preparationBleEnabled])
   const [writtenSource, setWrittenSource] = useState<string | null>(null)
   const [runningSource, setRunningSource] = useState<string | null>(null)
   const [bootConfigured, setBootConfigured] = useState<{ source: string | null; mode: 0 | 1 } | null>(null)
@@ -187,7 +187,7 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     setRunningSource(null)
     setBootConfigured(null)
     const snapshot = capture()
-    const prepareBle = execute && blePreflightEnabled && hasBleInitialization(snapshot.source)
+    const prepareBle = execute && shouldPrepareBle(snapshot.source, snapshot.workshop?.profile.features.ble === true)
     replaceFeedback({ id, operation: execute ? 'run' : 'write', phase: 'preparing', source: snapshot.source, saved: false })
     let failedAt: ProgramFeedback['failedAt'] = 'prepare'
     let errorSnapshot = ['running', 'running-no-marker'].includes(machine.current.state) ? deviceContext() : snapshot
@@ -358,5 +358,5 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     const terminalLog = error.stage === 'DEVICE_PANIC' || error.stage === 'DEVICE_RESTART' ? log.slice(-16000) : saved.terminalLog
     return { ...error, repairPrompt: prompt.build(error, snapshot.source, snapshot.device, terminalLog, error.stage, snapshot.workshop, { sourceKnown: snapshot.sourceKnown, locale }) }
   }, [error, errorContext, locale, prompt, log])
-  return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, blePreflightEligible, blePreflightEnabled, setBlePreflightEnabled, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
+  return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, blePreflightRequired, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
 }
