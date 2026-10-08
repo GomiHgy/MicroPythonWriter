@@ -5,6 +5,7 @@ import { FileTransferService } from './FileTransferService'
 import { RawReplClient, type LongRunningCallbacks, type LongRunningCompletion, type LongRunningStartResult } from './RawReplClient'
 import type { SerialTransport } from '../serial/SerialTransport'
 import { clearPreparedProgramCommand, startPreparedProgramCommand, verifyPreparedProgramCommand } from './ProgramCommands'
+import { buildBlePreflightCommand } from './BlePreflight'
 
 function expectedKeyboardInterrupt(result: LongRunningCompletion): boolean {
   if (!result.intentionalStop) return false
@@ -48,6 +49,15 @@ export class MicroPythonDevice {
       }
     }
     this.repl.discardPendingInput()
+  }
+  async prepareBleForRun() {
+    // 作品を読む・コンパイルする前に旧Writerの参照を解放し、BLEのnative領域を先に確保する。
+    // 停止確認は呼出元が先に行う。ファイル・Wi-Fi・GATT・起動設定には触れない。
+    await this.files.discardPreparedProgram()
+    const result = await this.repl.execute(buildBlePreflightCommand())
+    if (!result.completed || result.interrupted || result.stderr.trim() || !result.stdout.split(/\r?\n/).includes('__M5_BLE_PREPARED__')) {
+      throw new RawReplProtocolError(`BLE先行準備の完了を確認できませんでした。${result.stderr ? `\n${result.stderr}` : ''}`)
+    }
   }
   async validateMain() {
     const prepared = this.files.peekPreparedProgram()

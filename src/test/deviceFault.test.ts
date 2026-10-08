@@ -16,6 +16,63 @@ function fixture(startupGrace = 10) {
 }
 
 describe('機器のpanic・再起動の検知', () => {
+  it.each([panic, 'ESP-ROM:esp32c6-20220919\n', 'MPY: soft reboot\n'])('有限コマンド中もnative異常を検知し、再同期まで書き込みを止める: %s', async output => {
+    const queue = new ByteQueue()
+    const subscribers = new Set<(bytes: Uint8Array) => void>()
+    const receive = (bytes: Uint8Array) => { queue.push(bytes); subscribers.forEach(callback => callback(bytes)) }
+    let crash = true
+    const write = vi.fn(async (data: Uint8Array) => {
+      if (data[0] === 1) receive(encode('raw REPL; CTRL-B to exit\r\n>'))
+      if (data.length === 1 && data[0] === 4) {
+        const response = crash ? `OK${output}` : 'OKhello\x04\x04>'
+        for (const byte of encode(response)) receive(new Uint8Array([byte]))
+      }
+    })
+    const client = new RawReplClient({ queue, write, onData: (callback: (bytes: Uint8Array) => void) => { subscribers.add(callback); return () => subscribers.delete(callback) } } as never, { command: 1000, rawRepl: 1000 })
+    await expect(client.execute('ble.active(True)')).rejects.toBeInstanceOf(DeviceRestartError)
+    expect(subscribers.size).toBe(0)
+    expect(write).toHaveBeenCalledTimes(2)
+    await expect(client.execute('pass')).rejects.toThrow('復旧または再接続')
+    await expect(client.reset()).rejects.toThrow('復旧または再接続')
+    expect(write).toHaveBeenCalledTimes(2)
+    crash = false
+    await client.enterRawRepl()
+    await expect(client.execute('print("hello")')).resolves.toMatchObject({ stdout: 'hello', stderr: '', completed: true })
+    expect(subscribers.size).toBe(0)
+  })
+  it('有限コマンドの受信待機を中止し、再同期の受信を古いwaiterに取らせない', async () => {
+    const queue = new ByteQueue()
+    const subscribers = new Set<(bytes: Uint8Array) => void>()
+    const receive = (text: string) => { const bytes = encode(text); queue.push(bytes); subscribers.forEach(callback => callback(bytes)) }
+    const write = vi.fn(async (data: Uint8Array) => {
+      if (data[0] === 1) receive('raw REPL; CTRL-B to exit\r\n>')
+      if (data.length === 1 && data[0] === 4) receive('OK')
+    })
+    const client = new RawReplClient({ queue, write, onData: (callback: (bytes: Uint8Array) => void) => { subscribers.add(callback); return () => subscribers.delete(callback) } } as never, { command: 1000, rawRepl: 1000 })
+    const pending = client.execute('ble.active(True)')
+    const result = expect(pending).rejects.toBeInstanceOf(DeviceRestartError)
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2))
+    receive(panic)
+    await result
+    expect(subscribers.size).toBe(0)
+    await client.enterRawRepl()
+    await expect(client.reset()).resolves.toBeUndefined()
+  })
+  it('同じチャンクのOKとpanicを成功にせず、通常のPython例外はそのまま返す', async () => {
+    const queue = new ByteQueue()
+    const subscribers = new Set<(bytes: Uint8Array) => void>()
+    let response = `OK${panic}`
+    const write = vi.fn(async (data: Uint8Array) => {
+      if (data[0] === 1) queue.push(encode('raw REPL; CTRL-B to exit\n>'))
+      if (data.length === 1 && data[0] === 4) { const bytes = encode(response); queue.push(bytes); subscribers.forEach(callback => callback(bytes)) }
+    })
+    const client = new RawReplClient({ queue, write, onData: (callback: (bytes: Uint8Array) => void) => { subscribers.add(callback); return () => subscribers.delete(callback) } } as never, { command: 1000, rawRepl: 1000 })
+    await expect(client.execute('pass')).rejects.toBeInstanceOf(DeviceRestartError)
+    await client.enterRawRepl()
+    response = 'OKbefore\x04Traceback (most recent call last):\nMemoryError:\n\x04>'
+    await expect(client.execute('pass')).resolves.toMatchObject({ stdout: 'before', stderr: 'Traceback (most recent call last):\nMemoryError:\n' })
+    expect(subscribers.size).toBe(0)
+  })
   it.each([panic, "Guru Meditation Error: Core 1 panic'ed (LoadProhibited).\n", 'ESP-ROM:esp32c6-20220919\n', 'ESP-ROM:esp32s3-20210327\r\n', 'MPY: soft reboot\n'])('1バイトずつ届いても検知する: %s', text => {
     const monitor = new DeviceFaultMonitor()
     const detected = [...encode(text)].map(byte => monitor.consume(byte)).find(Boolean)

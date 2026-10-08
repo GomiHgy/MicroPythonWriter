@@ -1,6 +1,11 @@
 import type { MessageCatalog } from './types'
 
 export const diagnosticMessages: MessageCatalog = {
+  "Bluetoothを先に準備する（起動時のメモリ対策）": { en: "Prepare Bluetooth first (startup memory workaround)", zh: "提前准备Bluetooth（启动时的内存应对措施）" },
+  "Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。": { en: "Turn this on if a work using Bluetooth restarts during startup. Bluetooth will be enabled before Run. The code, Wi-Fi, and autostart settings will not be changed.", zh: "如果使用Bluetooth的作品在启动时重启，请开启此选项。将在“运行”前启用Bluetooth，不会更改代码、Wi-Fi或自动启动设置。" },
+  "BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。": { en: "BLE preparation failed. The program has not been written. Power-cycle the device, reconnect USB, and try again.", zh: "BLE提前准备失败，未写入程序。请将设备断电后重新上电，重新连接USB，再试一次。" },
+  "BLE先行準備の開始": { en: "Starting BLE preparation", zh: "开始提前准备BLE" },
+  "BLE先行準備の完了。これからプログラムを書き込みます。": { en: "BLE preparation completed. The program will now be written.", zh: "BLE提前准备已完成，接下来将写入程序。" },
   "診断版をコード欄へ入れる": { en: "Load diagnostic version into the editor", zh: "将诊断版放入代码栏" },
   "「診断版をコード欄へ入れる」を押し、コード欄の変更を確認してから「実行」を1回押す": { en: "Press Load diagnostic version into the editor, check the changed code, then press Run once", zh: "按“将诊断版放入代码栏”，确认代码栏中的更改后，再按一次“运行”" },
   "保管した元コードへ戻す": { en: "Restore stored original code", zh: "恢复保管的原代码" },

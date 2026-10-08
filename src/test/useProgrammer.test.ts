@@ -10,7 +10,7 @@ import { WebUsbCdcTransport } from '../services/serial/WebUsbCdcTransport'
 import { SerialStateMachine } from '../services/serial/SerialStateMachine'
 import { DeviceRestartError, DeviceTimeoutError, SerialDisconnectedError } from '../types'
 import { workshopPresets } from '../config/workshops'
-import { setLocale } from '../i18n'
+import { setLocale, supportedLocales, translate } from '../i18n'
 import { createWorkshopContext, type WorkshopContext } from '../services/prompt/WorkshopRules'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, mounted: false, effects: [] as Array<() => unknown> }))
@@ -96,6 +96,7 @@ beforeEach(() => {
   vi.spyOn(WebSerialTransport.prototype, 'disconnect').mockResolvedValue()
   vi.spyOn(WebSerialTransport.prototype, 'onDisconnectDetected').mockImplementation(callback => { disconnectDetected = callback; return () => {} })
   vi.spyOn(MicroPythonDevice.prototype, 'enterNormalMode').mockResolvedValue()
+  vi.spyOn(MicroPythonDevice.prototype, 'prepareBleForRun').mockResolvedValue()
   vi.spyOn(DeviceProbe.prototype, 'probe').mockResolvedValue({ deviceName: 'NanoC6', microPythonVersion: 'test', firmwareInfo: 'test', nanoC6Confirmed: true, bootOptionSupported: true, nvsFallbackSupported: false })
   vi.spyOn(FileTransferService.prototype, 'writeMain').mockResolvedValue(100)
   // 書込みはこのフック単体テストではスタブ。実行準備の寿命はサービス側で別途検証する。
@@ -1084,5 +1085,160 @@ describe('自動起動を解除して編集へ戻す', () => {
     await render().setBoot(1)
     expect(BootModeService.prototype.set).not.toHaveBeenCalled()
     expect(render().bootFeedback).toMatchObject({ phase: 'failed', saved: false })
+  })
+})
+
+describe('明示同意したBLE作品だけを転送・コンパイル前に先行準備する', () => {
+  const bleSource = 'class NanoBle:\n    def __init__(self):\n        import bluetooth\n        self.ble = bluetooth.BLE()\n        self.ble.active(True)\nradio = NanoBle()\n'
+
+  it('先行準備は初期状態OFFで、BLEコードを入れただけでは無線へ触れない', async () => {
+    await render().connect()
+    render().setSource(bleSource)
+    expect(render().blePreflightEligible).toBe(true)
+    expect(render().blePreflightEnabled).toBe(false)
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(bleSource, true, true)
+    expect(render().programFeedback).toMatchObject({ phase: 'running', saved: true, source: bleSource })
+  })
+
+  it('再実行では停止→BLE先行準備→転送・構文確認→保存検証→実行の順に進む', async () => {
+    await render().connect(); await render().run()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    const order: string[] = []
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockImplementationOnce(async () => { order.push('stop'); return completeStop() })
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => { order.push('ble') })
+    vi.mocked(FileTransferService.prototype.writeMain).mockImplementationOnce(async () => { order.push('write-and-compile'); return 100 })
+    vi.mocked(MicroPythonDevice.prototype.validateMain).mockImplementationOnce(async () => { order.push('verify') })
+    const originalStart = vi.mocked(RawReplClient.prototype.startLongRunning).getMockImplementation()!
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockImplementationOnce(async (...args) => { order.push('start'); return originalStart(...args) })
+    await render().run()
+    expect(order).toEqual(['stop', 'ble', 'write-and-compile', 'verify', 'start'])
+    expect(render().writtenSource).toBe(bleSource)
+    expect(render().runningSource).toBe(bleSource)
+    expect(render().log).toContain('BLE先行準備の開始')
+    expect(render().log).toContain('BLE先行準備の完了。これからプログラムを書き込みます。')
+  })
+
+  it.each(['non-ble', 'save-only'] as const)('有効フラグが残っていても%s操作では先行準備しない', async operation => {
+    await render().connect()
+    const source = operation === 'non-ble' ? 'print("LED without radio")' : bleSource
+    render().setSource(source); render().setBlePreflightEnabled(true)
+    await render()[operation === 'save-only' ? 'write' : 'run']()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(source, true, operation !== 'save-only')
+    if (operation === 'save-only') {
+      expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+      expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+      expect(render().programFeedback).toMatchObject({ phase: 'saved', saved: true })
+    }
+  })
+
+  it('先行準備の例外では書き込まず、前に保存できたコードの記録を維持する', async () => {
+    await render().connect(); render().setSource('print("previous saved artwork")'); await render().run()
+    const previous = render().writtenSource
+    vi.mocked(FileTransferService.prototype.writeMain).mockClear()
+    vi.mocked(MicroPythonDevice.prototype.validateMain).mockClear()
+    vi.mocked(RawReplClient.prototype.startLongRunning).mockClear()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new Error('BLE_MEMORY_PRESSURE'))
+    await render().run()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+    expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+    expect(render().writtenSource).toBe(previous)
+    expect(render().runningSource).toBeNull()
+    expect(render().source).toBe(bleSource)
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: false, failedAt: 'prepare', source: bleSource, message: expect.stringContaining('BLE_MEMORY_PRESSURE') })
+    expect(render().error?.sourceSnapshot).toBe(bleSource)
+    expect(render().log).toContain('BLEの先行準備に失敗しました。プログラムは書き込んでいません。')
+  })
+
+  it('動作中の作品を停止できなかったらBLE先行準備も書き込みも始めない', async () => {
+    await render().connect(); await render().run()
+    vi.mocked(FileTransferService.prototype.writeMain).mockClear()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    vi.mocked(RawReplClient.prototype.stopLongRunning).mockRejectedValueOnce(new Error('stop not confirmed'))
+    await render().run()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).not.toHaveBeenCalled()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: false, failedAt: 'prepare' })
+  })
+
+  it.each(supportedLocales.map(definition => definition.id))('先行準備の失敗案内を%sで表示する', async locale => {
+    setLocale(locale)
+    await render().connect()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new Error('OSError: BLE activation failed'))
+    await render().run()
+    const message = translate(locale, 'BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。')
+    expect(render().programFeedback?.message).toBe(`${message}\nOSError: BLE activation failed`)
+    expect(render().log).toContain(message)
+    if (locale !== 'ja') expect(message).not.toContain('失敗しました')
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+  })
+
+  it.each(['event', 'rejection'] as const)('先行準備中のUSB切断（%s）後に書き込みへ進まず、遅い成功も無視する', async kind => {
+    await render().connect()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    const entered = deferred(), done = deferred()
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => {
+      entered.resolve(); await done.promise
+      if (kind === 'rejection') throw new SerialDisconnectedError()
+    })
+    const pending = render().run()
+    await entered.promise
+    expect(render().programFeedback).toMatchObject({ phase: 'preparing', saved: false })
+    if (kind === 'event') disconnectDetected()
+    done.resolve(); await pending
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+    expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+    expect(render().state).toBe('connection-lost')
+    expect(render().programFeedback).toMatchObject({ phase: 'disconnected', saved: false })
+  })
+
+  it('先行準備中の編集・OFF切り替え・連打で、受け付け済みのコードと実行設定を変えない', async () => {
+    await render().connect()
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    const entered = deferred(), done = deferred()
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockImplementationOnce(async () => { entered.resolve(); await done.promise })
+    const pending = render().run()
+    await entered.promise
+    render().setSource('print("new unsaved edit")'); render().setBlePreflightEnabled(false)
+    await render().run(); await render().write(); await render().stop()
+    expect(MicroPythonDevice.prototype.prepareBleForRun).toHaveBeenCalledOnce()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(render().blePreflightEligible).toBe(false)
+    done.resolve(); await pending
+    expect(FileTransferService.prototype.writeMain).toHaveBeenCalledExactlyOnceWith(bleSource, true, true)
+    expect(render().writtenSource).toBe(bleSource)
+    expect(render().runningSource).toBe(bleSource)
+    expect(render().source).toBe('print("new unsaved edit")')
+    expect(render().blePreflightEnabled).toBe(false)
+    expect(render().programFeedback).toMatchObject({ phase: 'running', saved: true, source: bleSource })
+  })
+
+  it.each(['panic', 'restart'] as const)('先行準備中の%sをネイティブ異常として表示し、起動情報を無効にして再実行しない', async reason => {
+    vi.mocked(DeviceProbe.prototype.probe).mockResolvedValueOnce({ deviceName: 'NanoC6', microPythonVersion: 'test', firmwareInfo: 'test', nanoC6Confirmed: true, bootOptionSupported: true, nvsFallbackSupported: false, bootOption: 0 })
+    const boot = vi.spyOn(BootModeService.prototype, 'set')
+    const reset = vi.spyOn(BootModeService.prototype, 'reset')
+    await render().connect()
+    expect(render().info.bootOption).toBe(0)
+    render().setSource(bleSource); render().setBlePreflightEnabled(true)
+    vi.mocked(MicroPythonDevice.prototype.prepareBleForRun).mockRejectedValueOnce(new DeviceRestartError(reason))
+    await render().run()
+    expect(render().state).toBe('error')
+    expect(render().error?.stage).toBe(reason === 'panic' ? 'DEVICE_PANIC' : 'DEVICE_RESTART')
+    expect(render().programFeedback).toMatchObject({ phase: 'failed', saved: false, failedAt: 'prepare' })
+    expect(render().runningSource).toBeNull()
+    expect(render().info.bootOption).toBeUndefined()
+    expect(render().bootConfigured).toBeNull()
+    expect(render().bootFeedback).toBeNull()
+    expect(FileTransferService.prototype.writeMain).not.toHaveBeenCalled()
+    expect(MicroPythonDevice.prototype.validateMain).not.toHaveBeenCalled()
+    expect(RawReplClient.prototype.startLongRunning).not.toHaveBeenCalled()
+    expect(boot).not.toHaveBeenCalled()
+    expect(reset).not.toHaveBeenCalled()
   })
 })

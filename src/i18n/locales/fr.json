@@ -1,4 +1,9 @@
 {
+  "Bluetoothを先に準備する（起動時のメモリ対策）": "Préparer Bluetooth d’abord (contournement du problème de mémoire au démarrage)",
+  "Bluetoothを使う作品で、起動時に再起動する場合にONにしてください。「実行」の前にBluetoothを有効にします。コード・Wi-Fi・自動起動設定は変更しません。": "Active cette option si une création utilisant Bluetooth redémarre au lancement. Bluetooth sera activé avant l’exécution. Le code, le Wi-Fi et les paramètres de démarrage automatique ne seront pas modifiés.",
+  "BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。": "La préparation de BLE a échoué. Le programme n’a pas été enregistré sur l’appareil. Éteins puis rallume l’appareil, reconnecte le câble USB et réessaie.",
+  "BLE先行準備の開始": "Démarrage de la préparation de BLE",
+  "BLE先行準備の完了。これからプログラムを書き込みます。": "Préparation de BLE terminée. Le programme va maintenant être enregistré sur l’appareil.",
   "診断版をコード欄へ入れる": "Charger la version de diagnostic dans l’éditeur",
   "「診断版をコード欄へ入れる」を押し、コード欄の変更を確認してから「実行」を1回押す": "Appuie sur Charger la version de diagnostic dans l’éditeur, vérifie le code modifié, puis appuie une fois sur Exécuter",
   "保管した元コードへ戻す": "Restaurer le code original conservé",

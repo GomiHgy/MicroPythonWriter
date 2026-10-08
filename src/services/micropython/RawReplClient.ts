@@ -223,13 +223,53 @@ export class RawReplClient {
 
   private async executeInternal(code: string) {
     this.discardPendingInput()
-    await this.transport.write(encoder.encode(code)); await this.transport.write(CTRL_D)
-    const ok = decoder.decode(await this.transport.queue.readUntil(encoder.encode('OK'), this.timings.command, undefined, true, '有限コマンド受付'))
-    if (!ok.endsWith('OK')) throw new RawReplProtocolError('Raw REPL が OK を返しませんでした。')
-    const stdout = decoder.decode(await this.transport.queue.readUntil(CTRL_D, this.timings.command, undefined, false, '有限コマンド標準出力'))
-    const stderr = decoder.decode(await this.transport.queue.readUntil(CTRL_D, this.timings.command, undefined, false, '有限コマンド標準エラー'))
-    await this.transport.queue.readUntil(encoder.encode('>'), this.timings.command, undefined, true, 'Raw REPLプロンプト')
-    return { stdout, stderr }
+    const controller = new AbortController()
+    const faults = new DeviceFaultMonitor()
+    let fault: DeviceRestartError | undefined
+    let acceptancePending = true
+    let firstAcceptanceByte = false
+    // BLE初期化などの有限コマンドもnative panicで終端を失う。待ち続けず、明示的な同期を要求する。
+    const unsubscribe = this.transport.onData?.(bytes => {
+      if (fault) return
+      for (const byte of bytes) {
+        // Raw REPL受付のOKは改行を伴わない。stdoutの先頭と結合してpanicを見逃さない。
+        if (acceptancePending) {
+          if (!firstAcceptanceByte && byte === 79) { firstAcceptanceByte = true; continue }
+          acceptancePending = false
+          if (firstAcceptanceByte && byte === 75) continue
+          if (firstAcceptanceByte) faults.consume(79)
+        }
+        const detected = faults.consume(byte)
+        if (detected) {
+          fault = detected
+          this.requiresSync = true
+          controller.abort()
+          break
+        }
+      }
+    })
+    const checkFault = () => { if (fault) throw fault }
+    try {
+      await this.transport.write(encoder.encode(code))
+      checkFault()
+      await this.transport.write(CTRL_D)
+      checkFault()
+      const ok = decoder.decode(await this.transport.queue.readUntil(encoder.encode('OK'), this.timings.command, controller.signal, true, '有限コマンド受付'))
+      checkFault()
+      if (!ok.endsWith('OK')) throw new RawReplProtocolError('Raw REPL が OK を返しませんでした。')
+      const stdout = decoder.decode(await this.transport.queue.readUntil(CTRL_D, this.timings.command, controller.signal, false, '有限コマンド標準出力'))
+      checkFault()
+      const stderr = decoder.decode(await this.transport.queue.readUntil(CTRL_D, this.timings.command, controller.signal, false, '有限コマンド標準エラー'))
+      checkFault()
+      await this.transport.queue.readUntil(encoder.encode('>'), this.timings.command, controller.signal, true, 'Raw REPLプロンプト')
+      checkFault()
+      return { stdout, stderr }
+    } catch (error) {
+      throw fault ?? error
+    } finally {
+      controller.abort()
+      unsubscribe?.()
+    }
   }
   private checkSync() {
     if (this.requiresSync) throw new RawReplProtocolError('機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。')

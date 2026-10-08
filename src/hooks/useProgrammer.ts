@@ -11,6 +11,7 @@ import { DeviceRestartError, SerialDisconnectedError, type AppError, type Device
 import type { ProgramFeedback } from '../types/programFeedback'
 import type { BootFeedback } from '../types/bootFeedback'
 import { isArduinoSource } from '../services/editor/sourceLanguage'
+import { hasBleInitialization } from '../services/editor/bleProgram'
 
 const starter = 'print("Hello from M5NanoC6 / AtomS3Lite")\n'
 const emptyInfo: DeviceInfo = { deviceName: '未接続', microPythonVersion: '未取得', firmwareInfo: '未取得', nanoC6Confirmed: false, bootOptionSupported: false, nvsFallbackSupported: false }
@@ -41,6 +42,8 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
   const [log, updateLog] = useState('')
   const [error, setError] = useState<AppError>()
   const [source, setSource] = useState(() => preferProjectSource && fallbackSource !== undefined ? fallbackSource : readPreference('mpw-source') ?? fallbackSource ?? starter)
+  const [blePreflightEnabled, setBlePreflightEnabled] = useState(false)
+  const blePreflightEligible = useMemo(() => hasBleInitialization(source), [source])
   const [writtenSource, setWrittenSource] = useState<string | null>(null)
   const [runningSource, setRunningSource] = useState<string | null>(null)
   const [bootConfigured, setBootConfigured] = useState<{ source: string | null; mode: 0 | 1 } | null>(null)
@@ -100,7 +103,20 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     const unsubscribeDisconnect = transport.onDisconnectDetected(() => { disconnectFeedback(); connectionLost.current = true; runId.current++; programOperation.current = undefined; device.current = undefined; activeSnapshot.current = undefined; fileSnapshot.current = undefined; setWrittenSource(null); setRunningSource(null); appendLog('\n[USB切断を検出しました。再接続してください。]\n'); force('connection-lost') })
     return () => { unsubscribe(); unsubscribeDisconnect(); transport.dispose() }
   }, [transport, appendLog, disconnectFeedback])
-  const trap = async (stage: string, action: () => Promise<void>, isCurrent = () => true, snapshot: OperationSnapshot | (() => OperationSnapshot) = capture(), onFailure?: (caught: unknown, disconnected: boolean) => void) => { try { setError(undefined); await action() } catch (caught) { if (!isCurrent()) return; const disconnected = connectionLost.current || caught instanceof SerialDisconnectedError; onFailure?.(caught, disconnected); force(disconnected ? 'connection-lost' : 'error'); showError(disconnected ? 'SERIAL_DISCONNECTED' : stage, caught, typeof snapshot === 'function' ? snapshot() : snapshot) } }
+  const trap = async (stage: string, action: () => Promise<void>, isCurrent = () => true, snapshot: OperationSnapshot | (() => OperationSnapshot) = capture(), onFailure?: (caught: unknown, disconnected: boolean) => void) => {
+    try { setError(undefined); await action() } catch (caught) {
+      if (!isCurrent()) return
+      const disconnected = connectionLost.current || caught instanceof SerialDisconnectedError
+      if (caught instanceof DeviceRestartError) {
+        setBootConfigured(null); clearBootFeedback()
+        setDeviceInfo({ ...infoRef.current, bootOption: undefined })
+        activeSnapshot.current = undefined; setRunningSource(null)
+      }
+      onFailure?.(caught, disconnected)
+      force(disconnected ? 'connection-lost' : 'error')
+      showError(disconnected ? 'SERIAL_DISCONNECTED' : caught instanceof DeviceRestartError ? caught.name : stage, caught, typeof snapshot === 'function' ? snapshot() : snapshot)
+    }
+  }
   const normalMode = () => {
     let id: number | undefined
     return trap('RAW_REPL_SYNC_ERROR', async () => {
@@ -171,6 +187,7 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     setRunningSource(null)
     setBootConfigured(null)
     const snapshot = capture()
+    const prepareBle = execute && blePreflightEnabled && hasBleInitialization(snapshot.source)
     replaceFeedback({ id, operation: execute ? 'run' : 'write', phase: 'preparing', source: snapshot.source, saved: false })
     let failedAt: ProgramFeedback['failedAt'] = 'prepare'
     let errorSnapshot = ['running', 'running-no-marker'].includes(machine.current.state) ? deviceContext() : snapshot
@@ -185,9 +202,21 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
         errorSnapshot = snapshot
         if (wasRunning) move('stopped')
         move('uploading')
+        appendLog(`\n===== ${execute ? '実行' : 'プログラム更新'}開始 #${id} ${new Date().toLocaleTimeString()} =====\n`)
+        if (prepareBle) {
+          appendLog(`[${translate(snapshot.locale, 'BLE先行準備の開始')}]\n`)
+          try { await target.prepareBleForRun() } catch (caught) {
+            if (!isCurrent()) return
+            const message = translate(snapshot.locale, 'BLEの先行準備に失敗しました。プログラムは書き込んでいません。機器の電源を入れ直してUSBをつなぎ直し、もう一度試してください。')
+            appendLog(`[${message}]\n`)
+            if (caught instanceof DeviceRestartError || caught instanceof SerialDisconnectedError) throw caught
+            throw new Error(`${message}\n${caught instanceof Error ? caught.message : String(caught)}`, { cause: caught })
+          }
+          if (!isCurrent()) return
+          appendLog(`[${translate(snapshot.locale, 'BLE先行準備の完了。これからプログラムを書き込みます。')}]\n`)
+        }
         failedAt = 'write'
         updateFeedback(id, { phase: 'writing' })
-        appendLog(`\n===== ${execute ? '実行' : 'プログラム更新'}開始 #${id} ${new Date().toLocaleTimeString()} =====\n`)
         fileSnapshot.current = undefined
         setWrittenSource(null)
         await target.files.writeMain(snapshot.source, true, execute)
@@ -329,5 +358,5 @@ export function useProgrammer(workshop: WorkshopContext | null = null, fallbackS
     const terminalLog = error.stage === 'DEVICE_PANIC' || error.stage === 'DEVICE_RESTART' ? log.slice(-16000) : saved.terminalLog
     return { ...error, repairPrompt: prompt.build(error, snapshot.source, snapshot.device, terminalLog, error.stage, snapshot.workshop, { sourceKnown: snapshot.sourceKnown, locale }) }
   }, [error, errorContext, locale, prompt, log])
-  return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
+  return { supported: transport.supported, connectionMethod: transport.kind, state, info, log, setLog, error: localizedError, source, setSource, blePreflightEligible, blePreflightEnabled, setBlePreflightEnabled, writtenSource, runningSource, bootConfigured, bootFeedback, programFeedback, baudRate, setBaudRate, connect, reconnect, disconnect, normalMode, load, write, run, stop, setBoot, reset }
 }
