@@ -1,4 +1,11 @@
 {
+  "診断版をコード欄へ入れる": "Cargar la versión de diagnóstico en el editor",
+  "「診断版をコード欄へ入れる」を押し、コード欄の変更を確認してから「実行」を1回押す": "Pulsa Cargar la versión de diagnóstico en el editor, comprueba el código modificado y después pulsa Ejecutar una vez",
+  "保管した元コードへ戻す": "Restaurar el código original guardado",
+  "診断版をコード欄へ入れました。まだ機器には書き込んでいません。「実行」を1回押してください。": "La versión de diagnóstico está en el editor. Todavía no se ha escrito en el dispositivo. Pulsa Ejecutar una vez.",
+  "元コードをコード欄へ戻しました。機器のプログラムはまだ変更していません。": "El código original vuelve a estar en el editor. El programa del dispositivo todavía no se ha modificado.",
+  "診断版をコード欄へ入れます。編集中のコードは置き換わりますが、機器への書き込み・実行・自動起動設定の変更は行いません。続けますか？": "Se cargará la versión de diagnóstico en el editor y se sustituirá el código que estás editando. No se escribirá ni ejecutará nada en el dispositivo ni se cambiará el inicio automático. ¿Continuar?",
+  "保管した元コードへ戻します。診断版に加えた編集は失われます。機器のプログラムは変更しません。続けますか？": "Se restaurará el código original guardado. Se perderán los cambios realizados en la versión de diagnóstico. El programa del dispositivo no se modificará. ¿Continuar?",
   "機器内部でクラッシュが発生しました。実行は正常に継続していません。": "El dispositivo sufrió un fallo interno. La ejecución ya no continúa normalmente.",
   "実行中に機器の再起動を検出しました。実行は正常に継続していません。": "Se detectó un reinicio durante la ejecución. La ejecución ya no continúa normalmente.",
   "機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。": "El dispositivo se reinició. Restablece la comunicación USB o vuelve a conectarlo. No se escribió ni ejecutó nada.",

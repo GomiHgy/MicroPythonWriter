@@ -1,6 +1,13 @@
 import type { MessageCatalog } from './types'
 
 export const diagnosticMessages: MessageCatalog = {
+  "診断版をコード欄へ入れる": { en: "Load diagnostic version into the editor", zh: "将诊断版放入代码栏" },
+  "「診断版をコード欄へ入れる」を押し、コード欄の変更を確認してから「実行」を1回押す": { en: "Press Load diagnostic version into the editor, check the changed code, then press Run once", zh: "按“将诊断版放入代码栏”，确认代码栏中的更改后，再按一次“运行”" },
+  "保管した元コードへ戻す": { en: "Restore stored original code", zh: "恢复保管的原代码" },
+  "診断版をコード欄へ入れました。まだ機器には書き込んでいません。「実行」を1回押してください。": { en: "The diagnostic version is now in the editor. It has not been written to the device. Press Run once.", zh: "诊断版已放入代码栏，尚未写入设备。请按一次“运行”。" },
+  "元コードをコード欄へ戻しました。機器のプログラムはまだ変更していません。": { en: "The original code is back in the editor. The device program has not been changed.", zh: "原代码已恢复到代码栏，设备中的程序尚未更改。" },
+  "診断版をコード欄へ入れます。編集中のコードは置き換わりますが、機器への書き込み・実行・自動起動設定の変更は行いません。続けますか？": { en: "Load the diagnostic version into the editor? This replaces the code being edited but does not write to the device, run a program, or change autostart settings. Continue?", zh: "将诊断版放入代码栏会替换正在编辑的代码，但不会写入设备、运行程序或更改自动启动设置。是否继续？" },
+  "保管した元コードへ戻します。診断版に加えた編集は失われます。機器のプログラムは変更しません。続けますか？": { en: "Restore the stored original code? Edits made to the diagnostic version will be lost. The device program will not be changed. Continue?", zh: "恢复保管的原代码会丢失对诊断版所做的编辑，但不会更改设备中的程序。是否继续？" },
   "機器内部でクラッシュが発生しました。実行は正常に継続していません。": { en: "The device crashed internally. Execution is no longer continuing normally.", zh: "设备内部发生崩溃，程序未正常继续运行。" },
   "実行中に機器の再起動を検出しました。実行は正常に継続していません。": { en: "A device restart was detected during execution. Execution is no longer continuing normally.", zh: "运行期间检测到设备重启，程序未正常继续运行。" },
   "機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。": { en: "The device restarted. Restore USB communication or reconnect before continuing. No write or execution was performed.", zh: "设备已重启。请恢复USB通信或重新连接。未进行写入或运行。" },

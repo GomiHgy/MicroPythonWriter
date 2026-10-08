@@ -485,7 +485,7 @@ export default function App() {
         onDisable={() => app.setBoot(1)} onEnable={() => app.setBoot(0)} onConnect={app.connect} onRecover={app.normalMode} onReset={app.reset} />
     </details>
     <section className="program-records">
-      <div className="panel"><StartupDiagnosticsPanel source={app.source} log={app.log} disabled={busy || pwaActivity.updating} /></div>
+      <div className="panel"><StartupDiagnosticsPanel source={app.source} log={app.log} disabled={busy || pwaActivity.updating} onSourceChange={replaceEditorSource} /></div>
       <details className="panel terminal-panel"><summary><span className="eyebrow">{t("見守りログ")}</span><h2>{t("うまくいかない時に見る記録")}</h2></summary><div className="panel-head"><span><label><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t("自動スクロール")}</label><label><input type="checkbox" checked={timestamps} onChange={event => setTimestamps(event.target.checked)} />{t("時刻")}</label><button className="quiet-button" onClick={() => app.setLog('')}>{t("消去")}</button></span></div><Terminal label={t("シリアルターミナル")} log={stampLog()} dark={dark} autoScroll={autoScroll} /></details>
       {app.error && <details id="program-error-details" className="panel error" tabIndex={-1}>
         <summary><span className="eyebrow">{t("困ったとき")}</span><h2>{t('エラーの詳しい記録')} — {app.error.exceptionType}</h2></summary>

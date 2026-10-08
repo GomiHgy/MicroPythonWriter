@@ -6,6 +6,7 @@ import { PasteCodeButton } from '../components/PasteCodeButton'
 import { LedCodeSettingsPanel } from '../components/LedCodeSettingsPanel'
 import { SimulationPanel } from '../components/SimulationPanel'
 import { Terminal } from '../components/Terminal'
+import { StartupDiagnosticsPanel } from '../components/StartupDiagnosticsPanel'
 import { BluetoothPanel } from '../components/BluetoothPanel'
 import { AiPreparationPanel } from '../components/AiPreparationPanel'
 import { MakerPanel } from '../components/MakerPanel'
@@ -202,6 +203,19 @@ it('実行失敗は編集欄の前にも通知し、結果と修正へのリン�
   const nodes = all(byId(view, 'panel-program'), element => element === notice || element.props.id === 'program-code-workspace')
   expect(nodes[0]).toBe(notice)
   assertNoUsbOperations()
+})
+
+it('診断版の準備はエディタだけを変更し、接続・保存・実行や起動設定を呼ばない', () => {
+  const diagnostic = find(render(), element => element.type === StartupDiagnosticsPanel)
+  expect(diagnostic.props.source).toBe(harness.programmer.source)
+  expect(diagnostic.props.log).toBe(harness.programmer.log)
+  expect(diagnostic.props.disabled).toBe(false)
+  ;(diagnostic.props.onSourceChange as (source: string) => void)('# opt-in diagnostic\n')
+  expect(harness.programmer.setSource).toHaveBeenCalledWith('# opt-in diagnostic\n')
+  assertNoUsbOperations()
+  expect(beginPwaUpdate()).toBe(true)
+  ;(diagnostic.props.onSourceChange as (source: string) => void)('# no replacement during update\n')
+  expect(harness.programmer.setSource).not.toHaveBeenCalledWith('# no replacement during update\n')
 })
 
 it('ログを閉じていても実機エラーと修正への案内は隠さない', () => {

@@ -16,7 +16,7 @@ vi.mock('react', async () => ({
     return [h.slots[i], (value: unknown) => { h.slots[i] = value }]
   },
 }))
-const props = { source: 'import bluetooth\nble=bluetooth.BLE()\nble.active(True)\n', log: 'ESP-ROM:esp32c6\nAccess Code: private\n', disabled: false }
+const props = { source: 'import bluetooth\nble=bluetooth.BLE()\nble.active(True)\n', log: 'ESP-ROM:esp32c6\nAccess Code: private\n', disabled: false, onSourceChange: vi.fn() }
 const anchors: { href: string; download: string; click: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }[] = []
 function render() { h.cursor = 0; return StartupDiagnosticsPanel(props) }
 function all(node: ReactNode, predicate: (e: Element) => boolean): Element[] {
@@ -31,7 +31,7 @@ function text(node: ReactNode): string {
 }
 function button(label: string) { return all(render(), e => e.type === 'button' && text(e) === label)[0] }
 beforeEach(() => {
-  h.slots = []; h.cursor = 0; anchors.length = 0; props.disabled = false
+  h.slots = []; h.cursor = 0; anchors.length = 0; props.disabled = false; props.onSourceChange.mockReset()
   props.source = 'import bluetooth\nble=bluetooth.BLE()\nble.active(True)\n'
   setLocale('ja')
   vi.stubGlobal('confirm', vi.fn(() => true))
@@ -73,6 +73,56 @@ describe('起動診断の書き出しUI', () => {
     ;(button('診断ログを保存').props.onClick as () => void)()
     expect(anchors[0].download).toBe('MicroPython-diagnostic-log.txt')
     expect(await (vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob).text()).toBe(props.log)
+  })
+  it('保管確認・置換確認をしたときだけ診断版をコード欄へ入れ、機器操作は呼ばない', async () => {
+    const original = props.source
+    const prepare = () => (button('診断版をコード欄へ入れる').props.onClick as () => void)()
+    expect(button('診断版をコード欄へ入れる').props.disabled).toBe(true)
+    prepare()
+    expect(props.onSourceChange).not.toHaveBeenCalled()
+    ;(all(render(), e => e.type === 'input')[0].props.onChange as (e: unknown) => void)({ target: { checked: true } })
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    prepare()
+    expect(props.onSourceChange).not.toHaveBeenCalled()
+    prepare()
+    expect(props.onSourceChange).toHaveBeenCalledOnce()
+    props.source = props.onSourceChange.mock.calls[0][0]
+    expect(props.source).toContain('[MPW DIAG')
+    expect(props.source).toContain('FILE_ENTER')
+    expect(text(render())).toContain('まだ機器には書き込んでいません')
+    expect(button('診断版をコード欄へ入れる').props.disabled).toBe(true)
+    prepare()
+    expect(props.onSourceChange).toHaveBeenCalledOnce()
+    ;(button('元コードを保存').props.onClick as () => void)()
+    expect(await (vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob).text()).toBe(original)
+    ;(button('診断版を保存').props.onClick as () => void)()
+    expect(await (vi.mocked(URL.createObjectURL).mock.calls[1][0] as Blob).text()).toBe(props.source)
+    vi.mocked(confirm).mockReturnValueOnce(false)
+    ;(button('保管した元コードへ戻す').props.onClick as () => void)()
+    expect(props.onSourceChange).toHaveBeenCalledOnce()
+    ;(button('保管した元コードへ戻す').props.onClick as () => void)()
+    expect(props.onSourceChange).toHaveBeenLastCalledWith(original)
+    props.source = original
+    expect(button('保管した元コードへ戻す')).toBeUndefined()
+    expect(text(render())).toContain('機器のプログラムはまだ変更していません')
+  })
+  it('実行・更新中は診断版への置換・復元も拒否し、元コードの編集後は保管確認をやり直す', () => {
+    ;(all(render(), e => e.type === 'input')[0].props.onChange as (e: unknown) => void)({ target: { checked: true } })
+    props.disabled = true
+    ;(button('診断版をコード欄へ入れる').props.onClick as () => void)()
+    expect(props.onSourceChange).not.toHaveBeenCalled()
+    props.disabled = false
+    props.source += '# artwork edit\n'
+    expect(button('診断版をコード欄へ入れる').props.disabled).toBe(true)
+    ;(button('診断版をコード欄へ入れる').props.onClick as () => void)()
+    expect(props.onSourceChange).not.toHaveBeenCalled()
+    ;(all(render(), e => e.type === 'input')[0].props.onChange as (e: unknown) => void)({ target: { checked: true } })
+    ;(button('診断版をコード欄へ入れる').props.onClick as () => void)()
+    props.source = props.onSourceChange.mock.calls[0][0]
+    props.disabled = true
+    expect(button('保管した元コードへ戻す').props.disabled).toBe(true)
+    ;(button('保管した元コードへ戻す').props.onClick as () => void)()
+    expect(props.onSourceChange).toHaveBeenCalledOnce()
   })
   it('無効な構文や実行操作中は書き出しを無効にする', () => {
     props.source = 'if :'

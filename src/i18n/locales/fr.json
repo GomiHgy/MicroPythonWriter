@@ -1,4 +1,11 @@
 {
+  "診断版をコード欄へ入れる": "Charger la version de diagnostic dans l’éditeur",
+  "「診断版をコード欄へ入れる」を押し、コード欄の変更を確認してから「実行」を1回押す": "Appuie sur Charger la version de diagnostic dans l’éditeur, vérifie le code modifié, puis appuie une fois sur Exécuter",
+  "保管した元コードへ戻す": "Restaurer le code original conservé",
+  "診断版をコード欄へ入れました。まだ機器には書き込んでいません。「実行」を1回押してください。": "La version de diagnostic est dans l’éditeur. Elle n’a pas encore été écrite sur l’appareil. Appuie une fois sur Exécuter.",
+  "元コードをコード欄へ戻しました。機器のプログラムはまだ変更していません。": "Le code original est de nouveau dans l’éditeur. Le programme de l’appareil n’a pas encore été modifié.",
+  "診断版をコード欄へ入れます。編集中のコードは置き換わりますが、機器への書き込み・実行・自動起動設定の変更は行いません。続けますか？": "La version de diagnostic remplacera le code en cours d’édition. Rien ne sera écrit ni exécuté sur l’appareil et le démarrage automatique restera inchangé. Continuer ?",
+  "保管した元コードへ戻します。診断版に加えた編集は失われます。機器のプログラムは変更しません。続けますか？": "Le code original conservé sera restauré. Les modifications apportées à la version de diagnostic seront perdues. Le programme de l’appareil restera inchangé. Continuer ?",
   "機器内部でクラッシュが発生しました。実行は正常に継続していません。": "L’appareil a subi un plantage interne. L’exécution ne se poursuit plus normalement.",
   "実行中に機器の再起動を検出しました。実行は正常に継続していません。": "Un redémarrage de l’appareil a été détecté pendant l’exécution. Elle ne se poursuit plus normalement.",
   "機器が再起動したため、USB操作の復旧または再接続が必要です。書き込み・実行はしていません。": "L’appareil a redémarré. Rétablissez la communication USB ou reconnectez-le. Aucune écriture ni exécution n’a été effectuée.",
